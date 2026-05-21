@@ -2,25 +2,32 @@
 
 :root {
   --background: #ffffff;
-  --foreground: #171717;
+  --foreground: #0f1419;
+
+  --brand-deep: #1F3A5F;
+  --brand-medium: #2E5C8A;
+  --brand-gold: #D4A017;
+  --brand-ink: #0f1419;
+  --brand-muted: #5b6573;
+  --brand-rule: #e5e9ef;
+  --brand-surface: #f7f8fa;
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+  --color-brand-deep: var(--brand-deep);
+  --color-brand-medium: var(--brand-medium);
+  --color-brand-gold: var(--brand-gold);
+  --color-brand-ink: var(--brand-ink);
+  --color-brand-muted: var(--brand-muted);
+  --color-brand-rule: var(--brand-rule);
+  --color-brand-surface: var(--brand-surface);
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, -apple-system, sans-serif;
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-sans);
 }
