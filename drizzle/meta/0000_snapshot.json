@@ -1,0 +1,501 @@
+{
+  "id": "42c8a759-9699-4c7a-aae0-7fa150627797",
+  "prevId": "00000000-0000-0000-0000-000000000000",
+  "version": "7",
+  "dialect": "postgresql",
+  "tables": {
+    "public.carrier_hiring_rules": {
+      "name": "carrier_hiring_rules",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "serial",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "carrier_id": {
+          "name": "carrier_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "region": {
+          "name": "region",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "equipment": {
+          "name": "equipment",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "pay_min_weekly": {
+          "name": "pay_min_weekly",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "pay_max_weekly": {
+          "name": "pay_max_weekly",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "home_time": {
+          "name": "home_time",
+          "type": "home_time",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "min_years_exp": {
+          "name": "min_years_exp",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "allows_accidents": {
+          "name": "allows_accidents",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": true
+        },
+        "allows_dui": {
+          "name": "allows_dui",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "allows_felony": {
+          "name": "allows_felony",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "allows_termination": {
+          "name": "allows_termination",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": true
+        },
+        "allows_failed_dot_test": {
+          "name": "allows_failed_dot_test",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "carrier_hiring_rules_region_equipment_idx": {
+          "name": "carrier_hiring_rules_region_equipment_idx",
+          "columns": [
+            {
+              "expression": "region",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "equipment",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "carrier_hiring_rules_carrier_idx": {
+          "name": "carrier_hiring_rules_carrier_idx",
+          "columns": [
+            {
+              "expression": "carrier_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "carrier_hiring_rules_carrier_id_carriers_id_fk": {
+          "name": "carrier_hiring_rules_carrier_id_carriers_id_fk",
+          "tableFrom": "carrier_hiring_rules",
+          "tableTo": "carriers",
+          "columnsFrom": [
+            "carrier_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.carriers": {
+      "name": "carriers",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "serial",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "kind": {
+          "name": "kind",
+          "type": "carrier_kind",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'prospect'"
+        },
+        "tier": {
+          "name": "tier",
+          "type": "carrier_tier",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'tier_2'"
+        },
+        "tenstreet_id": {
+          "name": "tenstreet_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "contact_email": {
+          "name": "contact_email",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.drivers": {
+      "name": "drivers",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "serial",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "first_name": {
+          "name": "first_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "last_name": {
+          "name": "last_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "email": {
+          "name": "email",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "phone": {
+          "name": "phone",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "cdl_state": {
+          "name": "cdl_state",
+          "type": "varchar(2)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "years_held": {
+          "name": "years_held",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "equipment_run": {
+          "name": "equipment_run",
+          "type": "text[]",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "endorsements": {
+          "name": "endorsements",
+          "type": "text[]",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'{}'"
+        },
+        "otr_years": {
+          "name": "otr_years",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "desired_equipment": {
+          "name": "desired_equipment",
+          "type": "text[]",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "desired_regions": {
+          "name": "desired_regions",
+          "type": "text[]",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "home_time": {
+          "name": "home_time",
+          "type": "home_time",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "min_weekly_pay": {
+          "name": "min_weekly_pay",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "open_to_relocation": {
+          "name": "open_to_relocation",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "accidents_last_3_years": {
+          "name": "accidents_last_3_years",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "accidents_details": {
+          "name": "accidents_details",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "''"
+        },
+        "violations_last_3_years": {
+          "name": "violations_last_3_years",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "dui_ever": {
+          "name": "dui_ever",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "dui_most_recent_date": {
+          "name": "dui_most_recent_date",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "''"
+        },
+        "felony_ever": {
+          "name": "felony_ever",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "felony_details": {
+          "name": "felony_details",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "''"
+        },
+        "terminated_from_any_of_last_3_employers": {
+          "name": "terminated_from_any_of_last_3_employers",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "failed_dot_test": {
+          "name": "failed_dot_test",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "sap_status": {
+          "name": "sap_status",
+          "type": "sap_status",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'not-in-sap'"
+        },
+        "attest_accurate": {
+          "name": "attest_accurate",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "consent_to_share": {
+          "name": "consent_to_share",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "sms_opt_in": {
+          "name": "sms_opt_in",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "drivers_cdl_state_idx": {
+          "name": "drivers_cdl_state_idx",
+          "columns": [
+            {
+              "expression": "cdl_state",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "drivers_email_idx": {
+          "name": "drivers_email_idx",
+          "columns": [
+            {
+              "expression": "email",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    }
+  },
+  "enums": {
+    "public.carrier_kind": {
+      "name": "carrier_kind",
+      "schema": "public",
+      "values": [
+        "partner",
+        "prospect"
+      ]
+    },
+    "public.carrier_tier": {
+      "name": "carrier_tier",
+      "schema": "public",
+      "values": [
+        "tier_1",
+        "tier_2"
+      ]
+    },
+    "public.home_time": {
+      "name": "home_time",
+      "schema": "public",
+      "values": [
+        "daily",
+        "weekly",
+        "biweekly",
+        "otr"
+      ]
+    },
+    "public.sap_status": {
+      "name": "sap_status",
+      "schema": "public",
+      "values": [
+        "not-in-sap",
+        "in-sap",
+        "completed-sap"
+      ]
+    }
+  },
+  "schemas": {},
+  "sequences": {},
+  "roles": {},
+  "policies": {},
+  "views": {},
+  "_meta": {
+    "columns": {},
+    "schemas": {},
+    "tables": {}
+  }
+}
