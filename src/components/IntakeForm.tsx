@@ -18,6 +18,7 @@ type FormState = {
   phone: string;
   hasClassA: boolean;
   cdlState: string;
+  homeZip: string;
   yearsHeld: string;
   equipmentRun: string[];
   endorsements: string[];
@@ -49,6 +50,7 @@ const initialState: FormState = {
   phone: "",
   hasClassA: false,
   cdlState: "",
+  homeZip: "",
   yearsHeld: "",
   equipmentRun: [],
   endorsements: [],
@@ -117,6 +119,8 @@ export function IntakeForm() {
       if (!state.hasClassA) next.hasClassA = "CDLA.jobs is for Class A drivers only";
       if (!state.cdlState.trim() || state.cdlState.trim().length !== 2)
         next.cdlState = "2-letter state code";
+      if (!/^\d{5}$/.test(state.homeZip.trim()))
+        next.homeZip = "5-digit US zip";
       if (!state.yearsHeld.trim()) next.yearsHeld = "Required";
     }
     if (currentStep === 1) {
@@ -182,12 +186,20 @@ export function IntakeForm() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(parsed.data),
         });
+        const body = (await res.json().catch(() => ({}))) as {
+          ok?: boolean;
+          driverId?: string;
+          error?: string;
+        };
         if (!res.ok) {
-          const body = await res.json().catch(() => ({}));
           setSubmitError(body.error ?? "Something went wrong. Try again in a minute.");
           return;
         }
-        router.push("/intake/done");
+        if (body.driverId) {
+          router.push(`/matches/${body.driverId}`);
+        } else {
+          router.push("/intake/done");
+        }
       } catch {
         setSubmitError("Network error. Try again.");
       }
@@ -379,6 +391,23 @@ function StepContact({
             />
           </Field>
         </div>
+        <Field
+          label="Home zip code"
+          hint="5-digit US zip. We use this to find jobs you could actually drive from where you live."
+          error={errors.homeZip}
+        >
+          <input
+            className={inputClass}
+            value={state.homeZip}
+            onChange={(e) =>
+              set("homeZip", e.target.value.replace(/\D/g, "").slice(0, 5))
+            }
+            maxLength={5}
+            inputMode="numeric"
+            autoComplete="postal-code"
+            placeholder="30303"
+          />
+        </Field>
       </div>
     </div>
   );
