@@ -8,6 +8,13 @@
       "when": 1779212260939,
       "tag": "0000_equal_famine",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1779600000000,
+      "tag": "0001_geospatial_engine",
+      "breakpoints": true
     }
   ]
 }
