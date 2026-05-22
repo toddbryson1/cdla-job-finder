@@ -26,10 +26,10 @@ type FormState = {
   desiredRegions: string[];
   homeTime: "" | "daily" | "weekly" | "biweekly" | "otr";
   minWeeklyPay: string;
-  openToRelocation: boolean;
-  accidentsLast3Years: string;
+  willingToRelocate: boolean;
+  accidents3yrCount: string;
   accidentsDetails: string;
-  violationsLast3Years: string;
+  tickets3yrCount: string;
   duiEver: "" | "yes" | "no";
   duiMostRecentDate: string;
   felonyEver: "" | "yes" | "no";
@@ -57,10 +57,10 @@ const initialState: FormState = {
   desiredRegions: [],
   homeTime: "",
   minWeeklyPay: "",
-  openToRelocation: false,
-  accidentsLast3Years: "",
+  willingToRelocate: false,
+  accidents3yrCount: "",
   accidentsDetails: "",
-  violationsLast3Years: "",
+  tickets3yrCount: "",
   duiEver: "",
   duiMostRecentDate: "",
   felonyEver: "",
@@ -128,8 +128,8 @@ export function IntakeForm() {
       if (!state.homeTime) next.homeTime = "Pick one";
     }
     if (currentStep === 3) {
-      if (!state.accidentsLast3Years.trim()) next.accidentsLast3Years = "Enter a number";
-      if (!state.violationsLast3Years.trim()) next.violationsLast3Years = "Enter a number";
+      if (!state.accidents3yrCount.trim()) next.accidents3yrCount = "Enter a number";
+      if (!state.tickets3yrCount.trim()) next.tickets3yrCount = "Enter a number";
       if (!state.duiEver) next.duiEver = "Please answer";
       if (!state.felonyEver) next.felonyEver = "Please answer";
       if (!state.terminatedFromAnyOfLast3Employers) next.terminatedFromAnyOfLast3Employers = "Please answer";
@@ -156,8 +156,8 @@ export function IntakeForm() {
       yearsHeld: Number(state.yearsHeld) || 0,
       otrYears: Number(state.otrYears) || 0,
       minWeeklyPay: Number(state.minWeeklyPay) || 0,
-      accidentsLast3Years: Number(state.accidentsLast3Years) || 0,
-      violationsLast3Years: Number(state.violationsLast3Years) || 0,
+      accidents3yrCount: Number(state.accidents3yrCount) || 0,
+      tickets3yrCount: Number(state.tickets3yrCount) || 0,
       duiEver: state.duiEver === "yes",
       felonyEver: state.felonyEver === "yes",
       terminatedFromAnyOfLast3Employers: state.terminatedFromAnyOfLast3Employers === "yes",
@@ -485,10 +485,10 @@ function StepPreferences({
             placeholder="$"
           />
         </Field>
-        <Field label="Open to relocating?">
+        <Field label="Willing to relocate?">
           <YesNo
-            value={state.openToRelocation ? "yes" : "no"}
-            onChange={(v) => set("openToRelocation", v === "yes")}
+            value={state.willingToRelocate ? "yes" : "no"}
+            onChange={(v) => set("willingToRelocate", v === "yes")}
           />
         </Field>
       </div>
@@ -514,26 +514,26 @@ function StepSafety({
       </p>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        <Field label="Accidents in the last 3 years" error={errors.accidentsLast3Years}>
+        <Field label="Accidents in the last 3 years" error={errors.accidents3yrCount}>
           <input
             className={inputClass}
-            value={state.accidentsLast3Years}
-            onChange={(e) => set("accidentsLast3Years", e.target.value.replace(/\D/g, ""))}
+            value={state.accidents3yrCount}
+            onChange={(e) => set("accidents3yrCount", e.target.value.replace(/\D/g, ""))}
             inputMode="numeric"
             placeholder="0"
           />
         </Field>
-        <Field label="Moving violations in last 3 years" error={errors.violationsLast3Years}>
+        <Field label="Moving violations in last 3 years" error={errors.tickets3yrCount}>
           <input
             className={inputClass}
-            value={state.violationsLast3Years}
-            onChange={(e) => set("violationsLast3Years", e.target.value.replace(/\D/g, ""))}
+            value={state.tickets3yrCount}
+            onChange={(e) => set("tickets3yrCount", e.target.value.replace(/\D/g, ""))}
             inputMode="numeric"
             placeholder="0"
           />
         </Field>
       </div>
-      {Number(state.accidentsLast3Years) > 0 && (
+      {Number(state.accidents3yrCount) > 0 && (
         <Field label="Brief details on those accidents">
           <textarea
             className={`${inputClass} min-h-[80px]`}

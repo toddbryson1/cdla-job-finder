@@ -88,13 +88,17 @@ export const intakeSchema = z.object({
   desiredRegions: z.array(z.string()).min(1, "Pick at least one region"),
   homeTime: z.enum(["daily", "weekly", "biweekly", "otr"]),
   minWeeklyPay: z.coerce.number().int().min(0).max(10000).default(0),
-  openToRelocation: z.boolean().default(false),
+  willingToRelocate: z.boolean().default(false),
 
   // Step 4: Safety (6 mandatory questions, verbatim from pitch deck slide 6)
-  accidentsLast3Years: z.coerce.number().int().min(0).max(50),
+  accidents3yrCount: z.coerce.number().int().min(0).max(50),
   accidentsDetails: z.string().trim().max(2000).default(""),
-  violationsLast3Years: z.coerce.number().int().min(0).max(50),
+  tickets3yrCount: z.coerce.number().int().min(0).max(50),
   duiEver: z.boolean(),
+  // Free-text date entry (e.g. "March 2019") preserved at the form layer;
+  // server stores it parsed into a real date column when possible (out of
+  // scope for this session — the column is nullable until intake captures
+  // a structured date).
   duiMostRecentDate: z.string().trim().max(40).default(""),
   felonyEver: z.boolean(),
   felonyDetails: z.string().trim().max(2000).default(""),
