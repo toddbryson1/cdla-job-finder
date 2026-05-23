@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { eq } from "drizzle-orm";
+import { desc, eq } from "drizzle-orm";
 import { db } from "@/db/client";
 import { drivers } from "@/db/schema";
 import {
@@ -60,12 +60,14 @@ export async function GET(request: Request) {
     return NextResponse.redirect(new URL("/login?auth=no_session", url));
   }
 
-  // Look up driver by verified email; send them to their matches if they
-  // have a row, else to home.
+  // Look up driver by verified email. If they've re-submitted intake more
+  // than once we have multiple rows for the same email — take the most
+  // recent so they see the answers they just gave us.
   let destination = "/";
   if (verifiedEmail) {
     const driver = await db.query.drivers.findFirst({
       where: eq(drivers.email, verifiedEmail),
+      orderBy: [desc(drivers.createdAt)],
       columns: { id: true },
     });
     if (driver) destination = `/matches/${driver.id}`;
