@@ -38,6 +38,7 @@ type FormState = {
   felonyEver: "" | "yes" | "no";
   felonyDetails: string;
   terminatedFromAnyOfLast3Employers: "" | "yes" | "no";
+  terminationDetails: string;
   failedDotTest: "" | "yes" | "no";
   sapStatus: "not-in-sap" | "in-sap" | "completed-sap";
   attestAccurate: boolean;
@@ -72,6 +73,7 @@ const initialState: FormState = {
   felonyEver: "",
   felonyDetails: "",
   terminatedFromAnyOfLast3Employers: "",
+  terminationDetails: "",
   failedDotTest: "",
   sapStatus: "not-in-sap",
   attestAccurate: false,
@@ -670,7 +672,8 @@ function StepSafety({
       )}
 
       <Field
-        label="Terminated by any of your last 3 employers?"
+        label="Have you been terminated by your last trucking company for any reason?"
+        hint="Termination for safety reasons or bad behavior typically means a 6-month wait before another carrier will look at you."
         error={errors.terminatedFromAnyOfLast3Employers}
       >
         <YesNo
@@ -680,6 +683,16 @@ function StepSafety({
           }
         />
       </Field>
+      {state.terminatedFromAnyOfLast3Employers === "yes" && (
+        <Field label="Briefly, what happened?">
+          <textarea
+            className={`${inputClass} min-h-[80px]`}
+            value={state.terminationDetails}
+            onChange={(e) => set("terminationDetails", e.target.value)}
+            placeholder="When, who, and the reason — just enough so a recruiter knows what to ask."
+          />
+        </Field>
+      )}
 
       <Field label="Ever failed a DOT drug or alcohol test?" error={errors.failedDotTest}>
         <YesNo

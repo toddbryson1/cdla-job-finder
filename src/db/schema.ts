@@ -266,6 +266,7 @@ export const drivers = pgTable(
     // Free-text notes (kept for human review; not used by engine)
     accidentsDetails: text("accidents_details").notNull().default(""),
     felonyDetails: text("felony_details").notNull().default(""),
+    terminationDetails: text("termination_details").notNull().default(""),
 
     // Consents
     attestAccurate: boolean("attest_accurate").notNull(),

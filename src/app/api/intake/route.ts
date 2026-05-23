@@ -92,6 +92,7 @@ export async function POST(request: Request) {
         felonyEver: d.felonyEver,
         felonyDetails: d.felonyDetails,
         terminatedFromAnyOfLast3Employers: d.terminatedFromAnyOfLast3Employers,
+        terminationDetails: d.terminationDetails,
         failedDotTest: d.failedDotTest,
         sapStatus: d.sapStatus,
         attestAccurate: d.attestAccurate,

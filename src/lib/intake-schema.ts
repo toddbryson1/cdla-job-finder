@@ -111,6 +111,7 @@ export const intakeSchema = z.object({
   felonyEver: z.boolean(),
   felonyDetails: z.string().trim().max(2000).default(""),
   terminatedFromAnyOfLast3Employers: z.boolean(),
+  terminationDetails: z.string().trim().max(2000).default(""),
   failedDotTest: z.boolean(),
   sapStatus: z.enum(["not-in-sap", "in-sap", "completed-sap"]).default("not-in-sap"),
 
