@@ -15,6 +15,13 @@
       "when": 1779600000000,
       "tag": "0001_geospatial_engine",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1779700000000,
+      "tag": "0002_stage_2_consent",
+      "breakpoints": true
     }
   ]
 }

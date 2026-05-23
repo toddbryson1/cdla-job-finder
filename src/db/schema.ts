@@ -241,12 +241,22 @@ export const drivers = pgTable(
     sapStatus: sapStatusEnum("sap_status").notNull().default("not-in-sap"),
 
     // Stage 2 fields (all nullable; collected later)
+    // TODO: migrate to per-carrier application records table
     tickets3yrCount: integer("tickets_3yr_count"),
     accidents3yrCount: integer("accidents_3yr_count"),
     accidents3yrAtFaultCount: integer("accidents_3yr_at_fault_count"),
     duiEver: boolean("dui_ever"),
     duiMostRecentDate: date("dui_most_recent_date"),
     felonyEver: boolean("felony_ever"),
+
+    // Stage 2 per-carrier consent (most recent carrier; one row per driver in v1)
+    stage2ConsentCarrierId: uuid("stage_2_consent_carrier_id").references(
+      () => carriers.id,
+      { onDelete: "set null" },
+    ),
+    stage2ConsentAt: timestamp("stage_2_consent_at", { withTimezone: true }),
+    stage2ConsentTextVersion: text("stage_2_consent_text_version"),
+    stage2TcpaOptIn: boolean("stage_2_tcpa_opt_in").default(false),
 
     // Free-text notes (kept for human review; not used by engine)
     accidentsDetails: text("accidents_details").notNull().default(""),
