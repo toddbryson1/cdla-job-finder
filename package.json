@@ -15,11 +15,14 @@
     "test:watch": "vitest"
   },
   "dependencies": {
+    "@stytch/nextjs": "^22.0.9",
+    "@stytch/vanilla-js": "^6.0.9",
     "drizzle-orm": "^0.45.2",
     "next": "16.2.6",
     "postgres": "^3.4.9",
     "react": "19.2.4",
     "react-dom": "19.2.4",
+    "stytch": "^14.0.0",
     "zod": "^4.4.3"
   },
   "devDependencies": {
