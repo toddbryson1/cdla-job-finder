@@ -13,7 +13,7 @@ export interface DriverFixture {
   desiredEquipment?: string[];
   desiredRegions?: string[];
   endorsements?: string[];
-  homeTime?: "daily" | "weekly" | "biweekly" | "otr";
+  homeTime?: Array<"daily" | "weekly" | "biweekly" | "otr">;
   minWeeklyPay?: number;
   willingToRelocate?: boolean;
   terminated?: boolean;
@@ -39,7 +39,7 @@ export async function insertTestDriver(fx: DriverFixture): Promise<string> {
       endorsements: fx.endorsements ?? [],
       desiredEquipment: fx.desiredEquipment ?? ["dry-van"],
       desiredRegions: fx.desiredRegions ?? ["any"],
-      homeTime: fx.homeTime ?? "weekly",
+      homeTime: fx.homeTime ?? ["weekly"],
       minWeeklyPay: fx.minWeeklyPay ?? 0,
       willingToRelocate: fx.willingToRelocate ?? false,
       homeZip: fx.homeZip ?? null,

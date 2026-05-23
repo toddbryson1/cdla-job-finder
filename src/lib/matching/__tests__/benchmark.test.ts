@@ -22,7 +22,7 @@ describe("matchDriver benchmark", () => {
       desiredEquipment: ["reefer", "dry-van", "flatbed"],
       yearsHeld: 5,
       willingToRelocate: true,
-      homeTime: "otr",
+      homeTime: ["otr"],
     });
     // Warm-up
     await matchDriver(id);

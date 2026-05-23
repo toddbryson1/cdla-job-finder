@@ -78,7 +78,7 @@ describe("matchDriver — geospatial", () => {
       homeLng: HONOLULU.lng,
       cdlState: "HI",
       desiredEquipment: ["dry-van"],
-      homeTime: "otr",
+      homeTime: ["otr"],
       yearsHeld: 2,
     });
     const result = await matchDriver(id);
@@ -94,7 +94,7 @@ describe("matchDriver — willing_to_relocate", () => {
       homeLng: AURORA_CO.lng,
       cdlState: "CO",
       desiredEquipment: ["flatbed"],
-      homeTime: "otr",
+      homeTime: ["otr"],
       yearsHeld: 2,
       willingToRelocate: true,
     });
@@ -109,7 +109,7 @@ describe("matchDriver — willing_to_relocate", () => {
       homeLng: AURORA_CO.lng,
       cdlState: "CO",
       desiredEquipment: ["flatbed"],
-      homeTime: "otr",
+      homeTime: ["otr"],
       yearsHeld: 2,
       willingToRelocate: false,
     });
@@ -410,7 +410,7 @@ describe("matchDriver — label mapping", () => {
       desiredEquipment: ["reefer", "dry-van", "flatbed"],
       yearsHeld: 3,
       willingToRelocate: true,
-      homeTime: "weekly",
+      homeTime: ["weekly"],
     });
     const now = new Date();
     const past = new Date(now.getTime() - 25 * 60 * 60 * 1000);

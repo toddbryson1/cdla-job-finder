@@ -95,7 +95,7 @@ export async function POST(request: Request) {
       .returning({ id: drivers.id });
 
     console.log(
-      `[intake] driver ${row?.id} ${d.firstName} ${d.lastName} <${d.email}> wants ${d.desiredEquipment.join(",")} in ${d.desiredRegions.join(",")} (home: ${d.homeTime})`,
+      `[intake] driver ${row?.id} ${d.firstName} ${d.lastName} <${d.email}> wants ${d.desiredEquipment.join(",")} in ${d.desiredRegions.join(",")} (home: ${d.homeTime.join("|")})`,
     );
 
     return NextResponse.json({ ok: true, driverId: row?.id });

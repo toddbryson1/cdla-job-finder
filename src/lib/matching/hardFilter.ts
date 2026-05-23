@@ -22,7 +22,7 @@ export interface DriverProfile {
   otrExperienceMonths: number;
   cdlState: string;
   endorsements: string[];
-  homeTime: string;
+  homeTime: string[];
   minWeeklyPay: number;
   terminated: boolean;
   failedDot: boolean;
@@ -67,6 +67,7 @@ export async function runHardFilter(
   const sapStatus = driver.sapStatus;
   const desiredEquipment = toPgTextArray(driver.desiredEquipment);
   const endorsements = toPgTextArray(driver.endorsements);
+  const homeTime = toPgTextArray(driver.homeTime);
   const homeLat = driver.homeLat;
   const homeLng = driver.homeLng;
   const willingToRelocate = driver.willingToRelocate;
@@ -141,7 +142,7 @@ export async function runHardFilter(
         OR ${driver.cdlState} = ANY(j.accepted_cdl_states)
       )
       AND j.required_endorsements <@ ${endorsements}::text[]
-      AND ${driver.homeTime}::home_time = ANY(j.accepted_home_time_types)
+      AND j.accepted_home_time_types && ${homeTime}::home_time[]
       AND (
         ${driver.minWeeklyPay} = 0
         OR j.pay_range_max_weekly_usd IS NULL

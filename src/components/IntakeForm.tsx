@@ -25,7 +25,7 @@ type FormState = {
   otrYears: string;
   desiredEquipment: string[];
   desiredRegions: string[];
-  homeTime: "" | "daily" | "weekly" | "biweekly" | "otr";
+  homeTime: Array<"daily" | "weekly" | "biweekly" | "otr">;
   minWeeklyPay: string;
   willingToRelocate: boolean;
   accidents3yrCount: string;
@@ -57,7 +57,7 @@ const initialState: FormState = {
   otrYears: "",
   desiredEquipment: [],
   desiredRegions: [],
-  homeTime: "",
+  homeTime: [],
   minWeeklyPay: "",
   willingToRelocate: false,
   accidents3yrCount: "",
@@ -95,10 +95,21 @@ export function IntakeForm() {
     });
   }
 
-  function toggleIn(key: "equipmentRun" | "endorsements" | "desiredEquipment" | "desiredRegions", value: string) {
+  function toggleIn(
+    key:
+      | "equipmentRun"
+      | "endorsements"
+      | "desiredEquipment"
+      | "desiredRegions"
+      | "homeTime",
+    value: string,
+  ) {
     setState((s) => {
-      const arr = s[key];
-      return { ...s, [key]: arr.includes(value) ? arr.filter((v) => v !== value) : [...arr, value] };
+      const arr = s[key] as string[];
+      const next = arr.includes(value)
+        ? arr.filter((v) => v !== value)
+        : [...arr, value];
+      return { ...s, [key]: next };
     });
     setErrors((e) => {
       if (!e[key]) return e;
@@ -129,7 +140,7 @@ export function IntakeForm() {
     if (currentStep === 2) {
       if (state.desiredEquipment.length === 0) next.desiredEquipment = "Pick at least one";
       if (state.desiredRegions.length === 0) next.desiredRegions = "Pick at least one";
-      if (!state.homeTime) next.homeTime = "Pick one";
+      if (state.homeTime.length === 0) next.homeTime = "Pick at least one";
     }
     if (currentStep === 3) {
       if (!state.accidents3yrCount.trim()) next.accidents3yrCount = "Enter a number";
@@ -283,7 +294,12 @@ function Stepper({ current }: { current: number }) {
 
 type SetFn = <K extends keyof FormState>(key: K, value: FormState[K]) => void;
 type ToggleFn = (
-  key: "equipmentRun" | "endorsements" | "desiredEquipment" | "desiredRegions",
+  key:
+    | "equipmentRun"
+    | "endorsements"
+    | "desiredEquipment"
+    | "desiredRegions"
+    | "homeTime",
   value: string,
 ) => void;
 
@@ -489,19 +505,16 @@ function StepPreferences({
         />
       </Field>
 
-      <Field label="Home time" error={errors.homeTime}>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-          {HOME_TIME_OPTIONS.map((opt) => (
-            <RadioCard
-              key={opt.value}
-              name="homeTime"
-              value={opt.value}
-              label={opt.label}
-              checked={state.homeTime === opt.value}
-              onChange={(v) => set("homeTime", v as FormState["homeTime"])}
-            />
-          ))}
-        </div>
+      <Field
+        label="Home time"
+        hint="Pick everything that works for you — we'll match against any of them."
+        error={errors.homeTime}
+      >
+        <CheckGrid
+          options={HOME_TIME_OPTIONS}
+          selected={state.homeTime}
+          onToggle={(v) => toggleIn("homeTime", v)}
+        />
       </Field>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">

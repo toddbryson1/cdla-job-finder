@@ -22,6 +22,13 @@
       "when": 1779700000000,
       "tag": "0002_stage_2_consent",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1779800000000,
+      "tag": "0003_driver_home_time_array",
+      "breakpoints": true
     }
   ]
 }

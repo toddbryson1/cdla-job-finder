@@ -90,7 +90,9 @@ export const intakeSchema = z.object({
     .array(z.string())
     .min(1, "Pick at least one equipment type you want to drive"),
   desiredRegions: z.array(z.string()).min(1, "Pick at least one region"),
-  homeTime: z.enum(["daily", "weekly", "biweekly", "otr"]),
+  homeTime: z
+    .array(z.enum(["daily", "weekly", "biweekly", "otr"]))
+    .min(1, "Pick at least one home time that works for you"),
   minWeeklyPay: z.coerce.number().int().min(0).max(10000).default(0),
   willingToRelocate: z.boolean().default(false),
 

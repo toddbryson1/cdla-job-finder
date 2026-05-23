@@ -50,7 +50,7 @@ export async function matchDriver(
     otrExperienceMonths: driverRow.otrYears * 12,
     cdlState: driverRow.cdlState,
     endorsements: driverRow.endorsements,
-    homeTime: driverRow.homeTime,
+    homeTime: driverRow.homeTime as string[],
     minWeeklyPay: driverRow.minWeeklyPay,
     terminated: driverRow.terminatedFromAnyOfLast3Employers,
     failedDot: driverRow.failedDotTest,

@@ -230,7 +230,10 @@ export const drivers = pgTable(
     desiredEquipment: text("desired_equipment").array().notNull(),
     desiredRegions: text("desired_regions").array().notNull(),
 
-    homeTime: homeTimeEnum("home_time").notNull(),
+    homeTime: homeTimeEnum("home_time")
+      .array()
+      .notNull()
+      .default(sql`ARRAY[]::home_time[]`),
     minWeeklyPay: integer("min_weekly_pay").notNull().default(0),
 
     // Stage 1 safety
