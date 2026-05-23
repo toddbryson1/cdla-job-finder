@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
+import { eq } from "drizzle-orm";
 import { intakeSchema } from "@/lib/intake-schema";
 import { db } from "@/db/client";
-import { drivers } from "@/db/schema";
+import { drivers, zipCodes } from "@/db/schema";
 
 export const runtime = "nodejs";
 
@@ -37,9 +38,24 @@ export async function POST(request: Request) {
 
   const d = parsed.data;
 
-  // Intake doesn't capture home_zip yet (separate session). Leave home_zip/
-  // home_lat/home_lng null on the driver row; /api/match will return 422
-  // until they're populated.
+  const zip = await db.query.zipCodes.findFirst({
+    where: eq(zipCodes.zip, d.homeZip),
+  });
+  if (!zip) {
+    return NextResponse.json(
+      {
+        error: "Validation failed",
+        issues: [
+          {
+            path: ["homeZip"],
+            message:
+              "We could not find that zip code. Double-check it is a 5-digit US zip.",
+          },
+        ],
+      },
+      { status: 400 },
+    );
+  }
 
   try {
     const [row] = await db
@@ -49,6 +65,9 @@ export async function POST(request: Request) {
         lastName: d.lastName,
         email: d.email,
         phone: d.phone,
+        homeZip: d.homeZip,
+        homeLat: zip.lat,
+        homeLng: zip.lng,
         cdlState: d.cdlState,
         yearsHeld: d.yearsHeld,
         equipmentRun: d.equipmentRun,

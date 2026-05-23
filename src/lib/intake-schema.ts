@@ -72,6 +72,10 @@ export const intakeSchema = z.object({
     message: "Sorry — CDLA.jobs is for Class A drivers only.",
   }),
   cdlState: usStateCode,
+  homeZip: z
+    .string()
+    .trim()
+    .regex(/^\d{5}$/, "Use a 5-digit US zip"),
   yearsHeld: z.coerce.number().int().min(0).max(60),
 
   // Step 2: Experience + Equipment
