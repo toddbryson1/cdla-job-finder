@@ -222,8 +222,10 @@ export const drivers = pgTable(
     willingToRelocate: boolean("willing_to_relocate").notNull().default(false),
 
     cdlState: varchar("cdl_state", { length: 2 }).notNull(),
-    yearsHeld: integer("years_held").notNull(),
-    otrYears: integer("otr_years").notNull().default(0),
+    yearsHeld: numeric("years_held", { precision: 5, scale: 2 }).notNull(),
+    otrYears: numeric("otr_years", { precision: 5, scale: 2 })
+      .notNull()
+      .default("0"),
 
     equipmentRun: text("equipment_run").array().notNull(),
     endorsements: text("endorsements").array().notNull().default([]),

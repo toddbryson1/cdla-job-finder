@@ -76,14 +76,16 @@ export const intakeSchema = z.object({
     .string()
     .trim()
     .regex(/^\d{5}$/, "Use a 5-digit US zip"),
-  yearsHeld: z.coerce.number().int().min(0).max(60),
+  // Stored as years (decimal) so 3 months = 0.25. The intake form lets the
+  // driver enter a value in months or years; submission converts to years.
+  yearsHeld: z.coerce.number().min(0).max(60),
 
   // Step 2: Experience + Equipment
   equipmentRun: z
     .array(z.string())
     .min(1, "Pick at least one equipment type you've actually driven"),
   endorsements: z.array(z.string()).default([]),
-  otrYears: z.coerce.number().int().min(0).max(60).default(0),
+  otrYears: z.coerce.number().min(0).max(60).default(0),
 
   // Step 3: Preferences
   desiredEquipment: z
