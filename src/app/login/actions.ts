@@ -28,12 +28,7 @@ export async function sendMagicLink(
   formData: FormData,
 ): Promise<SendLinkState> {
   const emailRaw = formData.get("email");
-  const redirectRaw = formData.get("redirect");
   const email = typeof emailRaw === "string" ? emailRaw.trim().toLowerCase() : "";
-  const redirect =
-    typeof redirectRaw === "string" && redirectRaw.startsWith("/")
-      ? redirectRaw
-      : "/";
 
   if (!EMAIL_RE.test(email)) {
     return { status: "error", error: "That does not look like an email." };
@@ -47,7 +42,10 @@ export async function sendMagicLink(
     };
   }
 
-  const callback = `${appUrl()}/authenticate?redirect=${encodeURIComponent(redirect)}`;
+  // No query params on the callback — Stytch validates the full URL against
+  // the dashboard allow-list. /authenticate looks the driver up by their
+  // verified email after auth and routes to /matches/[id] from there.
+  const callback = `${appUrl()}/authenticate`;
 
   try {
     await getStytchClient().magicLinks.email.loginOrCreate({

@@ -2,6 +2,9 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect as nextRedirect } from "next/navigation";
 import { cookies } from "next/headers";
+import { eq } from "drizzle-orm";
+import { db } from "@/db/client";
+import { drivers } from "@/db/schema";
 import {
   getStytchClient,
   isStytchConfigured,
@@ -19,21 +22,18 @@ interface PageProps {
   searchParams: Promise<{
     token?: string;
     stytch_token_type?: string;
-    redirect?: string;
   }>;
 }
 
 export default async function AuthenticatePage({ searchParams }: PageProps) {
-  const { token, redirect: redirectParam } = await searchParams;
-  const safeRedirect =
-    redirectParam && redirectParam.startsWith("/") ? redirectParam : "/";
+  const { token } = await searchParams;
 
   if (!token) {
     return (
       <FailureShell
         title="That link is missing something."
         body="The sign-in link does not include a token. Try requesting a new one."
-        retryHref={`/login?redirect=${encodeURIComponent(safeRedirect)}`}
+        retryHref="/login"
       />
     );
   }
@@ -48,6 +48,7 @@ export default async function AuthenticatePage({ searchParams }: PageProps) {
     );
   }
 
+  let verifiedEmail: string | null = null;
   try {
     const result = await getStytchClient().magicLinks.authenticate({
       token,
@@ -57,6 +58,10 @@ export default async function AuthenticatePage({ searchParams }: PageProps) {
     if (!result.session_token) {
       throw new Error("authenticate returned no session_token");
     }
+
+    const verified =
+      result.user.emails.find((e) => e.verified) ?? result.user.emails[0];
+    verifiedEmail = verified?.email?.toLowerCase() ?? null;
 
     const store = await cookies();
     store.set(SESSION_COOKIE, result.session_token, {
@@ -72,12 +77,24 @@ export default async function AuthenticatePage({ searchParams }: PageProps) {
       <FailureShell
         title="That link did not work."
         body="It may have expired, already been used, or been clicked on a different device. Request a new one and we'll send it again."
-        retryHref={`/login?redirect=${encodeURIComponent(safeRedirect)}`}
+        retryHref="/login"
       />
     );
   }
 
-  nextRedirect(safeRedirect);
+  // Route by looking the driver up by verified email. No `?redirect=` query
+  // param on the magic link (Stytch dashboard URL validation rejects it);
+  // we infer the destination from who just authenticated.
+  if (verifiedEmail) {
+    const driver = await db.query.drivers.findFirst({
+      where: eq(drivers.email, verifiedEmail),
+      columns: { id: true },
+    });
+    if (driver) {
+      nextRedirect(`/matches/${driver.id}`);
+    }
+  }
+  nextRedirect("/");
 }
 
 function FailureShell({

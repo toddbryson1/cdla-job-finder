@@ -110,8 +110,10 @@ export async function POST(request: Request) {
     // /login flow.
     let magicLinkSent = false;
     if (row?.id && isStytchConfigured()) {
-      const redirect = `/matches/${row.id}`;
-      const callback = `${appUrl()}/authenticate?redirect=${encodeURIComponent(redirect)}`;
+      // No query params on the callback — Stytch validates the full URL
+      // against the dashboard allow-list. /authenticate looks the driver
+      // up by their verified email and routes to /matches/[id] from there.
+      const callback = `${appUrl()}/authenticate`;
       try {
         await getStytchClient().magicLinks.email.loginOrCreate({
           email: d.email,

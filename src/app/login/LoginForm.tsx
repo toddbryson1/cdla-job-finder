@@ -5,11 +5,7 @@ import { sendMagicLink, type SendLinkState } from "./actions";
 
 const initialState: SendLinkState = { status: "idle" };
 
-interface Props {
-  redirect: string;
-}
-
-export function LoginForm({ redirect }: Props) {
+export function LoginForm() {
   const [state, formAction, pending] = useActionState(
     sendMagicLink,
     initialState,
@@ -39,7 +35,6 @@ export function LoginForm({ redirect }: Props) {
       action={formAction}
       className="rounded-2xl border border-brand-rule bg-white p-6 sm:p-8 shadow-sm"
     >
-      <input type="hidden" name="redirect" value={redirect} />
       <label className="block">
         <span className="block text-sm font-medium text-brand-ink">
           Email address
