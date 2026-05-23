@@ -3,6 +3,12 @@ import { eq } from "drizzle-orm";
 import { intakeSchema } from "@/lib/intake-schema";
 import { db } from "@/db/client";
 import { drivers, zipCodes } from "@/db/schema";
+import {
+  appUrl,
+  getStytchClient,
+  isStytchConfigured,
+  MAGIC_LINK_EXPIRATION_MINUTES,
+} from "@/lib/stytch/client";
 
 export const runtime = "nodejs";
 
@@ -69,10 +75,10 @@ export async function POST(request: Request) {
         homeLat: zip.lat,
         homeLng: zip.lng,
         cdlState: d.cdlState,
-        yearsHeld: d.yearsHeld,
+        yearsHeld: String(d.yearsHeld),
         equipmentRun: d.equipmentRun,
         endorsements: d.endorsements,
-        otrYears: d.otrYears,
+        otrYears: String(d.otrYears),
         desiredEquipment: d.desiredEquipment,
         desiredRegions: d.desiredRegions,
         homeTime: d.homeTime,
@@ -98,7 +104,34 @@ export async function POST(request: Request) {
       `[intake] driver ${row?.id} ${d.firstName} ${d.lastName} <${d.email}> wants ${d.desiredEquipment.join(",")} in ${d.desiredRegions.join(",")} (home: ${d.homeTime.join("|")})`,
     );
 
-    return NextResponse.json({ ok: true, driverId: row?.id });
+    // Send a magic link to the email the driver just confirmed so they can
+    // reach /matches/[id] without typing it again. Best-effort: a Stytch
+    // failure shouldn't block intake — the driver can still log in via the
+    // /login flow.
+    let magicLinkSent = false;
+    if (row?.id && isStytchConfigured()) {
+      const redirect = `/matches/${row.id}`;
+      const callback = `${appUrl()}/authenticate?redirect=${encodeURIComponent(redirect)}`;
+      try {
+        await getStytchClient().magicLinks.email.loginOrCreate({
+          email: d.email,
+          login_magic_link_url: callback,
+          signup_magic_link_url: callback,
+          login_expiration_minutes: MAGIC_LINK_EXPIRATION_MINUTES,
+          signup_expiration_minutes: MAGIC_LINK_EXPIRATION_MINUTES,
+        });
+        magicLinkSent = true;
+      } catch (err) {
+        console.error("[intake] stytch magic-link send failed:", err);
+      }
+    }
+
+    return NextResponse.json({
+      ok: true,
+      driverId: row?.id,
+      magicLinkSent,
+      email: d.email,
+    });
   } catch (err) {
     console.error("[intake] insert failed:", err);
     return NextResponse.json(

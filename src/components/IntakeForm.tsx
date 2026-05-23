@@ -19,10 +19,12 @@ type FormState = {
   hasClassA: boolean;
   cdlState: string;
   homeZip: string;
-  yearsHeld: string;
+  experienceAmount: string;
+  experienceUnit: "months" | "years";
   equipmentRun: string[];
   endorsements: string[];
   otrYears: string;
+  otrYearsUnit: "months" | "years";
   desiredEquipment: string[];
   desiredRegions: string[];
   homeTime: Array<"daily" | "weekly" | "biweekly" | "otr">;
@@ -51,10 +53,12 @@ const initialState: FormState = {
   hasClassA: false,
   cdlState: "",
   homeZip: "",
-  yearsHeld: "",
+  experienceAmount: "",
+  experienceUnit: "years",
   equipmentRun: [],
   endorsements: [],
   otrYears: "",
+  otrYearsUnit: "years",
   desiredEquipment: [],
   desiredRegions: [],
   homeTime: [],
@@ -132,7 +136,8 @@ export function IntakeForm() {
         next.cdlState = "2-letter state code";
       if (!/^\d{5}$/.test(state.homeZip.trim()))
         next.homeZip = "5-digit US zip";
-      if (!state.yearsHeld.trim()) next.yearsHeld = "Required";
+      if (!state.experienceAmount.trim())
+        next.experienceAmount = "Required";
     }
     if (currentStep === 1) {
       if (state.equipmentRun.length === 0) next.equipmentRun = "Pick at least one";
@@ -166,10 +171,13 @@ export function IntakeForm() {
 
   function onSubmit() {
     if (!validateStep(step)) return;
+    const expAmount = Number(state.experienceAmount) || 0;
+    const otrAmount = Number(state.otrYears) || 0;
     const payload = {
       ...state,
-      yearsHeld: Number(state.yearsHeld) || 0,
-      otrYears: Number(state.otrYears) || 0,
+      yearsHeld:
+        state.experienceUnit === "months" ? expAmount / 12 : expAmount,
+      otrYears: state.otrYearsUnit === "months" ? otrAmount / 12 : otrAmount,
       minWeeklyPay: Number(state.minWeeklyPay) || 0,
       accidents3yrCount: Number(state.accidents3yrCount) || 0,
       tickets3yrCount: Number(state.tickets3yrCount) || 0,
@@ -200,17 +208,18 @@ export function IntakeForm() {
         const body = (await res.json().catch(() => ({}))) as {
           ok?: boolean;
           driverId?: string;
+          magicLinkSent?: boolean;
+          email?: string;
           error?: string;
         };
         if (!res.ok) {
           setSubmitError(body.error ?? "Something went wrong. Try again in a minute.");
           return;
         }
-        if (body.driverId) {
-          router.push(`/matches/${body.driverId}`);
-        } else {
-          router.push("/intake/done");
-        }
+        const params = new URLSearchParams();
+        if (body.email) params.set("email", body.email);
+        if (body.magicLinkSent) params.set("link", "1");
+        router.push(`/intake/done${params.size > 0 ? `?${params.toString()}` : ""}`);
       } catch {
         setSubmitError("Network error. Try again.");
       }
@@ -327,6 +336,41 @@ function Field({
 const inputClass =
   "block w-full rounded-md border border-brand-rule bg-white px-3 py-2.5 text-base text-brand-ink shadow-sm placeholder:text-brand-muted/70 focus:border-brand-medium focus:outline-none focus:ring-2 focus:ring-brand-medium/30";
 
+function AmountWithUnit({
+  amount,
+  unit,
+  onAmountChange,
+  onUnitChange,
+  allowZero = false,
+}: {
+  amount: string;
+  unit: "months" | "years";
+  onAmountChange: (v: string) => void;
+  onUnitChange: (u: "months" | "years") => void;
+  allowZero?: boolean;
+}) {
+  return (
+    <div className="flex items-stretch gap-2">
+      <input
+        className={`${inputClass} flex-1`}
+        value={amount}
+        onChange={(e) => onAmountChange(e.target.value.replace(/\D/g, ""))}
+        inputMode="numeric"
+        placeholder={allowZero ? "0" : ""}
+      />
+      <select
+        value={unit}
+        onChange={(e) => onUnitChange(e.target.value as "months" | "years")}
+        className="rounded-md border border-brand-rule bg-white px-3 py-2.5 text-base text-brand-ink shadow-sm focus:border-brand-medium focus:outline-none focus:ring-2 focus:ring-brand-medium/30"
+        aria-label="Unit"
+      >
+        <option value="months">months</option>
+        <option value="years">years</option>
+      </select>
+    </div>
+  );
+}
+
 function StepContact({
   state,
   set,
@@ -398,12 +442,16 @@ function StepContact({
               autoComplete="off"
             />
           </Field>
-          <Field label="Years you've held a Class A" error={errors.yearsHeld}>
-            <input
-              className={inputClass}
-              value={state.yearsHeld}
-              onChange={(e) => set("yearsHeld", e.target.value.replace(/\D/g, ""))}
-              inputMode="numeric"
+          <Field
+            label="How long you've held a Class A"
+            hint="Down to a few months is fine."
+            error={errors.experienceAmount}
+          >
+            <AmountWithUnit
+              amount={state.experienceAmount}
+              unit={state.experienceUnit}
+              onAmountChange={(v) => set("experienceAmount", v)}
+              onUnitChange={(u) => set("experienceUnit", u)}
             />
           </Field>
         </div>
@@ -463,12 +511,13 @@ function StepExperience({
         />
       </Field>
 
-      <Field label="Years of OTR experience" hint="Roughly. Zero is fine.">
-        <input
-          className={inputClass}
-          value={state.otrYears}
-          onChange={(e) => set("otrYears", e.target.value.replace(/\D/g, ""))}
-          inputMode="numeric"
+      <Field label="OTR experience" hint="Roughly. Zero is fine.">
+        <AmountWithUnit
+          amount={state.otrYears}
+          unit={state.otrYearsUnit}
+          onAmountChange={(v) => set("otrYears", v)}
+          onUnitChange={(u) => set("otrYearsUnit", u)}
+          allowZero
         />
       </Field>
     </div>
