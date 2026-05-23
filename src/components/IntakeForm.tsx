@@ -624,13 +624,14 @@ function StepSafety({
           />
         </Field>
       </div>
-      {Number(state.accidents3yrCount) > 0 && (
-        <Field label="Brief details on those accidents">
+      {(Number(state.accidents3yrCount) > 0 ||
+        Number(state.tickets3yrCount) > 0) && (
+        <Field label="Brief details on those tickets and accidents">
           <textarea
             className={`${inputClass} min-h-[80px]`}
             value={state.accidentsDetails}
             onChange={(e) => set("accidentsDetails", e.target.value)}
-            placeholder="Type, fault, year — just enough so a recruiter knows what to ask."
+            placeholder="What happened, when, who was at fault — just enough so a recruiter knows what to ask."
           />
         </Field>
       )}
