@@ -7,7 +7,30 @@ export const metadata: Metadata = {
   robots: { index: false, follow: false },
 };
 
-export default function LoginPage() {
+interface PageProps {
+  searchParams: Promise<{ auth?: string }>;
+}
+
+function authMessage(reason: string | undefined): string | null {
+  if (!reason) return null;
+  switch (reason) {
+    case "missing_token":
+      return "That sign-in link was missing its token. Send yourself a new one.";
+    case "not_configured":
+      return "Sign-in isn't configured on this server yet.";
+    case "no_session":
+      return "We could not start a session for that link. Try a new one.";
+    case "unknown":
+      return "That sign-in link didn't work. Send a new one.";
+    default:
+      return `That sign-in link didn't work (${reason}). Send a new one.`;
+  }
+}
+
+export default async function LoginPage({ searchParams }: PageProps) {
+  const { auth } = await searchParams;
+  const message = authMessage(auth);
+
   return (
     <main className="min-h-screen bg-brand-surface">
       <div className="mx-auto max-w-md px-5 py-12 sm:py-20">
@@ -21,6 +44,11 @@ export default function LoginPage() {
             straight to your matches.
           </p>
         </header>
+        {message ? (
+          <div className="mb-5 rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+            {message}
+          </div>
+        ) : null}
         <LoginForm />
       </div>
     </main>
