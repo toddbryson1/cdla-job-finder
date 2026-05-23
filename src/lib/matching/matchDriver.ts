@@ -1,6 +1,6 @@
 import { eq } from "drizzle-orm";
 import { db as defaultDb } from "@/db/client";
-import { drivers } from "@/db/schema";
+import { driverCarrierMatches, drivers } from "@/db/schema";
 import type { DriverProfile } from "./hardFilter";
 import { runHardFilter } from "./hardFilter";
 import { rankCandidates } from "./softRank";
@@ -105,6 +105,35 @@ export async function matchDriver(
       dataQuality: row.data_quality,
     };
   });
+
+  // Persist match impressions. ON CONFLICT DO NOTHING preserves the
+  // original matched_at so getFirstMatchTime keeps returning the true
+  // first-seen time per (driver, carrier). Best-effort: a tracking write
+  // failure shouldn't break the matches page render.
+  if (matches.length > 0) {
+    try {
+      await database
+        .insert(driverCarrierMatches)
+        .values(
+          matches.map((m) => ({
+            driverId,
+            jobId: m.jobId,
+            carrierId: m.carrierId,
+            matchedAt: now,
+            softRankScore: String(m.softRankScore),
+            distanceMilesFromDriverHome:
+              m.distanceMilesFromDriverHome == null
+                ? null
+                : String(m.distanceMilesFromDriverHome),
+          })),
+        )
+        .onConflictDoNothing({
+          target: [driverCarrierMatches.driverId, driverCarrierMatches.jobId],
+        });
+    } catch (err) {
+      console.error("[matchDriver] match tracking write failed:", err);
+    }
+  }
 
   return {
     driverId,

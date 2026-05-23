@@ -1,10 +1,23 @@
+import { and, asc, eq } from "drizzle-orm";
+import { db } from "@/db/client";
+import { driverCarrierMatches } from "@/db/schema";
 import type { GetFirstMatchTime } from "./types";
 
-/**
- * Stub: returns null until the driver_carrier_matches table is built
- * (separate session). The matchDriver engine treats null as "first match
- * is right now," which means a brand-new Tier 1 match is in its 24-hour
- * exclusivity window. Replace with a real DB lookup when the matches
- * table lands.
- */
-export const defaultGetFirstMatchTime: GetFirstMatchTime = async () => null;
+// Earliest matched_at for (driver, carrier) — drives Tier 1 24-hour
+// exclusivity windows. The matches table records every (driver, job)
+// pair the first time we surface it, so for a given carrier we just
+// want the oldest impression across any of that carrier's jobs.
+export const defaultGetFirstMatchTime: GetFirstMatchTime = async (
+  driverId,
+  carrierId,
+) => {
+  const row = await db.query.driverCarrierMatches.findFirst({
+    where: and(
+      eq(driverCarrierMatches.driverId, driverId),
+      eq(driverCarrierMatches.carrierId, carrierId),
+    ),
+    orderBy: [asc(driverCarrierMatches.matchedAt)],
+    columns: { matchedAt: true },
+  });
+  return row?.matchedAt ?? null;
+};
