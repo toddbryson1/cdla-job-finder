@@ -1,10 +1,12 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { eq } from "drizzle-orm";
 import { db } from "@/db/client";
 import { drivers, zipCodes } from "@/db/schema";
 import { matchDriver } from "@/lib/matching";
 import { loadDisplayExtras } from "@/lib/match-display-data";
+import { getSessionState } from "@/lib/stytch/session";
 import { MatchCard } from "@/components/MatchCard";
 import { EmptyMatches } from "@/components/EmptyMatches";
 
@@ -24,6 +26,14 @@ interface PageProps {
 export default async function MatchesPage({ params }: PageProps) {
   const { driverId } = await params;
 
+  // Server-side session verification. The proxy already does an optimistic
+  // cookie-presence check; this is the real Stytch validation. If the cookie
+  // is missing or invalid, send back to /login.
+  const session = await getSessionState();
+  if (session.kind !== "ok") {
+    redirect(`/login?redirect=${encodeURIComponent(`/matches/${driverId}`)}`);
+  }
+
   if (!UUID_RE.test(driverId)) {
     return <ProfileNotFound />;
   }
@@ -34,6 +44,13 @@ export default async function MatchesPage({ params }: PageProps) {
 
   if (!driver) {
     return <ProfileNotFound />;
+  }
+
+  // Driver identity check (attorney addendum Q10): a magic-link session can
+  // only view matches for the email it authenticated as. A leaked or guessed
+  // driver UUID is useless without the matching email.
+  if (driver.email.toLowerCase() !== session.email) {
+    return <WrongDriverForSession />;
   }
 
   if (!driver.homeZip) {
@@ -146,6 +163,32 @@ function ProfileNotFound() {
           className="inline-flex h-11 items-center justify-center rounded-md border border-brand-rule bg-white px-5 text-sm font-medium text-brand-ink hover:bg-brand-surface"
         >
           Start a new intake
+        </Link>
+      </div>
+    </Shell>
+  );
+}
+
+function WrongDriverForSession() {
+  return (
+    <Shell>
+      <header className="mb-2">
+        <p className="text-sm font-medium text-brand-medium">CDLA.jobs</p>
+        <h1 className="mt-1 text-3xl font-semibold tracking-tight text-brand-ink">
+          That is not your profile.
+        </h1>
+        <p className="mt-3 text-base leading-7 text-brand-ink">
+          You are signed in, but the link points to someone else&rsquo;s matches.
+          If you are trying to see your own, sign in with the email you used
+          when you filled out your intake.
+        </p>
+      </header>
+      <div className="mt-6 flex flex-wrap gap-3">
+        <Link
+          href="/login"
+          className="inline-flex h-11 items-center justify-center rounded-md bg-brand-deep px-5 text-sm font-semibold text-white hover:bg-brand-medium"
+        >
+          Sign in with the right email
         </Link>
       </div>
     </Shell>
