@@ -212,7 +212,7 @@ export const drivers = pgTable(
       .default(sql`gen_random_uuid()`),
     firstName: text("first_name").notNull(),
     lastName: text("last_name").notNull(),
-    email: text("email").notNull(),
+    email: text("email").notNull().unique(),
     phone: text("phone").notNull(),
 
     // Geographic
@@ -292,4 +292,46 @@ export const zipCodes = pgTable(
     lng: numeric("lng", { precision: 9, scale: 6 }).notNull(),
   },
   (t) => [index("zip_codes_state_idx").on(t.state)],
+);
+
+// Persistent record of (driver, job) matches. One row per pair; matched_at
+// is when the driver first saw this match. Drives Tier 1 exclusivity
+// (getFirstMatchTime) and aggregate landing-page stats.
+export const driverCarrierMatches = pgTable(
+  "driver_carrier_matches",
+  {
+    id: uuid("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    driverId: uuid("driver_id")
+      .references(() => drivers.id, { onDelete: "cascade" })
+      .notNull(),
+    jobId: uuid("job_id")
+      .references(() => carrierJobs.id, { onDelete: "cascade" })
+      .notNull(),
+    carrierId: uuid("carrier_id")
+      .references(() => carriers.id, { onDelete: "cascade" })
+      .notNull(),
+    matchedAt: timestamp("matched_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    softRankScore: numeric("soft_rank_score", { precision: 6, scale: 3 }),
+    distanceMilesFromDriverHome: numeric("distance_miles_from_driver_home", {
+      precision: 7,
+      scale: 1,
+    }),
+  },
+  (t) => [
+    index("driver_carrier_matches_driver_matched_idx").on(
+      t.driverId,
+      t.matchedAt,
+    ),
+    index("driver_carrier_matches_driver_carrier_idx").on(
+      t.driverId,
+      t.carrierId,
+      t.matchedAt,
+    ),
+    index("driver_carrier_matches_job_idx").on(t.jobId),
+    index("driver_carrier_matches_matched_at_idx").on(t.matchedAt),
+  ],
 );

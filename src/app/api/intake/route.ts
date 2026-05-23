@@ -64,40 +64,51 @@ export async function POST(request: Request) {
   }
 
   try {
+    // Upsert on email — one driver row per email. Re-submits update the
+    // existing row (Stage 2 consent fields and timestamps are preserved
+    // because we don't set them here).
+    const values = {
+      firstName: d.firstName,
+      lastName: d.lastName,
+      email: d.email,
+      phone: d.phone,
+      homeZip: d.homeZip,
+      homeLat: zip.lat,
+      homeLng: zip.lng,
+      cdlState: d.cdlState,
+      yearsHeld: String(d.yearsHeld),
+      equipmentRun: d.equipmentRun,
+      endorsements: d.endorsements,
+      otrYears: String(d.otrYears),
+      desiredEquipment: d.desiredEquipment,
+      desiredRegions: d.desiredRegions,
+      homeTime: d.homeTime,
+      minWeeklyPay: d.minWeeklyPay,
+      willingToRelocate: d.willingToRelocate,
+      accidents3yrCount: d.accidents3yrCount,
+      accidentsDetails: d.accidentsDetails,
+      tickets3yrCount: d.tickets3yrCount,
+      duiEver: d.duiEver,
+      duiMostRecentDate: tryParseDuiDate(d.duiMostRecentDate),
+      felonyEver: d.felonyEver,
+      felonyDetails: d.felonyDetails,
+      terminatedFromAnyOfLast3Employers: d.terminatedFromAnyOfLast3Employers,
+      terminationDetails: d.terminationDetails,
+      failedDotTest: d.failedDotTest,
+      sapStatus: d.sapStatus,
+      attestAccurate: d.attestAccurate,
+      consentToShare: d.consentToShare,
+      smsOptIn: d.smsOptIn,
+    };
+    // Strip immutable / preserved-on-update fields from the update set.
+    const { email: _email, ...updateValues } = values;
+    void _email;
     const [row] = await db
       .insert(drivers)
-      .values({
-        firstName: d.firstName,
-        lastName: d.lastName,
-        email: d.email,
-        phone: d.phone,
-        homeZip: d.homeZip,
-        homeLat: zip.lat,
-        homeLng: zip.lng,
-        cdlState: d.cdlState,
-        yearsHeld: String(d.yearsHeld),
-        equipmentRun: d.equipmentRun,
-        endorsements: d.endorsements,
-        otrYears: String(d.otrYears),
-        desiredEquipment: d.desiredEquipment,
-        desiredRegions: d.desiredRegions,
-        homeTime: d.homeTime,
-        minWeeklyPay: d.minWeeklyPay,
-        willingToRelocate: d.willingToRelocate,
-        accidents3yrCount: d.accidents3yrCount,
-        accidentsDetails: d.accidentsDetails,
-        tickets3yrCount: d.tickets3yrCount,
-        duiEver: d.duiEver,
-        duiMostRecentDate: tryParseDuiDate(d.duiMostRecentDate),
-        felonyEver: d.felonyEver,
-        felonyDetails: d.felonyDetails,
-        terminatedFromAnyOfLast3Employers: d.terminatedFromAnyOfLast3Employers,
-        terminationDetails: d.terminationDetails,
-        failedDotTest: d.failedDotTest,
-        sapStatus: d.sapStatus,
-        attestAccurate: d.attestAccurate,
-        consentToShare: d.consentToShare,
-        smsOptIn: d.smsOptIn,
+      .values(values)
+      .onConflictDoUpdate({
+        target: drivers.email,
+        set: updateValues,
       })
       .returning({ id: drivers.id });
 
