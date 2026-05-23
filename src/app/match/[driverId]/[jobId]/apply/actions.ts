@@ -48,7 +48,7 @@ export async function submitConsent(
   jobId: string,
   formData: FormData,
 ) {
-  const { job } = await authorize(driverId, jobId);
+  const { driver, job } = await authorize(driverId, jobId);
   const parsed = consentSchema.parse({
     tcpa: formData.get("tcpa") ?? undefined,
   });
@@ -63,7 +63,34 @@ export async function submitConsent(
     })
     .where(eq(drivers.id, driverId));
 
-  redirect(`/match/${driverId}/${jobId}/apply?step=questions`);
+  // Skip the questions step if intake already captured the Stage 2 safety
+  // answers. Re-asking is annoying and confuses drivers ("I already told you
+  // this"). The field schema treats these as Stage 2 fields, but our intake
+  // form has been collecting them at Stage 1 — so for those drivers we go
+  // straight to qualification.
+  const haveStage2Answers =
+    driver.tickets3yrCount != null &&
+    driver.accidents3yrCount != null &&
+    driver.duiEver != null &&
+    driver.felonyEver != null;
+
+  // accidents_3yr_at_fault_count isn't collected at intake yet; backfill to
+  // 0 when accidents = 0 so we can run qualification without asking.
+  const skipQuestions =
+    haveStage2Answers &&
+    (driver.accidents3yrAtFaultCount != null ||
+      driver.accidents3yrCount === 0);
+
+  if (skipQuestions && driver.accidents3yrAtFaultCount == null) {
+    await db
+      .update(drivers)
+      .set({ accidents3yrAtFaultCount: 0 })
+      .where(eq(drivers.id, driverId));
+  }
+
+  redirect(
+    `/match/${driverId}/${jobId}/apply?step=${skipQuestions ? "result" : "questions"}`,
+  );
 }
 
 const questionsSchema = z
