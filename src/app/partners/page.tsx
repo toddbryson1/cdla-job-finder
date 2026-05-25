@@ -21,9 +21,52 @@ export default function PartnersIndex() {
     <CarrierShell>
       <Hero />
       <NotAJobBoard />
+      <WhereDriversComeFrom />
       <Tiers />
       <ClosingNote />
     </CarrierShell>
+  );
+}
+
+function WhereDriversComeFrom() {
+  return (
+    <Section heading="Where the drivers come from.">
+      <p className="max-w-3xl text-base leading-7 text-brand-ink">
+        We don&rsquo;t wait for drivers to find your careers page. We bring
+        them. Two channels, both pointed at the matching engine:
+      </p>
+
+      <div className="mt-6 grid gap-4 sm:grid-cols-2">
+        <div className="rounded-lg border border-brand-rule bg-white p-5">
+          <p className="text-sm font-semibold text-brand-deep">
+            Organic SEO &amp; paid advertising
+          </p>
+          <p className="mt-2 text-sm leading-6 text-brand-ink">
+            We rank for the searches drivers actually run — equipment +
+            region combinations carriers can&rsquo;t economically run on
+            individually. Paid ads run against your specific jobs on top of
+            organic rankings.
+          </p>
+        </div>
+        <div className="rounded-lg border border-brand-rule bg-white p-5">
+          <p className="text-sm font-semibold text-brand-deep">
+            Original driver content
+          </p>
+          <p className="mt-2 text-sm leading-6 text-brand-ink">
+            YouTube long-form, TikTok and Instagram short-form, Facebook
+            threads and groups. Pay trends by lane, equipment shifts,
+            freight-market reality. Drivers come for the content; they
+            complete intake because they&rsquo;re already in our world.
+          </p>
+        </div>
+      </div>
+
+      <p className="mt-6 max-w-3xl text-sm leading-6 text-brand-ink">
+        The output: drivers who match your stated criteria, routed to your
+        ATS, without you running paid spend across five different job boards
+        yourself.
+      </p>
+    </Section>
   );
 }
 
