@@ -1,9 +1,10 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { SiteShell } from "@/components/SiteShell";
 
 // Copy is locked verbatim per SPEC_homepage-copy-v1.md. Do not paraphrase
 // headlines or microcopy. Sections render top-to-bottom per spec §3:
-// hero → how it works → why different → for carriers → footer.
+// hero → how it works → why different → for carriers → footer (in shell).
 //
 // Debbie (the chatbox AI per SPEC_conversational-ai-intake-v1.md) is not
 // built yet. The hero renders her opening message as static content and
@@ -27,48 +28,12 @@ export const metadata: Metadata = {
 
 export default function HomePage() {
   return (
-    <div className="min-h-screen bg-white text-brand-ink">
-      <SiteHeader />
-      <main>
-        <Hero />
-        <HowItWorks />
-        <WhyDifferent />
-        <ForCarriers />
-      </main>
-      <SiteFooter />
-    </div>
-  );
-}
-
-function SiteHeader() {
-  return (
-    <header className="border-b border-brand-rule bg-white">
-      <div className="mx-auto flex max-w-6xl items-center justify-between px-5 py-4">
-        <Link href="/" className="text-base font-semibold text-brand-deep">
-          CDLA.jobs
-        </Link>
-        <nav className="flex items-center gap-5 text-sm">
-          <Link
-            href="/partners"
-            className="text-brand-muted hover:text-brand-ink"
-          >
-            For carriers
-          </Link>
-          <Link
-            href="/login"
-            className="text-brand-muted hover:text-brand-ink"
-          >
-            Sign in
-          </Link>
-          <Link
-            href="/intake"
-            className="inline-flex h-9 items-center rounded-md bg-brand-deep px-4 text-xs font-semibold text-white hover:bg-brand-medium"
-          >
-            Start
-          </Link>
-        </nav>
-      </div>
-    </header>
+    <SiteShell>
+      <Hero />
+      <HowItWorks />
+      <WhyDifferent />
+      <ForCarriers />
+    </SiteShell>
   );
 }
 
@@ -265,107 +230,3 @@ function ForCarriers() {
   );
 }
 
-function SiteFooter() {
-  return (
-    <footer className="border-t border-brand-rule bg-white">
-      <div className="mx-auto max-w-6xl px-5 py-12 text-sm">
-        <div className="grid grid-cols-1 gap-8 sm:grid-cols-2 lg:grid-cols-4">
-          <div>
-            <p className="font-semibold text-brand-deep">CDLA.jobs</p>
-            <p className="mt-2 text-brand-muted">
-              Class A driver matching. Built for drivers.
-            </p>
-          </div>
-          <div>
-            <p className="font-semibold text-brand-ink">For drivers</p>
-            <ul className="mt-2 space-y-1.5 text-brand-muted">
-              <li>
-                <Link href="/#how-it-works" className="hover:text-brand-ink">
-                  How it works
-                </Link>
-              </li>
-              <li>
-                <Link href="/" className="hover:text-brand-ink">
-                  Talk to Debbie
-                </Link>
-              </li>
-              <li>
-                <Link href="/intake" className="hover:text-brand-ink">
-                  Start the form
-                </Link>
-              </li>
-              {/* TODO: build /faq once decided per spec §10.4 */}
-              <li>
-                <span className="text-brand-muted/60">FAQ (coming)</span>
-              </li>
-            </ul>
-          </div>
-          <div>
-            <p className="font-semibold text-brand-ink">For carriers</p>
-            <ul className="mt-2 space-y-1.5 text-brand-muted">
-              <li>
-                <Link
-                  href="/partners/integration"
-                  className="hover:text-brand-ink"
-                >
-                  Integration
-                </Link>
-              </li>
-              <li>
-                <Link
-                  href="/partners/exclusivity"
-                  className="hover:text-brand-ink"
-                >
-                  Exclusivity
-                </Link>
-              </li>
-              <li>
-                <a
-                  href="mailto:sales@cdla.jobs"
-                  className="hover:text-brand-ink"
-                >
-                  Contact
-                </a>
-              </li>
-            </ul>
-          </div>
-          <div>
-            <p className="font-semibold text-brand-ink">Company &amp; legal</p>
-            <ul className="mt-2 space-y-1.5 text-brand-muted">
-              {/* TODO: real pages pending — spec §10.2 / §10.3 */}
-              <li>
-                <span className="text-brand-muted/60">About (coming)</span>
-              </li>
-              <li>
-                <span className="text-brand-muted/60">
-                  Privacy Policy (coming)
-                </span>
-              </li>
-              <li>
-                <span className="text-brand-muted/60">
-                  Terms of Service (coming)
-                </span>
-              </li>
-            </ul>
-          </div>
-        </div>
-
-        {/* Beta acknowledgment per spec §8.6 — soft, honest, no badge. */}
-        <p className="mt-10 border-t border-brand-rule pt-6 text-brand-ink">
-          CDLA.jobs is new. We&rsquo;re matching drivers and adding carriers
-          daily.
-        </p>
-
-        {/* Legal row per spec §8.7. PHTP address placeholder per §10.1. */}
-        <p className="mt-4 text-xs leading-5 text-brand-muted">
-          &copy; {new Date().getFullYear()} CDLA.jobs.{" "}
-          {/* TODO: replace with PHTP physical address (spec §10.1) or
-              CDLA.jobs entity address once formalized. */}
-          [Mailing address &mdash; pending]. CDLA.jobs sends SMS and email to
-          drivers who consent to receive them. Reply STOP to any text to opt
-          out. Click unsubscribe in any email to opt out.
-        </p>
-      </div>
-    </footer>
-  );
-}
