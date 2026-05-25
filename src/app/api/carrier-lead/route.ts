@@ -1,11 +1,16 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import {
+  GhlError,
+  isGhlConfigured,
+  sendEmail,
+  upsertContact,
+} from "@/lib/ghl/client";
+import { carrierBriefEmail } from "@/lib/ghl/carrierBriefEmail";
 
 export const runtime = "nodejs";
 
-// TODO: rate-limit this endpoint (per IP + per email) before launch. For
-// now we rely on the form being one-page and the gated PDF being uploaded
-// inside GHL — a malicious actor sees the brief by submitting once.
+// TODO: rate-limit this endpoint (per IP + per email) before launch.
 
 const FLEET_SIZE_VALUES = ["1-10", "11-50", "51-250", "250+"] as const;
 
@@ -29,7 +34,6 @@ const carrierLeadSchema = z.object({
     .transform((v) => (v && v.length > 0 ? v : undefined)),
   fleetSize: z.enum(FLEET_SIZE_VALUES),
   // Honeypot — bots tend to fill every visible-looking input.
-  // We reject any submission that puts a value in here.
   website: z.string().max(0).optional(),
 });
 
@@ -57,30 +61,49 @@ export async function POST(request: Request) {
 
   const lead = parsed.data;
   if (lead.website) {
-    // Honeypot trip — respond OK so the bot doesn't learn anything, but
-    // don't actually forward to GHL.
     console.warn("[carrier-lead] honeypot triggered for", lead.email);
     return NextResponse.json({ ok: true });
   }
 
+  // Direct GHL API path is the primary; the inbound webhook is kept as a
+  // fallback in case the token is unset or the API call fails after the
+  // upsert succeeds.
+  if (isGhlConfigured()) {
+    try {
+      await sendViaGhlApi(lead);
+      console.log(
+        `[carrier-lead] ${lead.fullName} <${lead.email}> @ ${lead.carrierName} (fleet ${lead.fleetSize}) sent via GHL API`,
+      );
+      return NextResponse.json({ ok: true, email: lead.email });
+    } catch (err) {
+      const stage =
+        err instanceof GhlError ? err.message : String(err);
+      console.error("[carrier-lead] GHL API path failed:", stage, err);
+      // Fall through to webhook fallback below.
+    }
+  }
+
+  // Fallback: forward to the GHL inbound webhook so the workflow handles it.
   const webhookUrl = process.env.GHL_CARRIER_LEAD_WEBHOOK_URL;
   if (!webhookUrl) {
-    console.error("[carrier-lead] GHL_CARRIER_LEAD_WEBHOOK_URL is not set");
+    console.error(
+      "[carrier-lead] both GHL API and webhook are unconfigured / failed",
+    );
     return NextResponse.json(
-      { error: "Lead capture is not configured on the server." },
-      { status: 500 },
+      {
+        error:
+          "We could not send your request right now. Try again, or email sales@cdla.jobs.",
+      },
+      { status: 502 },
     );
   }
 
-  // Forward to the GHL inbound webhook. GHL maps the JSON keys to contact
-  // fields inside the workflow trigger config — keep the keys stable and
-  // descriptive so the GHL workflow can reference them without surprises.
   const payload = {
     source: "cdla.jobs /partners/brief",
     submittedAt: new Date().toISOString(),
     fullName: lead.fullName,
-    firstName: lead.fullName.split(/\s+/)[0] ?? lead.fullName,
-    lastName: lead.fullName.split(/\s+/).slice(1).join(" "),
+    firstName: firstNameOf(lead.fullName),
+    lastName: lastNameOf(lead.fullName),
     carrierName: lead.carrierName,
     email: lead.email,
     phone: lead.phone,
@@ -97,7 +120,7 @@ export async function POST(request: Request) {
     if (!res.ok) {
       const body = await res.text().catch(() => "");
       console.error(
-        "[carrier-lead] GHL webhook returned non-2xx:",
+        "[carrier-lead] GHL webhook fallback non-2xx:",
         res.status,
         body.slice(0, 500),
       );
@@ -110,7 +133,7 @@ export async function POST(request: Request) {
       );
     }
   } catch (err) {
-    console.error("[carrier-lead] GHL webhook fetch failed:", err);
+    console.error("[carrier-lead] GHL webhook fallback fetch failed:", err);
     return NextResponse.json(
       {
         error:
@@ -120,9 +143,43 @@ export async function POST(request: Request) {
     );
   }
 
-  console.log(
-    `[carrier-lead] ${lead.fullName} <${lead.email}> @ ${lead.carrierName} (fleet ${lead.fleetSize}) forwarded to GHL`,
-  );
-
   return NextResponse.json({ ok: true, email: lead.email });
+}
+
+async function sendViaGhlApi(
+  lead: z.infer<typeof carrierLeadSchema>,
+): Promise<void> {
+  const briefPdfUrl = process.env.GHL_BRIEF_PDF_URL;
+  const upsert = await upsertContact({
+    email: lead.email,
+    firstName: firstNameOf(lead.fullName),
+    lastName: lastNameOf(lead.fullName),
+    phone: lead.phone,
+    companyName: lead.carrierName,
+    source: "cdla.jobs /partners/brief",
+    tags: ["carrier-brief-requested", `fleet-${lead.fleetSize}`],
+  });
+
+  const { subject, html } = carrierBriefEmail({
+    firstName: firstNameOf(lead.fullName),
+    carrierName: lead.carrierName,
+    hasAttachment: Boolean(briefPdfUrl),
+    fallbackPdfUrl: briefPdfUrl,
+  });
+
+  await sendEmail({
+    contactId: upsert.contactId,
+    subject,
+    html,
+    attachments: briefPdfUrl ? [briefPdfUrl] : undefined,
+  });
+}
+
+function firstNameOf(full: string): string {
+  return full.trim().split(/\s+/)[0] ?? full.trim();
+}
+
+function lastNameOf(full: string): string {
+  const parts = full.trim().split(/\s+/);
+  return parts.slice(1).join(" ");
 }
