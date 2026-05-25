@@ -42,6 +42,8 @@ export function carrierBriefEmail({
 
     <p>Quick context ${carrierMention}: we&rsquo;re not a job board. We pull an API feed of the jobs already on your careers page, AI-prescreen drivers against your hiring criteria, and deliver matches into your ATS (Tenstreet by default, integration configured by us).</p>
 
+    <p>On the driver side, we drive traffic two ways: organic SEO and paid advertising on your jobs, plus original content built for drivers &mdash; long-form on YouTube, short-form on TikTok and Instagram, threads and groups on Facebook &mdash; covering pay trends, lane data, equipment shifts, and what&rsquo;s actually happening in the freight market. The content brings drivers in. The matching engine routes the right ones to you.</p>
+
     <p>Pricing is built to replace what carriers spend on the job boards, not stack on top of it:</p>
 
     <ul style="margin: 12px 0; padding-left: 22px;">
