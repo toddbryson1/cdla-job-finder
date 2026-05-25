@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { ParsedSlug } from "@/lib/slugs";
 import type { PageData } from "@/lib/page-data";
+import { STANDARD_FAQ } from "@/lib/driver-faq";
 
 interface Props {
   parsed: ParsedSlug;
@@ -191,37 +192,6 @@ function Pay({ parsed, data }: Props) {
     </section>
   );
 }
-
-const STANDARD_FAQ: Array<{ q: string; a: string }> = [
-  {
-    q: "Is this free?",
-    a: "Yes. CDLA.jobs is free for drivers. Always will be. Carriers pay us if they want priority access — drivers never do.",
-  },
-  {
-    q: "How is this different from Indeed?",
-    a: "We don't sell your info to every recruiter on earth. You decide which carriers see your information. We don't show you jobs that don't fit what you said you wanted. We don't bombard you. If a job board feels like it's working against you, it probably is. We're built the other way.",
-  },
-  {
-    q: "How long does it take to fill out the intake?",
-    a: "About 6 minutes if you know your own work history. We ask CDL details, equipment experience, what you want, and the safety stuff carriers ask on every application. We ask once. Carriers ask it every single time.",
-  },
-  {
-    q: "What happens after I submit?",
-    a: "Within a few minutes, we run your profile against every carrier in our system. You'll get an email with your matches. You pick which carriers to share your info with. Their recruiters contact you directly to start their hiring process. We get out of the way after that.",
-  },
-  {
-    q: "Do you do my background check?",
-    a: "No. That's the carrier's job, not ours. When a carrier you picked wants to consider you, they'll send you their full application with the background check forms inside it. You sign those with them. We don't run PSP reports. We don't pull MVRs. We don't contact your old employers.",
-  },
-  {
-    q: "What if I don't see matches I like?",
-    a: "That can happen. Sometimes the carriers we work with don't have a perfect fit at the moment. We keep watching for matches as new carriers join and new positions open up. If something matches what you wanted, we email you. You don't have to keep checking.",
-  },
-  {
-    q: "Can I stop the emails?",
-    a: "Yes. Reply STOP to any text. Click unsubscribe on any email. Or just tell us. We stop. Forever. No questions, no 'are you sure' loop.",
-  },
-];
 
 function FAQ({ parsed }: { parsed: ParsedSlug }) {
   const items = [...STANDARD_FAQ];

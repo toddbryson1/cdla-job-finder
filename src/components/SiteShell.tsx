@@ -78,9 +78,10 @@ function SiteFooter() {
                   Start the form
                 </Link>
               </li>
-              {/* TODO: build /faq once decided per homepage spec §10.4 */}
               <li>
-                <span className="text-brand-muted/60">FAQ (coming)</span>
+                <Link href="/faq" className="hover:text-brand-ink">
+                  FAQ
+                </Link>
               </li>
             </ul>
           </div>
