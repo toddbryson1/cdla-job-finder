@@ -45,6 +45,12 @@ function NotAJobBoard() {
           The prescreening is the product.
         </p>
         <p>
+          Matches the driver releases to you land in your ATS as
+          prequalifications — Tenstreet by default, with the integration
+          configured by us — so your team picks them up in the workflow they
+          already use. No new tool to learn, no second inbox to check.
+        </p>
+        <p>
           Pricing is built to replace what carriers spend on the job boards,
           not stack on top of it. Lower advertising spend leaves more room to
           pay drivers better — which is the actual fix for a hiring market
