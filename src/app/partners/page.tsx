@@ -20,9 +20,39 @@ export default function PartnersIndex() {
   return (
     <CarrierShell>
       <Hero />
+      <NotAJobBoard />
       <Tiers />
       <ClosingNote />
     </CarrierShell>
+  );
+}
+
+function NotAJobBoard() {
+  return (
+    <Section heading="This isn&rsquo;t a job board.">
+      <div className="max-w-3xl space-y-4 text-base leading-7 text-brand-ink">
+        <p>
+          At least not in the way you&rsquo;re used to. You don&rsquo;t post
+          jobs on CDLA.jobs. We take an API feed of the jobs already on your
+          website — as long as your careers page lists current openings,
+          drivers see those roles in their matches.
+        </p>
+        <p>
+          The matching engine uses AI and automation to compare every driver
+          against your hiring criteria: location, experience, equipment, what
+          they disclosed about their MVR, and their criminal background.
+          Drivers who don&rsquo;t clear your filters never reach your inbox.
+          The prescreening is the product.
+        </p>
+        <p>
+          Pricing is built to replace what carriers spend on the job boards,
+          not stack on top of it. Lower advertising spend leaves more room to
+          pay drivers better — which is the actual fix for a hiring market
+          that&rsquo;s been paying too much to advertise the same jobs and
+          not enough to fill the trucks.
+        </p>
+      </div>
+    </Section>
   );
 }
 
