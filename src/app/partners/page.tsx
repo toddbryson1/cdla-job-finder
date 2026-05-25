@@ -176,7 +176,7 @@ function ClosingNote() {
           Talk to sales
         </a>
         <a
-          href="mailto:sales@cdla.jobs?subject=Request%20carrier%20brief"
+          href="/partners/brief"
           className="inline-flex h-11 items-center justify-center rounded-md border border-brand-rule bg-white px-5 text-sm font-medium text-brand-ink hover:bg-brand-surface"
         >
           Download the carrier brief (PDF)

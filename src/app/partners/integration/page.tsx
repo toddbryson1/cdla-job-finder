@@ -103,7 +103,7 @@ function Hero() {
           </a>
           {/* TODO: wire to real PDF export of the carrier pitch deck (spec §9.2) */}
           <a
-            href="mailto:sales@cdla.jobs?subject=Request%20carrier%20brief"
+            href="/partners/brief"
             className="inline-flex h-11 items-center justify-center rounded-md border border-brand-rule bg-white px-5 text-sm font-medium text-brand-ink hover:bg-brand-surface"
           >
             Download the carrier brief (PDF)
@@ -285,7 +285,7 @@ function SecondaryCtaSection() {
           Schedule a hiring criteria call
         </a>
         <a
-          href="mailto:sales@cdla.jobs?subject=Request%20carrier%20brief"
+          href="/partners/brief"
           className="inline-flex h-11 items-center justify-center rounded-md border border-brand-rule bg-white px-5 text-sm font-medium text-brand-ink hover:bg-brand-surface"
         >
           Download the carrier brief (PDF)
