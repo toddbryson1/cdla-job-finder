@@ -294,6 +294,37 @@ export const zipCodes = pgTable(
   (t) => [index("zip_codes_state_idx").on(t.state)],
 );
 
+// Scheduled-send rows for the 6-email driver nurture sequence. One row
+// per (driver, email_index 1..6), inserted at intake time with
+// scheduled_for = intake_date + (30 * email_index) days. The daily
+// /api/cron/nurture endpoint picks up rows where scheduled_for <= now()
+// AND status='pending', sends via GHL, flips status to sent/skipped/failed.
+export const driverNurtureSends = pgTable(
+  "driver_nurture_sends",
+  {
+    id: uuid("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    driverId: uuid("driver_id")
+      .references(() => drivers.id, { onDelete: "cascade" })
+      .notNull(),
+    emailIndex: integer("email_index").notNull(),
+    scheduledFor: timestamp("scheduled_for", { withTimezone: true }).notNull(),
+    sentAt: timestamp("sent_at", { withTimezone: true }),
+    status: text("status").notNull().default("pending"),
+    skipReason: text("skip_reason"),
+    ghlMessageId: text("ghl_message_id"),
+    errorMessage: text("error_message"),
+  },
+  (t) => [
+    index("driver_nurture_sends_status_scheduled_idx").on(
+      t.status,
+      t.scheduledFor,
+    ),
+    index("driver_nurture_sends_driver_idx").on(t.driverId),
+  ],
+);
+
 // Tracks every (driver, job) Stage 2 pursuit. Created/updated when the
 // driver consents on /match/[driverId]/[jobId]/apply. Drives the
 // "you pursued this" badge on the matches list and any future
