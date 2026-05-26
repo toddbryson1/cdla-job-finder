@@ -11,6 +11,7 @@ import {
   uuid,
   pgEnum,
   index,
+  uniqueIndex,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 
@@ -185,6 +186,11 @@ export const carrierJobs = pgTable(
       .default("unverified"),
     dataQuality: dataQualityEnum("data_quality").notNull().default("partial"),
 
+    // External source identifier (Smartsheet row id, Tenstreet job id, etc.)
+    // Used to upsert on re-sync from third-party feeds. Partial unique
+    // index — NULL is allowed (existing seed rows have no external source).
+    externalSourceId: text("external_source_id"),
+
     // Display fields
     displayPayRangeMinWeeklyUsd: integer("display_pay_range_min_weekly_usd"),
     displayPayRangeMaxWeeklyUsd: integer("display_pay_range_max_weekly_usd"),
@@ -201,6 +207,9 @@ export const carrierJobs = pgTable(
     index("carrier_jobs_status_idx").on(t.status),
     index("carrier_jobs_equipment_idx").on(t.equipment),
     index("carrier_jobs_domicile_lat_lng_idx").on(t.domicileLat, t.domicileLng),
+    uniqueIndex("carrier_jobs_external_source_uniq")
+      .on(t.externalSourceId)
+      .where(sql`${t.externalSourceId} IS NOT NULL`),
   ],
 );
 
