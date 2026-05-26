@@ -9,6 +9,13 @@ import {
   isStytchConfigured,
   MAGIC_LINK_EXPIRATION_MINUTES,
 } from "@/lib/stytch/client";
+import { matchDriver } from "@/lib/matching";
+import {
+  isGhlConfigured,
+  sendEmail,
+  upsertContact,
+} from "@/lib/ghl/client";
+import { candidateEmail } from "@/lib/ghl/candidateEmail";
 
 export const runtime = "nodejs";
 
@@ -140,6 +147,27 @@ export async function POST(request: Request) {
       }
     }
 
+    // Candidate email per
+    // SPEC_candidate-email-and-reverse-match-alerts-v1.md §2 — sent
+    // immediately after Stage 1 consent + matching. Two-email pattern for
+    // now: Stytch handles auth (above), GHL handles the match-summary
+    // candidate email. Best-effort; any failure logs but doesn't block
+    // intake. The Stytch token is NOT embedded in this email; the user
+    // clicks "see my matches" and hits the auth gate, then signs in via
+    // the separate Stytch magic-link email.
+    if (row?.id && isGhlConfigured()) {
+      void sendCandidateEmail({
+        driverId: row.id,
+        firstName: d.firstName,
+        lastName: d.lastName,
+        email: d.email,
+        phone: d.phone,
+        cdlState: d.cdlState,
+      }).catch((err) => {
+        console.error("[intake] candidate email send failed:", err);
+      });
+    }
+
     return NextResponse.json({
       ok: true,
       driverId: row?.id,
@@ -153,4 +181,73 @@ export async function POST(request: Request) {
       { status: 500 },
     );
   }
+}
+
+// Candidate email send — runs matching, upserts GHL contact, sends the
+// match-summary email. Pulled out of the request body so it can fail
+// silently without breaking the intake response.
+async function sendCandidateEmail(input: {
+  driverId: string;
+  firstName: string;
+  lastName: string;
+  email: string;
+  phone: string;
+  cdlState: string;
+}): Promise<void> {
+  // Run the matching engine. If it errors, we abort the candidate email
+  // rather than send a stale or wrong-counted message (spec §2.9).
+  const result = await matchDriver(input.driverId);
+  const matchCount = result.matches.length;
+  const topCarrierNames = uniqueCarrierNames(result.matches).slice(0, 3);
+
+  // Upsert as a GHL contact so we have a contactId to send to. Tag with
+  // the matched count bucket so GHL sequences can segment later.
+  const tag =
+    matchCount === 0
+      ? "driver-zero-matches"
+      : matchCount === 1
+        ? "driver-1-match"
+        : matchCount < 5
+          ? "driver-2to4-matches"
+          : "driver-5plus-matches";
+  const upserted = await upsertContact({
+    email: input.email,
+    firstName: input.firstName,
+    lastName: input.lastName,
+    phone: input.phone,
+    source: "cdla.jobs /intake",
+    tags: ["driver-intake-completed", tag],
+  });
+
+  const matchesUrl = `${appUrl()}/matches/${input.driverId}`;
+  const { subject, html } = candidateEmail({
+    firstName: input.firstName,
+    cdlState: input.cdlState,
+    matchCount,
+    topCarrierNames,
+    matchesUrl,
+  });
+
+  await sendEmail({
+    contactId: upserted.contactId,
+    subject,
+    html,
+  });
+
+  console.log(
+    `[intake] candidate email sent to ${input.email}: ${matchCount} matches`,
+  );
+}
+
+function uniqueCarrierNames(
+  matches: Array<{ carrierName: string }>,
+): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const m of matches) {
+    if (seen.has(m.carrierName)) continue;
+    seen.add(m.carrierName);
+    out.push(m.carrierName);
+  }
+  return out;
 }
