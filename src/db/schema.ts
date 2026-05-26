@@ -294,6 +294,45 @@ export const zipCodes = pgTable(
   (t) => [index("zip_codes_state_idx").on(t.state)],
 );
 
+// Tracks every (driver, job) Stage 2 pursuit. Created/updated when the
+// driver consents on /match/[driverId]/[jobId]/apply. Drives the
+// "you pursued this" badge on the matches list and any future
+// per-application analytics. Replaces the single-most-recent fields on
+// drivers (stage_2_consent_carrier_id etc.) for history purposes — those
+// fields stay for quick latest-consent reads.
+export const driverCarrierApplications = pgTable(
+  "driver_carrier_applications",
+  {
+    id: uuid("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    driverId: uuid("driver_id")
+      .references(() => drivers.id, { onDelete: "cascade" })
+      .notNull(),
+    jobId: uuid("job_id")
+      .references(() => carrierJobs.id, { onDelete: "cascade" })
+      .notNull(),
+    carrierId: uuid("carrier_id")
+      .references(() => carriers.id, { onDelete: "cascade" })
+      .notNull(),
+    consentedAt: timestamp("consented_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    consentTextVersion: text("consent_text_version").notNull(),
+    tcpaOptIn: boolean("tcpa_opt_in").notNull().default(false),
+    lastQualified: boolean("last_qualified"),
+    lastQualifiedAt: timestamp("last_qualified_at", { withTimezone: true }),
+    lastQualificationReasons: text("last_qualification_reasons").array(),
+  },
+  (t) => [
+    index("driver_carrier_applications_driver_idx").on(
+      t.driverId,
+      t.consentedAt,
+    ),
+    index("driver_carrier_applications_carrier_idx").on(t.carrierId),
+  ],
+);
+
 // Persistent record of (driver, job) matches. One row per pair; matched_at
 // is when the driver first saw this match. Drives Tier 1 exclusivity
 // (getFirstMatchTime) and aggregate landing-page stats.

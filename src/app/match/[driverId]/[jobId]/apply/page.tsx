@@ -2,8 +2,14 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { eq } from "drizzle-orm";
+import { and } from "drizzle-orm";
 import { db } from "@/db/client";
-import { carrierJobs, carriers, drivers } from "@/db/schema";
+import {
+  carrierJobs,
+  carriers,
+  driverCarrierApplications,
+  drivers,
+} from "@/db/schema";
 import { getSessionState } from "@/lib/stytch/session";
 import { qualifyDriverForCarrier } from "@/lib/matching";
 import { submitConsent, submitSwiftConfirmation } from "./actions";
@@ -330,6 +336,27 @@ async function ResultScreen({
   };
 
   const result = await qualifyDriverForCarrier(driverId, jobId, stage2);
+
+  // Persist the qualification outcome on the per-application row so the
+  // matches page can show the right state on the badge ("Not a match" vs
+  // "You pursued this"). Best-effort: failures don't break the render.
+  try {
+    await db
+      .update(driverCarrierApplications)
+      .set({
+        lastQualified: result.qualifies,
+        lastQualifiedAt: new Date(),
+        lastQualificationReasons: result.reasons,
+      })
+      .where(
+        and(
+          eq(driverCarrierApplications.driverId, driverId),
+          eq(driverCarrierApplications.jobId, jobId),
+        ),
+      );
+  } catch (err) {
+    console.error("[apply] failed to persist qualification outcome:", err);
+  }
 
   if (result.qualifies) {
     return (

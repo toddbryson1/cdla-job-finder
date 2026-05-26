@@ -3,7 +3,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { eq } from "drizzle-orm";
 import { db } from "@/db/client";
-import { drivers, zipCodes } from "@/db/schema";
+import { driverCarrierApplications, drivers, zipCodes } from "@/db/schema";
 import { matchDriver } from "@/lib/matching";
 import { loadDisplayExtras } from "@/lib/match-display-data";
 import { getSessionState } from "@/lib/stytch/session";
@@ -73,6 +73,28 @@ export default async function MatchesPage({ params }: PageProps) {
   const result = await matchDriver(driverId);
   const extras = await loadDisplayExtras(result.matches.map((m) => m.jobId));
 
+  // Look up which (driver, job) pairs the driver has already pursued
+  // (consented through the Stage 2 flow). Used to badge the carrier card
+  // so the driver can tell what they've already engaged with.
+  const applications = await db.query.driverCarrierApplications.findMany({
+    where: eq(driverCarrierApplications.driverId, driverId),
+    columns: {
+      jobId: true,
+      consentedAt: true,
+      lastQualified: true,
+    },
+  });
+  const pursued = new Map<
+    string,
+    { consentedAt: Date; lastQualified: boolean | null }
+  >();
+  for (const a of applications) {
+    pursued.set(a.jobId, {
+      consentedAt: a.consentedAt,
+      lastQualified: a.lastQualified,
+    });
+  }
+
   return (
     <Shell>
       <Header
@@ -90,6 +112,7 @@ export default async function MatchesPage({ params }: PageProps) {
                 driverId={driverId}
                 match={m}
                 extras={extras.get(m.jobId)}
+                pursuit={pursued.get(m.jobId) ?? null}
               />
             </li>
           ))}

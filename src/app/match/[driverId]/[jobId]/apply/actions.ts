@@ -4,7 +4,11 @@ import { redirect } from "next/navigation";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db/client";
-import { carrierJobs, drivers } from "@/db/schema";
+import {
+  carrierJobs,
+  driverCarrierApplications,
+  drivers,
+} from "@/db/schema";
 import { getSessionState } from "@/lib/stytch/session";
 import { STAGE_2_CONSENT_TEXT_VERSION } from "./constants";
 
@@ -53,15 +57,42 @@ export async function submitConsent(
     tcpa: formData.get("tcpa") ?? undefined,
   });
 
+  const now = new Date();
+
+  // Persist most-recent consent on the driver row (legacy quick reference)
+  // AND write a per-application history row. The latter is what drives the
+  // "You pursued this" badge on /matches and any future analytics.
   await db
     .update(drivers)
     .set({
       stage2ConsentCarrierId: job.carrierId,
-      stage2ConsentAt: new Date(),
+      stage2ConsentAt: now,
       stage2ConsentTextVersion: STAGE_2_CONSENT_TEXT_VERSION,
       stage2TcpaOptIn: parsed.tcpa,
     })
     .where(eq(drivers.id, driverId));
+
+  await db
+    .insert(driverCarrierApplications)
+    .values({
+      driverId,
+      jobId,
+      carrierId: job.carrierId,
+      consentedAt: now,
+      consentTextVersion: STAGE_2_CONSENT_TEXT_VERSION,
+      tcpaOptIn: parsed.tcpa,
+    })
+    .onConflictDoUpdate({
+      target: [
+        driverCarrierApplications.driverId,
+        driverCarrierApplications.jobId,
+      ],
+      set: {
+        consentedAt: now,
+        consentTextVersion: STAGE_2_CONSENT_TEXT_VERSION,
+        tcpaOptIn: parsed.tcpa,
+      },
+    });
 
   // Skip the questions step if intake already captured the Stage 2 safety
   // answers. Re-asking is annoying and confuses drivers ("I already told you

@@ -57,6 +57,13 @@
       "when": 1780200000000,
       "tag": "0007_driver_carrier_matches",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1780300000000,
+      "tag": "0008_driver_carrier_applications",
+      "breakpoints": true
     }
   ]
 }

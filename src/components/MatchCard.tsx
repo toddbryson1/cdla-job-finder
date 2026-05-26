@@ -11,6 +11,15 @@ interface Props {
   driverId: string;
   match: Match;
   extras: MatchDisplayExtras | undefined;
+  /**
+   * Non-null if the driver has already pursued this carrier (consented
+   * through Stage 2). Drives the "You pursued this" badge and a softened
+   * CTA label so the driver knows where they left off.
+   */
+  pursuit: {
+    consentedAt: Date | string;
+    lastQualified: boolean | null;
+  } | null;
 }
 
 function equipmentLabel(slug: string): string {
@@ -58,7 +67,7 @@ function verificationNote(match: Match, lastVerifiedAt: Date | null): string | n
   return "We have not been able to verify this listing recently — details may have changed.";
 }
 
-export function MatchCard({ driverId, match, extras }: Props) {
+export function MatchCard({ driverId, match, extras, pursuit }: Props) {
   const [expanded, setExpanded] = useState(false);
   const pay = payLine(match);
   const distance = distanceLine(match);
@@ -66,9 +75,21 @@ export function MatchCard({ driverId, match, extras }: Props) {
   const vNote = verificationNote(match, extras?.lastVerifiedAt ?? null);
   const applyHref = `/match/${driverId}/${match.jobId}/apply`;
   const contentId = `match-${match.jobId}-detail`;
+  const pursuedDate =
+    pursuit && pursuit.consentedAt
+      ? new Date(pursuit.consentedAt).toLocaleDateString(undefined, {
+          month: "short",
+          day: "numeric",
+        })
+      : null;
 
   return (
-    <article className="rounded-2xl border border-brand-rule bg-white shadow-sm transition-shadow hover:shadow-md">
+    <article
+      className={
+        "rounded-2xl border bg-white shadow-sm transition-shadow hover:shadow-md " +
+        (pursuit ? "border-brand-medium/60" : "border-brand-rule")
+      }
+    >
       <button
         type="button"
         onClick={() => setExpanded((v) => !v)}
@@ -80,6 +101,14 @@ export function MatchCard({ driverId, match, extras }: Props) {
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-2">
               {match.label ? <MatchBadge label={match.label} /> : null}
+              {pursuit ? (
+                <span className="inline-flex items-center rounded-full bg-brand-medium/15 px-2.5 py-0.5 text-xs font-semibold text-brand-medium">
+                  {pursuit.lastQualified === false
+                    ? "Not a match"
+                    : "You pursued this"}
+                  {pursuedDate ? ` · ${pursuedDate}` : ""}
+                </span>
+              ) : null}
               <span className="text-xs text-brand-muted">{match.carrierName}</span>
             </div>
             <h2 className="mt-2 text-lg sm:text-xl font-semibold leading-snug text-brand-ink">
@@ -185,10 +214,16 @@ export function MatchCard({ driverId, match, extras }: Props) {
               href={applyHref}
               className="inline-flex h-11 items-center justify-center rounded-md bg-brand-deep px-5 text-sm font-semibold text-white hover:bg-brand-medium transition-colors"
             >
-              Continue to apply
+              {pursuit
+                ? pursuit.lastQualified === false
+                  ? "Review result"
+                  : "Pick up where you left off"
+                : "Continue to apply"}
             </Link>
             <span className="text-xs text-brand-muted">
-              You decide what to share before anything goes to the carrier.
+              {pursuit
+                ? "You already consented for this carrier. You can re-open it any time."
+                : "You decide what to share before anything goes to the carrier."}
             </span>
           </div>
         </div>
