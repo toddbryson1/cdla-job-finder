@@ -122,16 +122,16 @@ function SiteFooter() {
                   About
                 </Link>
               </li>
-              {/* TODO: real pages pending — homepage spec §10.3 */}
+              {/* TODO: Privacy Policy pending attorney draft — homepage spec §10.3 */}
               <li>
                 <span className="text-brand-muted/60">
                   Privacy Policy (coming)
                 </span>
               </li>
               <li>
-                <span className="text-brand-muted/60">
-                  Terms of Service (coming)
-                </span>
+                <Link href="/terms" className="hover:text-brand-ink">
+                  Terms of Service
+                </Link>
               </li>
             </ul>
           </div>
@@ -145,12 +145,10 @@ function SiteFooter() {
 
         {/* Legal row per homepage spec §8.7. */}
         <p className="mt-4 text-xs leading-5 text-brand-muted">
-          &copy; {new Date().getFullYear()} CDLA.jobs.{" "}
-          {/* TODO: replace with PHTP physical address (homepage spec §10.1)
-              or CDLA.jobs entity address once formalized. */}
-          [Mailing address &mdash; pending]. CDLA.jobs sends SMS and email to
-          drivers who consent to receive them. Reply STOP to any text to opt
-          out. Click unsubscribe in any email to opt out.
+          &copy; {new Date().getFullYear()} CDLA.jobs. 1056 Abilene Way, Park
+          City, UT, United States. CDLA.jobs sends SMS and email to drivers
+          who consent to receive them. Reply STOP to any text to opt out.
+          Click unsubscribe in any email to opt out.
         </p>
       </div>
     </footer>
