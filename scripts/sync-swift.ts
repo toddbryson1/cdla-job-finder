@@ -132,9 +132,18 @@ function mapEquipment(lob: string | null): string | null {
   return null;
 }
 
-function mapMinExperienceMonths(s: string | null): number {
-  if (!s) return 0;
-  const l = s.toLowerCase();
+// Pick the lowest experience tier the carrier accepts on this row. The
+// Experience Requirements picklist is multi-select — Trainee + First Seat
+// + 1 yr Experienced all being checked means the carrier takes any of
+// the three, so the floor is 0. The Trainees OK? YES/NO column is a
+// separate signal that overrides upward if YES.
+function mapMinExperienceMonths(
+  expReq: string | null,
+  traineesOk: string | null,
+): number {
+  if (traineesOk && traineesOk.toUpperCase().includes("YES")) return 0;
+  if (!expReq) return 0;
+  const l = expReq.toLowerCase();
   if (l.includes("trainee")) return 0;
   if (l.includes("first seat")) return 6;
   if (l.includes("1 yr") || l.includes("1 year")) return 12;
@@ -321,7 +330,10 @@ async function mapRow(
   // Suppress unused-var warning — rawState used inline above
   void rawState;
 
-  const minExp = mapMinExperienceMonths(cm.cellValue(row, "Experience Requirements"));
+  const minExp = mapMinExperienceMonths(
+    cm.cellValue(row, "Experience Requirements"),
+    cm.cellValue(row, "Trainees OK?"),
+  );
   const homeTime = mapHomeTime(cm.cellValue(row, "Home Time"));
   const endorsements = mapEndorsements(cm.cellValue(row, "Required Endorsements/Certificates"));
   const radius = cm.cellInt(row, 'Live within "X miles" of Zip Code(s)');
