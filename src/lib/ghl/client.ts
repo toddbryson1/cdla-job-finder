@@ -86,6 +86,11 @@ export interface UpsertContactInput {
   companyName?: string;
   source?: string;
   tags?: string[];
+  /** City — used by nurture email templates (e.g., "Denver"). */
+  city?: string;
+  /** Full state name — preferred for templates ("Colorado" not "CO"). */
+  state?: string;
+  postalCode?: string;
 }
 
 export interface UpsertContactResult {
@@ -115,6 +120,9 @@ export async function upsertContact(
       companyName: input.companyName,
       source: input.source,
       tags: input.tags,
+      city: input.city,
+      state: input.state,
+      postalCode: input.postalCode,
     },
     cfg: conf,
   });

@@ -16,6 +16,7 @@ import {
   upsertContact,
 } from "@/lib/ghl/client";
 import { candidateEmail } from "@/lib/ghl/candidateEmail";
+import { resolveRegion } from "@/lib/regions";
 
 export const runtime = "nodejs";
 
@@ -163,6 +164,8 @@ export async function POST(request: Request) {
         email: d.email,
         phone: d.phone,
         cdlState: d.cdlState,
+        homeCity: zip.city,
+        homeZip: d.homeZip,
       }).catch((err) => {
         console.error("[intake] candidate email send failed:", err);
       });
@@ -193,6 +196,8 @@ async function sendCandidateEmail(input: {
   email: string;
   phone: string;
   cdlState: string;
+  homeCity: string;
+  homeZip: string;
 }): Promise<void> {
   // Run the matching engine. If it errors, we abort the candidate email
   // rather than send a stale or wrong-counted message (spec §2.9).
@@ -217,6 +222,11 @@ async function sendCandidateEmail(input: {
     phone: input.phone,
     source: "cdla.jobs /intake",
     tags: ["driver-intake-completed", tag],
+    // City and full-name state populate GHL contact fields so nurture
+    // email templates can render {{contact.city}} / {{contact.state}}.
+    city: input.homeCity,
+    state: resolveRegion(input.cdlState),
+    postalCode: input.homeZip,
   });
 
   const matchesUrl = `${appUrl()}/matches/${input.driverId}`;
