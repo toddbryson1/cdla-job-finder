@@ -122,11 +122,10 @@ function SiteFooter() {
                   About
                 </Link>
               </li>
-              {/* TODO: Privacy Policy pending attorney draft — homepage spec §10.3 */}
               <li>
-                <span className="text-brand-muted/60">
-                  Privacy Policy (coming)
-                </span>
+                <Link href="/privacy" className="hover:text-brand-ink">
+                  Privacy Policy
+                </Link>
               </li>
               <li>
                 <Link href="/terms" className="hover:text-brand-ink">
@@ -145,10 +144,10 @@ function SiteFooter() {
 
         {/* Legal row per homepage spec §8.7. */}
         <p className="mt-4 text-xs leading-5 text-brand-muted">
-          &copy; {new Date().getFullYear()} CDLA.jobs. 1056 Abilene Way, Park
-          City, UT, United States. CDLA.jobs sends SMS and email to drivers
-          who consent to receive them. Reply STOP to any text to opt out.
-          Click unsubscribe in any email to opt out.
+          &copy; {new Date().getFullYear()} CDLA.jobs. 5300 Sagewood Dr. H552,
+          Park City, UT 84098. CDLA.jobs sends SMS and email to drivers who
+          consent to receive them. Reply STOP to any text to opt out. Click
+          unsubscribe in any email to opt out.
         </p>
       </div>
     </footer>

@@ -35,7 +35,10 @@ export default function TermsPage() {
           <p>
             Welcome to the official website of{" "}
             <strong>CDLA.jobs</strong>, located at{" "}
-            <strong>1056 Abilene Way, Park City, UT, United States</strong>.
+            <strong>
+              5300 Sagewood Dr. H552, Park City, UT 84098, United States
+            </strong>
+            .
           </p>
           <p>
             By accessing or using our website, platform, forms,
@@ -268,9 +271,11 @@ export default function TermsPage() {
             <address className="not-italic">
               <strong>CDLA.jobs</strong>
               <br />
-              1056 Abilene Way
+              5300 Sagewood Dr. H552
               <br />
-              Park City, UT, United States
+              Park City, UT 84098
+              <br />
+              United States
             </address>
           </Section>
         </div>
