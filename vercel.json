@@ -2,16 +2,8 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "crons": [
     {
-      "path": "/api/cron/sync-swift",
-      "schedule": "30 16 * * *"
-    },
-    {
-      "path": "/api/cron/nurture",
+      "path": "/api/cron/daily",
       "schedule": "0 17 * * *"
-    },
-    {
-      "path": "/api/cron/reverse-matches",
-      "schedule": "30 17 * * *"
     }
   ]
 }
