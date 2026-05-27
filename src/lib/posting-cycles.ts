@@ -26,15 +26,24 @@
 //   - "rotate the primary city": city picker biases away from
 //     recently-used cities
 
-import { and, eq, lte, sql } from "drizzle-orm";
+import { and, eq, inArray, lte, sql } from "drizzle-orm";
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import {
   carrierJobs,
+  carriers,
   jobPostingCycles,
   type carrierJobs as CarrierJobsTable,
 } from "@/db/schema";
-import { pickPostingCities, type PostingCity } from "@/lib/posting-cities";
+import { pickPostingCities } from "@/lib/posting-cities";
+import { buildJobPostingSlug } from "@/lib/job-slug";
+import {
+  isIndexingApiConfigured,
+  publishIndexingNotifications,
+  type IndexingNotificationType,
+} from "@/lib/google-indexing";
+
+const SITE_ORIGIN = "https://cdla.jobs";
 
 type DB =
   | PostgresJsDatabase<Record<string, unknown>>
@@ -51,6 +60,15 @@ export interface SpawnPostingCyclesResult {
   expired: number;
   spawned: number;
   jobsTouched: number;
+  /** URLs published to Google Indexing API (successful + failed). */
+  indexingPublished: number;
+  indexingFailed: number;
+  indexingSkipped: boolean;
+}
+
+interface PendingNotification {
+  url: string;
+  type: IndexingNotificationType;
 }
 
 export async function spawnPostingCycles(
@@ -60,9 +78,20 @@ export async function spawnPostingCycles(
     expired: 0,
     spawned: 0,
     jobsTouched: 0,
+    indexingPublished: 0,
+    indexingFailed: 0,
+    indexingSkipped: false,
   };
 
-  // 1. Expire cycles whose window has closed.
+  // Notifications batched here, fired once at end. The Indexing API
+  // has a 200/day default quota — sending everything in one swoop at
+  // the end lets us also handle quota errors without partial state.
+  const notifications: PendingNotification[] = [];
+
+  // 1. Expire cycles whose window has closed. Capture full row so we
+  // can rebuild the URL for URL_DELETED notification — once status
+  // flips, the slug is gone from the active set but the row's data
+  // is still what Google has indexed.
   const expiredRows = await db
     .update(jobPostingCycles)
     .set({ status: "expired" })
@@ -72,8 +101,47 @@ export async function spawnPostingCycles(
         lte(jobPostingCycles.expiresAt, new Date()),
       ),
     )
-    .returning({ id: jobPostingCycles.id });
+    .returning({
+      id: jobPostingCycles.id,
+      jobId: jobPostingCycles.jobId,
+      city: jobPostingCycles.city,
+      state: jobPostingCycles.state,
+    });
   out.expired = expiredRows.length;
+
+  if (expiredRows.length > 0) {
+    // Look up carrier name + position title for each expired job so we
+    // can rebuild the canonical slug Google has on file.
+    const expiredJobIds = [...new Set(expiredRows.map((r) => r.jobId))];
+    const jobMeta = await db
+      .select({
+        id: carrierJobs.id,
+        positionTitle: carrierJobs.positionTitle,
+        carrierName: carriers.name,
+      })
+      .from(carrierJobs)
+      .innerJoin(carriers, eq(carriers.id, carrierJobs.carrierId))
+      .where(inArray(carrierJobs.id, expiredJobIds));
+    const metaByJob = new Map(jobMeta.map((j) => [j.id, j]));
+
+    for (const e of expiredRows) {
+      const m = metaByJob.get(e.jobId);
+      if (!m) continue;
+      const slug = buildJobPostingSlug(
+        { name: m.carrierName },
+        {
+          id: e.id,
+          positionTitle: m.positionTitle,
+          domicileCity: e.city,
+          domicileState: e.state,
+        },
+      );
+      notifications.push({
+        url: `${SITE_ORIGIN}/job/${slug}`,
+        type: "URL_DELETED",
+      });
+    }
+  }
 
   // 2 + 3. For each active carrier_job, ensure it has enough active
   // cycles. Logic:
@@ -82,18 +150,42 @@ export async function spawnPostingCycles(
   //   - BUT only if the most-recent cycle (active or expired) is ≥3
   //     days old (the repost cool-down rule)
   const jobs = await db
-    .select()
+    .select({
+      job: carrierJobs,
+      carrierName: carriers.name,
+    })
     .from(carrierJobs)
+    .innerJoin(carriers, eq(carriers.id, carrierJobs.carrierId))
     .where(eq(carrierJobs.status, "active"))
     .limit(5000);
 
-  for (const job of jobs) {
-    const touched = await ensureCyclesForJob(db, job);
-    if (touched > 0) {
-      out.spawned += touched;
+  for (const { job, carrierName } of jobs) {
+    const insertedSlugs = await ensureCyclesForJob(db, job, carrierName);
+    if (insertedSlugs.length > 0) {
+      out.spawned += insertedSlugs.length;
       out.jobsTouched += 1;
+      for (const slug of insertedSlugs) {
+        notifications.push({
+          url: `${SITE_ORIGIN}/job/${slug}`,
+          type: "URL_UPDATED",
+        });
+      }
     }
   }
+
+  // 4. Push everything to Google's Indexing API. If not configured
+  // (no service-account key), record that we skipped — operators see
+  // it in the cron output and know to wire it up.
+  if (notifications.length === 0) {
+    return out;
+  }
+  if (!isIndexingApiConfigured()) {
+    out.indexingSkipped = true;
+    return out;
+  }
+  const r = await publishIndexingNotifications(notifications);
+  out.indexingPublished = r.sent;
+  out.indexingFailed = r.failed;
 
   return out;
 }
@@ -101,7 +193,8 @@ export async function spawnPostingCycles(
 async function ensureCyclesForJob(
   db: DB,
   job: CarrierJob,
-): Promise<number> {
+  carrierName: string,
+): Promise<string[]> {
   // Look up active cycles + the most recent cycle (any status) for cool-down.
   const allCycles = await db
     .select()
@@ -111,7 +204,7 @@ async function ensureCyclesForJob(
 
   const active = allCycles.filter((c) => c.status === "active");
   if (active.length >= TARGET_CITIES_PER_JOB) {
-    return 0;
+    return [];
   }
 
   // Cool-down: most recent cycle for this job (active or expired) must
@@ -126,7 +219,7 @@ async function ensureCyclesForJob(
     // the new one only after REPOST_DELAY_DAYS.
     // If active cycles exist but < target, also wait — staggers spawns.
     if (ageDays < REPOST_DELAY_DAYS) {
-      return 0;
+      return [];
     }
   }
 
@@ -134,7 +227,7 @@ async function ensureCyclesForJob(
   const candidates = await pickPostingCities(job, {
     maxCities: TARGET_CITIES_PER_JOB - active.length,
   });
-  if (candidates.length === 0) return 0;
+  if (candidates.length === 0) return [];
 
   // Determine the next variant_index. We rotate per (job) so each
   // repost across the entire job (any city) gets fresh copy. Take the
@@ -186,7 +279,7 @@ async function ensureCyclesForJob(
     cityCounters.set(key, nextCycleIndex);
   }
 
-  if (inserted.length === 0) return 0;
+  if (inserted.length === 0) return [];
 
   // If we're spawning a new primary and there's an old primary, demote it.
   if (!hadActivePrimary && inserted.length > 0) {
@@ -204,8 +297,27 @@ async function ensureCyclesForJob(
       );
   }
 
-  await db.insert(jobPostingCycles).values(inserted);
-  return inserted.length;
+  // Insert and return slugs for the new rows so the caller can publish
+  // them to Google's Indexing API.
+  const insertedRows = await db
+    .insert(jobPostingCycles)
+    .values(inserted)
+    .returning({
+      id: jobPostingCycles.id,
+      city: jobPostingCycles.city,
+      state: jobPostingCycles.state,
+    });
+  return insertedRows.map((r) =>
+    buildJobPostingSlug(
+      { name: carrierName },
+      {
+        id: r.id,
+        positionTitle: job.positionTitle,
+        domicileCity: r.city,
+        domicileState: r.state,
+      },
+    ),
+  );
 }
 
 function cycleKey(city: string, state: string): string {

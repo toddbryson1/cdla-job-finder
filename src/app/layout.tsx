@@ -14,6 +14,15 @@ export const metadata: Metadata = {
   },
   description:
     "CDLA.jobs matches Class A CDL drivers with carriers actually hiring. One intake, real matches, no spam.",
+  // Google Search Console property verification. Set
+  // GOOGLE_SITE_VERIFICATION in env to the value Google gives you on
+  // Search Console → "HTML tag" verification method (the content="..."
+  // attribute, not the full meta tag). Required before Google indexes
+  // any of our JobPosting structured data — Search Console is also
+  // where you submit /sitemap.xml.
+  verification: process.env.GOOGLE_SITE_VERIFICATION
+    ? { google: process.env.GOOGLE_SITE_VERIFICATION }
+    : undefined,
 };
 
 export default function RootLayout({
