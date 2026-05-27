@@ -460,15 +460,40 @@ function SwiftHandoff({
   job: typeof carrierJobs.$inferSelect;
   swiftSubmitted: boolean;
 }) {
+  // Swift's two-step IntelliApp. Step 1 URL is on the carrier_jobs row
+  // (synced from Smartsheet). Step 2 URL is a constant — every Swift
+  // applicant goes through the same Class A path on Step 2 once they
+  // return their Step 1 confirmation number.
+  const SWIFT_STEP2_URL =
+    "https://intelliapp.driverapponline.com/c/swiftcomp?r=classa&uri_b=ia_swiftcomp_428751950";
   const action = submitSwiftConfirmation.bind(null, driverId, jobId);
   return (
     <section className="space-y-5">
       <div className="rounded-lg border border-brand-rule bg-brand-surface p-5">
         <p className="text-sm font-semibold text-brand-ink">Step 1</p>
         <p className="mt-2 text-sm leading-6 text-brand-ink">
-          Complete your application using the link below. When you reach the
-          recruiter question, select <span className="font-semibold">Matt Hutto</span>.
+          Complete your lead application using the link below. A few things
+          to know before you start:
         </p>
+        <ul className="mt-3 list-disc space-y-1.5 pl-5 text-sm leading-6 text-brand-ink">
+          <li>
+            When you reach the recruiter question, select{" "}
+            <span className="font-semibold">Matt Hutto</span>.
+          </li>
+          <li>
+            For <span className="font-semibold">Agency referred by</span>,
+            select <span className="font-semibold">Class A Recruiting</span>.
+          </li>
+          <li>
+            For <span className="font-semibold">Referred by</span>, enter{" "}
+            <span className="font-semibold">CDL Hunter</span>.
+          </li>
+          <li>
+            If you&rsquo;ve done self-employed work (Lyft, Uber, owner-op,
+            etc.), have proof of it ready &mdash; Swift asks for it
+            upfront.
+          </li>
+        </ul>
         {job.applicationUrl ? (
           <a
             href={job.applicationUrl}
@@ -484,13 +509,27 @@ function SwiftHandoff({
       <div className="rounded-lg border border-brand-rule p-5">
         <p className="text-sm font-semibold text-brand-ink">Step 2</p>
         <p className="mt-2 text-sm leading-6 text-brand-ink">
-          After you finish Step 1, you&rsquo;ll receive a confirmation number.
-          Come back here and enter it to get your Step 2 link.
+          After you finish Step 1, you&rsquo;ll receive a confirmation
+          number. Enter it here to unlock the full Swift application.
         </p>
         {swiftSubmitted ? (
-          <p className="mt-4 rounded-md border border-brand-rule bg-brand-surface p-3 text-sm text-brand-ink">
-            Got it — Step 2 link coming. We&rsquo;ll email it to you.
-          </p>
+          <div className="mt-4 space-y-3">
+            <p className="rounded-md border border-brand-rule bg-brand-surface p-3 text-sm leading-6 text-brand-ink">
+              Got it. Now finish the full Swift application using the link
+              below. Same recruiter as Step 1 &mdash; select{" "}
+              <span className="font-semibold">Matt Hutto</span>. After you
+              submit, you&rsquo;ll get a second confirmation number; send
+              that to your recruiter.
+            </p>
+            <a
+              href={SWIFT_STEP2_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex h-11 items-center justify-center rounded-md bg-brand-deep px-5 text-sm font-semibold text-white shadow-sm hover:bg-brand-medium"
+            >
+              Complete Step 2 application
+            </a>
+          </div>
         ) : (
           <form action={action} className="mt-4 flex flex-wrap items-center gap-3">
             <label htmlFor="swift-conf" className="sr-only">
