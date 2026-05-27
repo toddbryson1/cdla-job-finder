@@ -15,10 +15,10 @@ const SMARTSHEET_BASE = "https://api.smartsheet.com/2.0";
 const SWIFT_CARRIER_NAME = "Swift Transportation";
 // Step 1 of Swift's two-step IntelliApp (the "lead app"). The Step 2 URL
 // lives in the apply flow because it only fires after the driver returns
-// their Step 1 confirmation number. Source: Swift onboarding doc shared
-// by the carrier ops team.
+// their Step 1 confirmation number. The uri_b query param attributes the
+// lead to Class A Recruiting / CDL Hunter — don't strip it.
 const SWIFT_INTELLIAPP_URL =
-  "https://intelliapp2.driverapponline.com/c/swiftcompthird";
+  "https://intelliapp.driverapponline.com/c/swiftcompthird?uri_b=ia_swiftcompthird_92782228";
 
 // Swift's published hiring criteria — encoded as Stage 2 rule fields so
 // the matching engine pre-filters drivers who clearly don't qualify.
