@@ -13,8 +13,48 @@ type DbClient = typeof defaultDb;
 
 const SMARTSHEET_BASE = "https://api.smartsheet.com/2.0";
 const SWIFT_CARRIER_NAME = "Swift Transportation";
+// Step 1 of Swift's two-step IntelliApp (the "lead app"). The Step 2 URL
+// lives in the apply flow because it only fires after the driver returns
+// their Step 1 confirmation number. Source: Swift onboarding doc shared
+// by the carrier ops team.
 const SWIFT_INTELLIAPP_URL =
-  "https://www.tenstreet.com/apps/swiftcompthird?source=cdla.jobs";
+  "https://intelliapp2.driverapponline.com/c/swiftcompthird";
+
+// Swift's published hiring criteria — encoded as Stage 2 rule fields so
+// the matching engine pre-filters drivers who clearly don't qualify.
+// Source: Swift Pre-Qualifications doc.
+//
+// What we encode (current schema can express):
+//   - ≤2 moving violations in 2 years          → max_tickets_3yr = 2
+//   - ≤1 on-road preventable in 2 years        → max_accidents_3yr = 1
+//   - ≤1 at-fault accident                     → max_at_fault_accidents_3yr = 1
+//   - No DUI in 10 yrs (CDL) / 5 yrs (pre-CDL) → accepts_dui = true,
+//                                                 dui_max_recency_months = 120
+//   - Felonies reviewed case-by-case           → accepts_felony = false
+//                                                 (conservative; real
+//                                                  reviews happen off-platform)
+//   - Must not have been terminated from last  → accepts_terminated = false
+//   - No failed drug test in 10 yrs (CDL)      → accepts_failed_dot_test = false
+//   - Strict drug-test history                 → sap_tolerance = accepts_none
+//
+// What we DON'T encode (would need schema extensions):
+//   - Specific MV types (hand-held, reckless, 30+ speeding = DQ)
+//   - Max 4 jobs in 12 months
+//   - Unemployment gap rules
+//   - Termination count rules (max 2 in 5 years)
+//   - 10-year holistic points scoring
+// Those remain carrier-side review.
+const SWIFT_RULES = {
+  maxTickets3yr: 2,
+  maxAccidents3yr: 1,
+  maxAtFaultAccidents3yr: 1,
+  acceptsDui: true,
+  duiMaxRecencyMonths: 120,
+  acceptsFelony: false,
+  acceptsTerminated: false,
+  acceptsFailedDotTest: false,
+  sapTolerance: "accepts_none" as const,
+};
 
 // --- Smartsheet types -----------------------------------------------------
 
@@ -535,6 +575,18 @@ async function upsertJob(
     displayLaneDescription: job.displayLaneDescription ?? undefined,
     displayBenefitsSummary: job.displayBenefitsSummary ?? undefined,
     displaySigningBonusUsd: job.displaySigningBonusUsd ?? undefined,
+    // Swift's published hiring criteria (see SWIFT_RULES above). Applied
+    // to every Swift carrier_jobs row so the Stage 2 qualification step
+    // pre-filters drivers who clearly won't meet Swift's requirements.
+    maxTickets3yr: SWIFT_RULES.maxTickets3yr,
+    maxAccidents3yr: SWIFT_RULES.maxAccidents3yr,
+    maxAtFaultAccidents3yr: SWIFT_RULES.maxAtFaultAccidents3yr,
+    acceptsDui: SWIFT_RULES.acceptsDui,
+    duiMaxRecencyMonths: SWIFT_RULES.duiMaxRecencyMonths,
+    acceptsFelony: SWIFT_RULES.acceptsFelony,
+    acceptsTerminated: SWIFT_RULES.acceptsTerminated,
+    acceptsFailedDotTest: SWIFT_RULES.acceptsFailedDotTest,
+    sapTolerance: SWIFT_RULES.sapTolerance,
     applicationSurface: "tenstreet_intelliapp" as const,
     applicationUrl: SWIFT_INTELLIAPP_URL,
     dataSource: "tenstreet_feed" as const,
