@@ -367,6 +367,7 @@ async function mapRow(
   const radius = cm.cellInt(row, 'Live within "X miles" of Zip Code(s)');
   const earnings = parseMoney(cm.cellValue(row, "Average Earnings per Week"));
 
+  const account = cm.cellValue(row, "Account") ?? "";
   const lane = cm.cellValue(row, "Lane Information") ?? "";
   const favorable = cm.cellValue(row, "Favorable Info on Lane") ?? "";
   const unfavorable = cm.cellValue(row, "Unfavorable Info on Lane") ?? "";
@@ -388,9 +389,12 @@ async function mapRow(
   ].filter((s) => s.length > 0);
 
   // displayLaneDescription: short, scannable lane summary that lands above
-  // the description in the match card detail view.
+  // the description in the match card detail view. Account name first
+  // because it's often the carrier-customer name (e.g., "Walmart Grocery")
+  // — the thing a driver recognizes before anything else.
   const lobReadable = readableLob(lob);
   const laneDescParts = [
+    account,
     lobReadable,
     weeklyMileage ? `~${weeklyMileage} mi/wk` : "",
   ].filter((s) => s.length > 0);
@@ -432,12 +436,20 @@ async function mapRow(
   const displaySigningBonusUsd =
     parseMoney(transitionBonus) ?? parseMoney(bonus);
 
-  // Job-board-style title: "Dedicated Reefer Driver — Atlanta, GA".
-  // The carrier name (Swift Transportation) is shown separately on the
-  // match card, so we don't repeat it in the title.
+  // Job-board-style title: "Account — Dedicated Reefer Driver — Atlanta, GA".
+  // Account (the Smartsheet primary column) usually identifies the
+  // customer/lane (e.g., "Walmart Grocery"), which is what a driver
+  // recognizes first. Skip the prefix when Account is blank or duplicates
+  // the LOB code so we don't ship awkward titles like "OTR-DRY — OTR Dry
+  // Van Driver — Phoenix, AZ".
+  const accountPrefix =
+    account &&
+    account.toUpperCase().trim() !== (lob ?? "").toUpperCase().trim()
+      ? `${account} — `
+      : "";
   const positionTitle = lobReadable
-    ? `${lobReadable} Driver — ${geo.city}, ${geo.state}`
-    : `CDL-A Driver — ${geo.city}, ${geo.state}`;
+    ? `${accountPrefix}${lobReadable} Driver — ${geo.city}, ${geo.state}`
+    : `${accountPrefix}CDL-A Driver — ${geo.city}, ${geo.state}`;
 
   return {
     ok: true,
