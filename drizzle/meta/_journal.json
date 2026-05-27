@@ -92,6 +92,13 @@
       "when": 1780700000000,
       "tag": "0012_job_posting_cycles",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1780800000000,
+      "tag": "0013_carrier_jobs_otr_invariant",
+      "breakpoints": true
     }
   ]
 }

@@ -12,6 +12,7 @@ import {
   pgEnum,
   index,
   uniqueIndex,
+  check,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 
@@ -210,6 +211,23 @@ export const carrierJobs = pgTable(
     uniqueIndex("carrier_jobs_external_source_uniq")
       .on(t.externalSourceId)
       .where(sql`${t.externalSourceId} IS NOT NULL`),
+    // OTR invariant — paired with @/lib/matching/hardFilter.ts.
+    //
+    // hiring_radius_miles = NULL means "this job hires nationwide / OTR".
+    // The matcher enforces that only drivers with 'otr' in their
+    // home_time array match such jobs. For that contract to hold, the
+    // job itself must list 'otr' as an accepted home time — otherwise
+    // it's a misconfig (typically: an OTR lane mistakenly tagged with
+    // a weekly home-time text in the source feed).
+    //
+    // This CHECK catches the bad row at INSERT/UPDATE time so no
+    // future data source (Swift sync, manual entry, future Tenstreet
+    // feed) can ship the corrupt state that caused the production
+    // OTR-leakage bug we fixed in commit ca73e85.
+    check(
+      "carrier_jobs_otr_invariant",
+      sql`${t.hiringRadiusMiles} IS NOT NULL OR 'otr' = ANY(${t.acceptedHomeTimeTypes})`,
+    ),
   ],
 );
 
