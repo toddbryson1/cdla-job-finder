@@ -5,12 +5,16 @@ import { and, eq, like, sql } from "drizzle-orm";
 import { db } from "@/db/client";
 import { carrierJobs, carriers } from "@/db/schema";
 import { SiteShell } from "@/components/SiteShell";
-import { EQUIPMENT } from "@/lib/slugs";
 import {
   buildJobPostingSlug,
   jobIdPrefixFromSlug,
   jobIdLikePattern,
 } from "@/lib/job-slug";
+import {
+  generateSeoCopy,
+  deriveEquipmentNoun,
+  displayCarrierName,
+} from "@/lib/job-seo-copy";
 
 // Individual job-posting pages live here. The /jobs/[region-equipment]
 // landing pages above are SEO funnels for paid + organic — they aggregate
@@ -22,6 +26,11 @@ import {
 // Per docs/SPEC_homepage-copy-v1.md §9.5: JobPosting schema belongs on
 // individual job pages only — never on the homepage or aggregate /jobs
 // pages.
+//
+// Copy generation (titles, descriptions, body copy) lives in
+// @/lib/job-seo-copy so Phase 2 (posting cycles + city rotation) can
+// feed it a different city + variant index per repost cycle without
+// rewriting this file.
 
 export const revalidate = 900; // 15-min ISR (same as the landing pages)
 
@@ -31,6 +40,10 @@ const SITE_ORIGIN = "https://cdla.jobs";
 // claim the job is "open" to Google. 90 days is the Google for Jobs hard
 // requirement — validThrough must be a future date, and stale validThrough
 // drops you from the index.
+//
+// Phase 2 will replace this with a per-cycle expires_at (20 days from
+// posted_at) sourced from job_posting_cycles. Until that ships, 90 days
+// from last_verified_at is the right fallback.
 const VALID_THROUGH_DAYS = 90;
 
 type JobRow = typeof carrierJobs.$inferSelect;
@@ -65,54 +78,7 @@ async function loadJobFromSlug(slug: string): Promise<LoadedJob | null> {
   if (rows.length !== 1) return null;
 
   const found = rows[0];
-  // Verify the full slug round-trips — guards against truncated URLs
-  // and against someone forging the descriptive prefix. We only enforce
-  // that the id-suffix matches; the carrier+position+city portion is
-  // descriptive and may drift if titles change. Google still gets the
-  // right job, the URL just won't be canonical.
-  const canonicalSlug = buildJobPostingSlug(found.carrier, found.job);
-  // Allow stale descriptive prefixes by redirecting via canonical URL
-  // metadata; we still serve the real job below.
-  void canonicalSlug;
   return { job: found.job, carrier: found.carrier };
-}
-
-function equipmentDisplay(slug: string): string {
-  return EQUIPMENT[slug]?.displayName ?? humanizeSlug(slug);
-}
-
-// Seed/composite carrier names include "(composite)" so internal tools
-// can tell example data apart from real partners. Never show that to
-// drivers or to Google's crawler.
-function displayCarrierName(name: string): string {
-  return name.replace(/\s*\(composite\)\s*/gi, "").trim();
-}
-
-function humanizeSlug(s: string): string {
-  return s
-    .split("-")
-    .map((p) => p.charAt(0).toUpperCase() + p.slice(1))
-    .join(" ");
-}
-
-function formatPay(job: JobRow): {
-  min: number | null;
-  max: number | null;
-  label: string;
-} {
-  const min = job.displayPayRangeMinWeeklyUsd;
-  const max = job.displayPayRangeMaxWeeklyUsd ?? job.payRangeMaxWeeklyUsd;
-  if (min != null && max != null) {
-    return {
-      min,
-      max,
-      label: `$${min.toLocaleString()}–$${max.toLocaleString()} / week`,
-    };
-  }
-  if (max != null) {
-    return { min: null, max, label: `Up to $${max.toLocaleString()} / week` };
-  }
-  return { min: null, max: null, label: "Pay not published" };
 }
 
 function validThroughISO(job: JobRow): string {
@@ -132,43 +98,37 @@ function validThroughISO(job: JobRow): string {
 
 function datePostedISO(job: JobRow): string {
   // Use createdAt for datePosted (Google wants the date the listing first
-  // went live). We re-affirm freshness via validThrough above.
+  // went live). We re-affirm freshness via validThrough above. Phase 2's
+  // posting cycles will override this with the cycle's posted_at so each
+  // repost looks fresh to Google.
   return new Date(job.createdAt).toISOString();
 }
 
-function jobPostingJsonLd(loaded: LoadedJob, slug: string): object {
+interface JsonLdContext {
+  loaded: LoadedJob;
+  slug: string;
+  city: string;
+  state: string;
+  description: string;
+}
+
+function jobPostingJsonLd(ctx: JsonLdContext): object {
+  const { loaded, slug, city, state, description } = ctx;
   const { job, carrier } = loaded;
   const carrierName = displayCarrierName(carrier.name);
-  const pay = formatPay(job);
   const sameAs = carrier.publicCareersUrl ?? undefined;
 
-  // Compose a description Google can index. Prefer the carrier's own
-  // description; if missing, build one from lane + home time + benefits
-  // so we never ship an empty body.
-  const descLines: string[] = [];
-  if (job.description) descLines.push(job.description);
-  if (job.displayLaneDescription)
-    descLines.push(`Lane: ${job.displayLaneDescription}`);
-  if (job.displayHomeTimeDescription)
-    descLines.push(`Home time: ${job.displayHomeTimeDescription}`);
-  if (job.displayBenefitsSummary)
-    descLines.push(`Benefits: ${job.displayBenefitsSummary}`);
-  if (descLines.length === 0) {
-    descLines.push(
-      `Class A CDL ${equipmentDisplay(job.equipment)} position with ${carrierName} out of ${job.domicileCity}, ${job.domicileState}.`,
-    );
-  }
-  const description = descLines.join("\n\n");
-
+  const min = job.displayPayRangeMinWeeklyUsd;
+  const max = job.displayPayRangeMaxWeeklyUsd ?? job.payRangeMaxWeeklyUsd;
   const baseSalary =
-    pay.max != null
+    max != null
       ? {
           "@type": "MonetaryAmount",
           currency: "USD",
           value: {
             "@type": "QuantitativeValue",
-            minValue: pay.min ?? pay.max,
-            maxValue: pay.max,
+            minValue: min ?? max,
+            maxValue: max,
             unitText: "WEEK",
           },
         }
@@ -177,6 +137,8 @@ function jobPostingJsonLd(loaded: LoadedJob, slug: string): object {
   return {
     "@context": "https://schema.org/",
     "@type": "JobPosting",
+    // Title field per Google's spec: job title only, no location/company.
+    // The page <title> tag has the SEO-optimized longer form.
     title: job.positionTitle,
     description,
     datePosted: datePostedISO(job),
@@ -196,11 +158,27 @@ function jobPostingJsonLd(loaded: LoadedJob, slug: string): object {
       "@type": "Place",
       address: {
         "@type": "PostalAddress",
-        addressLocality: job.domicileCity,
-        addressRegion: job.domicileState,
-        postalCode: job.domicileZip ?? undefined,
+        addressLocality: city,
+        addressRegion: state,
+        // Only include postalCode when the city we're rendering matches
+        // the domicile we have a zip for — otherwise we'd be lying about
+        // the precise location.
+        postalCode:
+          job.domicileZip &&
+          city.toLowerCase() === job.domicileCity.toLowerCase() &&
+          state.toUpperCase() === job.domicileState.toUpperCase()
+            ? job.domicileZip
+            : undefined,
         addressCountry: "US",
       },
+      geo:
+        job.domicileLat && job.domicileLng
+          ? {
+              "@type": "GeoCoordinates",
+              latitude: Number(job.domicileLat),
+              longitude: Number(job.domicileLng),
+            }
+          : undefined,
     },
     // OTR jobs (no fixed hiring radius) advertise nationwide hiring per
     // Google's `applicantLocationRequirements` spec, which they recommend
@@ -226,7 +204,45 @@ function jobPostingJsonLd(loaded: LoadedJob, slug: string): object {
             monthsOfExperience: job.minExperienceMonths,
           }
         : undefined,
+    qualifications: buildQualificationsList(job),
+    responsibilities: buildResponsibilitiesList(job),
+    skills: `Class A CDL, ${deriveEquipmentNoun(job)} operation, DOT compliance, electronic logging (ELD), pre-trip and post-trip inspections, safe defensive driving`,
   };
+}
+
+function buildQualificationsList(job: JobRow): string {
+  const parts: string[] = [
+    "Valid Class A CDL",
+    "Current DOT medical certificate",
+    "Clean MVR within the carrier's published bar",
+  ];
+  if (job.minExperienceMonths > 0) {
+    parts.push(
+      `${job.minExperienceMonths} months verifiable CDL-A driving experience`,
+    );
+  }
+  if (job.requiredEndorsements.length > 0) {
+    parts.push(
+      `Endorsements: ${job.requiredEndorsements.join(", ").toUpperCase()}`,
+    );
+  }
+  if (!job.acceptsDui) parts.push("No DUI history");
+  if (!job.acceptsFelony) parts.push("No felony convictions");
+  if (!job.acceptsTerminated) {
+    parts.push("Not currently terminated from your last driving job");
+  }
+  return parts.join("; ");
+}
+
+function buildResponsibilitiesList(job: JobRow): string {
+  const equipment = deriveEquipmentNoun(job).toLowerCase();
+  return [
+    `Operate a Class A CDL tractor pulling ${equipment} equipment`,
+    "Complete pre-trip and post-trip inspections per DOT/FMCSA",
+    "Maintain electronic logs and hours-of-service compliance",
+    "Communicate with dispatch and shippers/receivers",
+    "Secure freight and operate safely in all conditions",
+  ].join("; ");
 }
 
 export async function generateStaticParams() {
@@ -268,31 +284,34 @@ export async function generateMetadata({
   const loaded = await loadJobFromSlug(slug);
   if (!loaded) return {};
 
-  const { job, carrier } = loaded;
-  const carrierName = displayCarrierName(carrier.name);
-  const pay = formatPay(job);
-  const equipment = equipmentDisplay(job.equipment);
-  const title = `${job.positionTitle} — ${carrierName} (${job.domicileCity}, ${job.domicileState})`;
-  const description =
-    pay.label === "Pay not published"
-      ? `${equipment} CDL-A driving job with ${carrierName} out of ${job.domicileCity}, ${job.domicileState}. Match in 6 minutes on CDLA.jobs.`
-      : `${equipment} CDL-A driving job with ${carrierName} out of ${job.domicileCity}, ${job.domicileState}. ${pay.label}. Match in 6 minutes on CDLA.jobs.`;
+  const seo = generateSeoCopy({
+    job: loaded.job,
+    carrier: loaded.carrier,
+    city: loaded.job.domicileCity,
+    state: loaded.job.domicileState,
+    variantIndex: 0,
+  });
 
-  const canonicalSlug = buildJobPostingSlug(carrier, job);
+  const canonicalSlug = buildJobPostingSlug(loaded.carrier, loaded.job);
   const canonical = `${SITE_ORIGIN}/job/${canonicalSlug}`;
 
   return {
-    title,
-    description,
+    title: seo.pageTitle,
+    description: seo.metaDescription,
     alternates: { canonical },
     openGraph: {
-      title,
-      description,
+      title: seo.pageTitle,
+      description: seo.metaDescription,
       url: canonical,
       siteName: "CDLA.jobs",
       type: "website",
     },
-    twitter: { card: "summary_large_image", title, description },
+    twitter: {
+      card: "summary_large_image",
+      title: seo.pageTitle,
+      description: seo.metaDescription,
+    },
+    robots: { index: true, follow: true },
   };
 }
 
@@ -306,19 +325,39 @@ export default async function JobPostingPage({
   if (!loaded) notFound();
   const { job, carrier } = loaded;
   const carrierName = displayCarrierName(carrier.name);
-  const pay = formatPay(job);
-  const equipment = equipmentDisplay(job.equipment);
+  const seo = generateSeoCopy({
+    job,
+    carrier,
+    city: job.domicileCity,
+    state: job.domicileState,
+    variantIndex: 0,
+  });
+  const equipment = deriveEquipmentNoun(job);
+
+  const min = job.displayPayRangeMinWeeklyUsd;
+  const max = job.displayPayRangeMaxWeeklyUsd ?? job.payRangeMaxWeeklyUsd;
+  const payLabel =
+    min != null && max != null
+      ? `$${min.toLocaleString()}–$${max.toLocaleString()} / week`
+      : max != null
+        ? `Up to $${max.toLocaleString()} / week`
+        : "Pay not published";
+
   const radius =
     job.hiringRadiusMiles == null
       ? "Hires nationwide (OTR)"
       : `Hires within ${job.hiringRadiusMiles} miles of ${job.domicileCity}, ${job.domicileState}`;
 
-  const jsonLd = jobPostingJsonLd(loaded, slug);
+  const jsonLd = jobPostingJsonLd({
+    loaded,
+    slug,
+    city: job.domicileCity,
+    state: job.domicileState,
+    description: seo.jsonLdDescription,
+  });
 
   return (
     <SiteShell>
-      {/* JSON-LD inline so Google Search Console picks it up on first
-          crawl. dangerouslySetInnerHTML is the supported pattern. */}
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
@@ -326,13 +365,14 @@ export default async function JobPostingPage({
 
       <article className="mx-auto max-w-3xl px-5 py-10 sm:py-14">
         <p className="text-xs uppercase tracking-wide text-brand-muted">
-          {carrierName}
+          {carrierName} · {seo.laneNoun} {equipment}
         </p>
         <h1 className="mt-2 text-3xl font-semibold leading-tight text-brand-ink sm:text-4xl">
-          {job.positionTitle}
+          {seo.h1}
         </h1>
         <p className="mt-3 text-base text-brand-muted">
-          {job.domicileCity}, {job.domicileState} · {equipment}
+          {job.domicileCity}, {job.domicileState} · Class A CDL ·{" "}
+          {seo.laneNoun} {equipment} Driver
         </p>
 
         <dl className="mt-8 grid grid-cols-1 gap-5 rounded-2xl border border-brand-rule bg-brand-surface px-5 py-5 sm:grid-cols-3 sm:px-6">
@@ -341,7 +381,7 @@ export default async function JobPostingPage({
               Pay
             </dt>
             <dd className="mt-1 text-sm font-semibold text-brand-ink">
-              {pay.label}
+              {payLabel}
             </dd>
           </div>
           <div>
@@ -363,6 +403,10 @@ export default async function JobPostingPage({
           </div>
         </dl>
 
+        <Section title="Overview">
+          <p>{seo.visibleIntro}</p>
+        </Section>
+
         {job.displayLaneDescription ? (
           <Section title="Lane">
             <p>{job.displayLaneDescription}</p>
@@ -370,7 +414,7 @@ export default async function JobPostingPage({
         ) : null}
 
         {job.description ? (
-          <Section title="About the job">
+          <Section title={`About this ${seo.laneNoun.toLowerCase()} CDL-A job`}>
             <p className="whitespace-pre-line">{job.description}</p>
           </Section>
         ) : null}
@@ -382,7 +426,7 @@ export default async function JobPostingPage({
         ) : null}
 
         {job.displayBenefitsSummary ? (
-          <Section title="Benefits">
+          <Section title="Pay and benefits">
             <p>{job.displayBenefitsSummary}</p>
           </Section>
         ) : null}
@@ -399,8 +443,8 @@ export default async function JobPostingPage({
           <ul className="ml-5 list-disc space-y-1.5">
             <li>
               {job.minExperienceMonths > 0
-                ? `${job.minExperienceMonths} months of verifiable CDL-A driving experience`
-                : "Open to recent CDL-A grads"}
+                ? `${job.minExperienceMonths} months of verifiable Class A CDL driving experience`
+                : "Open to recent Class A CDL graduates"}
             </li>
             {job.requiredEndorsements.length > 0 ? (
               <li>
@@ -417,7 +461,8 @@ export default async function JobPostingPage({
               <li>Max {job.maxAccidents3yr} accidents in the last 3 years</li>
             ) : null}
             <li>
-              DUI: {job.acceptsDui
+              DUI:{" "}
+              {job.acceptsDui
                 ? job.duiMaxRecencyMonths
                   ? `accepted if older than ${Math.round(job.duiMaxRecencyMonths / 12)} years`
                   : "accepted (case by case)"
@@ -425,9 +470,7 @@ export default async function JobPostingPage({
             </li>
             <li>
               Felony:{" "}
-              {job.acceptsFelony
-                ? "reviewed case by case"
-                : "not accepted"}
+              {job.acceptsFelony ? "reviewed case by case" : "not accepted"}
             </li>
             <li>
               Prior termination:{" "}
@@ -436,6 +479,16 @@ export default async function JobPostingPage({
                 : "not accepted from last driving job"}
             </li>
           </ul>
+        </Section>
+
+        <Section title="Why apply through CDLA.jobs">
+          <p>
+            CDLA.jobs is a driver-matching platform. You fill out one
+            6-minute intake and we run it against every carrier that
+            matches what you want. {carrierName} is one of the carriers
+            we're working with. We never share your information with a
+            carrier until you say it's ok.
+          </p>
         </Section>
 
         <div className="mt-10 rounded-2xl border border-brand-deep/15 bg-brand-deep/[0.03] p-6">
