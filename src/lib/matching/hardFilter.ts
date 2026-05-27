@@ -109,19 +109,39 @@ export async function runHardFilter(
     FROM carrier_jobs j
     INNER JOIN carriers c ON c.id = j.carrier_id
     WHERE c.status = 'active' AND j.status = 'active'
-      -- bounding box prefilter (only kicks in when a radius is set)
+      -- Geospatial filter has three pass-conditions, applied to both
+      -- the bounding-box prefilter and the exact haversine check below.
+      --
+      -- (a) OTR job (NULL hiring_radius_miles) AND driver explicitly
+      --     wants OTR. The radius=NULL convention means "this job is
+      --     OTR — hires nationwide". A driver who didn't pick OTR
+      --     shouldn't match these even if their home_time array
+      --     happens to overlap (e.g., a misconfigured Swift job that
+      --     lists ['weekly', 'otr'] for an OTR lane).
+      -- (b) Willing to relocate AND driver wants OTR AND job accepts
+      --     OTR. The driver will move to the job's hiring zone for an
+      --     OTR seat regardless of the standard radius.
+      -- (c) Job's domicile is geographically inside the driver's
+      --     ~250mi bounding box (and, in the second clause, within
+      --     the carrier's stated hiring_radius_miles).
       AND (
-        j.hiring_radius_miles IS NULL
-        OR (${willingToRelocate}::boolean AND 'otr' = ANY(j.accepted_home_time_types))
+        (j.hiring_radius_miles IS NULL
+          AND 'otr' = ANY(${homeTime}::home_time[]))
+        OR (${willingToRelocate}::boolean
+            AND 'otr' = ANY(j.accepted_home_time_types)
+            AND 'otr' = ANY(${homeTime}::home_time[]))
         OR (
           j.domicile_lat BETWEEN ${homeLat}::numeric - 4 AND ${homeLat}::numeric + 4
           AND j.domicile_lng BETWEEN ${homeLng}::numeric - 4 AND ${homeLng}::numeric + 4
         )
       )
-      -- exact geospatial filter (haversine)
+      -- Exact geospatial filter (haversine).
       AND (
-        j.hiring_radius_miles IS NULL
-        OR (${willingToRelocate}::boolean AND 'otr' = ANY(j.accepted_home_time_types))
+        (j.hiring_radius_miles IS NULL
+          AND 'otr' = ANY(${homeTime}::home_time[]))
+        OR (${willingToRelocate}::boolean
+            AND 'otr' = ANY(j.accepted_home_time_types)
+            AND 'otr' = ANY(${homeTime}::home_time[]))
         OR 3959 * acos(
           LEAST(1.0, GREATEST(-1.0,
             cos(radians(${homeLat}::numeric)) * cos(radians(j.domicile_lat)) *

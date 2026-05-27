@@ -85,6 +85,64 @@ describe("matchDriver — geospatial", () => {
     const positions = result.matches.map((m) => m.positionTitle);
     expect(positions).toContain("OTR CDL-A Dry Van — Nationwide");
   });
+
+  it("an OTR job (NULL radius) does NOT match a driver who only wants weekly home time", async () => {
+    // Regression for the production bug: Swift jobs with lob=OTR have
+    // hiring_radius_miles=NULL, but their accepted_home_time_types can
+    // include 'weekly' (from the Smartsheet Home Time text). The
+    // matcher used to treat NULL radius as "match anyone everywhere",
+    // so a CA driver wanting weekly was getting an OTR job in TN.
+    //
+    // Correct behavior: NULL radius implies "this is OTR" and the
+    // driver must explicitly want OTR (have 'otr' in their home_time
+    // array). Home-time overlap alone is not enough.
+    const { db } = await import("@/db/client");
+    const { carrierJobs } = await import("@/db/schema");
+    const carrierId = await getCarrierIdByName(
+      "National OTR Fleet (composite)",
+    );
+    // Insert a misconfigured job: NULL radius + accepts both weekly AND otr.
+    await db.insert(carrierJobs).values({
+      carrierId,
+      status: "active",
+      positionTitle: "Misconfigured OTR/Weekly Dry Van",
+      domicileCity: "Memphis",
+      domicileState: "TN",
+      domicileLat: "35.149500",
+      domicileLng: "-90.048800",
+      hiringRadiusMiles: null,
+      equipment: "dry-van",
+      minExperienceMonths: 0,
+      acceptedHomeTimeTypes: ["weekly", "otr"],
+      payRangeMaxWeeklyUsd: 1500,
+      sapTolerance: "accepts_all",
+      applicationSurface: "tenstreet_intelliapp",
+      applicationUrl: "https://example.com/apply",
+      dataSource: "manual_partner_intake",
+      verificationStatus: "verified",
+      dataQuality: "complete",
+      lastVerifiedAt: new Date(),
+    });
+
+    try {
+      const id = await insertTestDriver({
+        homeLat: HONOLULU.lat,
+        homeLng: HONOLULU.lng,
+        cdlState: "HI",
+        desiredEquipment: ["dry-van"],
+        homeTime: ["weekly"], // explicitly NOT 'otr'
+        yearsHeld: 2,
+      });
+      const result = await matchDriver(id);
+      const positions = result.matches.map((m) => m.positionTitle);
+      expect(positions).not.toContain("Misconfigured OTR/Weekly Dry Van");
+    } finally {
+      const { sql } = await import("drizzle-orm");
+      await db.execute(
+        sql`DELETE FROM carrier_jobs WHERE position_title = 'Misconfigured OTR/Weekly Dry Van'`,
+      );
+    }
+  });
 });
 
 describe("matchDriver — willing_to_relocate", () => {

@@ -505,7 +505,12 @@ async function mapRow(
       hiringRadiusMiles: lob?.startsWith("OTR") ? null : (radius ?? 50),
       equipment,
       minExperienceMonths: minExp,
-      acceptedHomeTimeTypes: homeTime,
+      // OTR lanes are OTR — the Smartsheet "Home Time" text column can
+      // disagree (e.g., "Once a week" for what's actually an OTR run),
+      // but the LOB classification is authoritative. Forcing ['otr']
+      // here prevents the matcher's home-time overlap check from
+      // letting weekly drivers match an OTR-radius=NULL job.
+      acceptedHomeTimeTypes: lob?.startsWith("OTR") ? ["otr"] : homeTime,
       requiredEndorsements: endorsements,
       payRangeMaxWeeklyUsd: earnings,
       displayPayRangeMaxWeeklyUsd: earnings,
