@@ -15,6 +15,7 @@
     "test:watch": "vitest"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.99.0",
     "@stytch/nextjs": "^22.0.9",
     "@stytch/vanilla-js": "^6.0.9",
     "drizzle-orm": "^0.45.2",

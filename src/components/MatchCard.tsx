@@ -5,6 +5,7 @@ import Link from "next/link";
 import type { Match } from "@/lib/matching";
 import type { MatchDisplayExtras } from "@/lib/match-display-data";
 import { EQUIPMENT } from "@/lib/slugs";
+import { AskDebbie } from "./AskDebbie";
 import { MatchBadge } from "./MatchBadge";
 
 interface Props {
@@ -69,6 +70,7 @@ function verificationNote(match: Match, lastVerifiedAt: Date | null): string | n
 
 export function MatchCard({ driverId, match, extras, pursuit }: Props) {
   const [expanded, setExpanded] = useState(false);
+  const [askDebbieOpen, setAskDebbieOpen] = useState(false);
   const pay = payLine(match);
   const distance = distanceLine(match);
   const equipment = equipmentLabel(match.equipment);
@@ -231,6 +233,22 @@ export function MatchCard({ driverId, match, extras, pursuit }: Props) {
                   : "Pick up where you left off"
                 : "Continue to apply"}
             </Link>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                setAskDebbieOpen(true);
+              }}
+              className="inline-flex h-11 items-center justify-center gap-2 rounded-md border border-brand-rule bg-white px-4 text-sm font-medium text-brand-ink hover:border-brand-medium hover:bg-brand-surface"
+            >
+              <span
+                aria-hidden="true"
+                className="flex h-5 w-5 items-center justify-center rounded-full bg-brand-deep text-[10px] font-semibold text-white"
+              >
+                D
+              </span>
+              Ask Debbie
+            </button>
             <span className="text-xs text-brand-muted">
               {pursuit
                 ? "You already consented for this carrier. You can re-open it any time."
@@ -239,6 +257,14 @@ export function MatchCard({ driverId, match, extras, pursuit }: Props) {
           </div>
         </div>
       ) : null}
+      <AskDebbie
+        driverId={driverId}
+        jobId={match.jobId}
+        carrierName={match.carrierName}
+        positionTitle={match.positionTitle}
+        open={askDebbieOpen}
+        onClose={() => setAskDebbieOpen(false)}
+      />
     </article>
   );
 }
