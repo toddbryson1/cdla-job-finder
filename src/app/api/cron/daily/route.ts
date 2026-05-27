@@ -4,6 +4,7 @@ import { isGhlConfigured } from "@/lib/ghl/client";
 import { runNurtureSends } from "@/lib/nurture-sends";
 import { runReverseMatches } from "@/lib/reverse-matches";
 import { syncSwiftJobs } from "@/lib/swift-sync";
+import { spawnPostingCycles } from "@/lib/posting-cycles";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -15,11 +16,14 @@ export const maxDuration = 60;
 //
 // Order matters: sync-swift refreshes carrier_jobs first, so the
 // downstream reverse-matches step detects newly-inserted jobs as "new
-// matches" for affected drivers.
+// matches" for affected drivers. Posting cycles run AFTER sync so new
+// jobs get cycles spawned the same day they're added.
 //
 //   1. sync-swift      — refresh carrier_jobs from Smartsheet
-//   2. nurture         — fire scheduled drip emails
-//   3. reverse-matches — alert drivers whose match list grew
+//   2. posting-cycles  — expire 20-day-old cycles, spawn repost cycles
+//                        + multi-city cycles per job
+//   3. nurture         — fire scheduled drip emails
+//   4. reverse-matches — alert drivers whose match list grew
 //
 // Auth via CRON_SECRET (Vercel adds Authorization: Bearer <secret>).
 // To run manually use Vercel → Cron Jobs → Run, or hit the individual
@@ -70,7 +74,19 @@ export async function GET(request: Request) {
     };
   }
 
-  // 2. nurture
+  // 2. posting-cycles — expire stale URLs, spawn fresh ones for SEO rotation
+  try {
+    const result = await spawnPostingCycles(db);
+    out.postingCycles = { ok: true, ...result };
+  } catch (err) {
+    console.error("[cron/daily] posting-cycles failed:", err);
+    out.postingCycles = {
+      ok: false,
+      error: err instanceof Error ? err.message : String(err),
+    };
+  }
+
+  // 3. nurture
   try {
     if (!isGhlConfigured()) {
       out.nurture = { ok: false, error: "GHL not configured" };
@@ -86,7 +102,7 @@ export async function GET(request: Request) {
     };
   }
 
-  // 3. reverse-matches
+  // 4. reverse-matches
   try {
     if (!isGhlConfigured()) {
       out.reverseMatches = { ok: false, error: "GHL not configured" };

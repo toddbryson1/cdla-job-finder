@@ -404,6 +404,70 @@ export const driverCarrierApplications = pgTable(
   ],
 );
 
+// One row per "posting cycle" for a (carrier_job, city) pair. Each cycle
+// is a 20-day public-facing instance of the job at a specific city. The
+// /job/[slug] URL is keyed by THIS row's id (not the carrier_job id) so
+// the same underlying job can have multiple simultaneous URLs in
+// different cities, and a fresh URL after each repost.
+//
+// Lifecycle (driven by /api/cron/daily → spawnPostingCycles):
+//   1. New active carrier_job → spawn one cycle in domicile_city
+//   2. cycle.expires_at = posted_at + 20 days
+//   3. When the cycle expires, mark it expired (URL goes 404, sitemap drops it)
+//   4. 3 days after expiration, IF carrier_job is still active, spawn a
+//      new cycle. New cycle picks a city from the candidate pool that
+//      hasn't been the primary recently — biases for SEO reach across
+//      the metro.
+//   5. Cities chosen via @/lib/posting-cities (zip_codes geo query,
+//      ≥50 mile spacing).
+//
+// At any given time a carrier_job can have multiple active cycles in
+// different cities (≥50 mi apart) plus historical expired cycles for
+// audit. The "primary" cycle is the most recent active one; secondary
+// cycles in other cities run concurrently to broaden SERP coverage.
+export const jobPostingCycleStatusEnum = pgEnum("job_posting_cycle_status", [
+  "active",
+  "expired",
+]);
+
+export const jobPostingCycles = pgTable(
+  "job_posting_cycles",
+  {
+    id: uuid("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    jobId: uuid("job_id")
+      .references(() => carrierJobs.id, { onDelete: "cascade" })
+      .notNull(),
+    city: text("city").notNull(),
+    state: varchar("state", { length: 2 }).notNull(),
+    zip: varchar("zip", { length: 5 }),
+    lat: numeric("lat", { precision: 9, scale: 6 }),
+    lng: numeric("lng", { precision: 9, scale: 6 }),
+    cycleIndex: integer("cycle_index").notNull(), // 1, 2, 3... per (job, city)
+    variantIndex: integer("variant_index").notNull().default(0), // picks the description template
+    isPrimary: boolean("is_primary").notNull().default(false),
+    postedAt: timestamp("posted_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    status: jobPostingCycleStatusEnum("status").notNull().default("active"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (t) => [
+    index("job_posting_cycles_status_expires_idx").on(t.status, t.expiresAt),
+    index("job_posting_cycles_job_idx").on(t.jobId),
+    index("job_posting_cycles_job_status_idx").on(t.jobId, t.status),
+    // At most one ACTIVE cycle per (job, city) at any time. Expired
+    // cycles accumulate (audit log + city-rotation memory).
+    uniqueIndex("job_posting_cycles_active_uniq")
+      .on(t.jobId, t.city, t.state)
+      .where(sql`${t.status} = 'active'`),
+  ],
+);
+
 // Persistent record of (driver, job) matches. One row per pair; matched_at
 // is when the driver first saw this match. Drives Tier 1 exclusivity
 // (getFirstMatchTime) and aggregate landing-page stats.

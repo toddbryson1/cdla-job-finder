@@ -3,118 +3,91 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { and, eq, like, sql } from "drizzle-orm";
 import { db } from "@/db/client";
-import { carrierJobs, carriers } from "@/db/schema";
+import {
+  carrierJobs,
+  carriers,
+  jobPostingCycles,
+} from "@/db/schema";
 import { SiteShell } from "@/components/SiteShell";
 import {
   buildJobPostingSlug,
-  jobIdPrefixFromSlug,
   jobIdLikePattern,
 } from "@/lib/job-slug";
+import { postingCycleIdPrefixFromSlug } from "@/lib/posting-cycles";
 import {
   generateSeoCopy,
   deriveEquipmentNoun,
   displayCarrierName,
 } from "@/lib/job-seo-copy";
 
-// Individual job-posting pages live here. The /jobs/[region-equipment]
-// landing pages above are SEO funnels for paid + organic — they aggregate
-// "carriers hiring reefer drivers in Atlanta" style queries. This file
-// is the other kind of page Google for Jobs wants: one URL per *real
-// posting*, with full JobPosting structured data so it can syndicate to
-// google.com/jobs.
+// Individual job-posting pages live here. Each row in job_posting_cycles
+// gets its own URL — slug suffix is the 8-char hex prefix of the
+// posting_cycle id (not the carrier_job id). That gives us:
+//
+//   - Multiple URLs per job (one per active cycle, one per city)
+//   - 20-day expiration: cycles past expires_at flip to 'expired' via
+//     /api/cron/daily, the URL 404s, Google drops it from the index
+//   - 3-day repost: 3 days after a cycle expires, a fresh cycle for
+//     the same job is spawned in a (rotating) candidate city with a
+//     new description variant
+//   - Multi-city posting: each job has up to TARGET_CITIES_PER_JOB
+//     concurrent cycles, each ≥50 miles from the others
 //
 // Per docs/SPEC_homepage-copy-v1.md §9.5: JobPosting schema belongs on
 // individual job pages only — never on the homepage or aggregate /jobs
 // pages.
-//
-// Copy generation (titles, descriptions, body copy) lives in
-// @/lib/job-seo-copy so Phase 2 (posting cycles + city rotation) can
-// feed it a different city + variant index per repost cycle without
-// rewriting this file.
 
-export const revalidate = 900; // 15-min ISR (same as the landing pages)
+export const revalidate = 900; // 15-min ISR
 
 const SITE_ORIGIN = "https://cdla.jobs";
 
-// How long after lastVerifiedAt (or createdAt fallback) we'll continue to
-// claim the job is "open" to Google. 90 days is the Google for Jobs hard
-// requirement — validThrough must be a future date, and stale validThrough
-// drops you from the index.
-//
-// Phase 2 will replace this with a per-cycle expires_at (20 days from
-// posted_at) sourced from job_posting_cycles. Until that ships, 90 days
-// from last_verified_at is the right fallback.
-const VALID_THROUGH_DAYS = 90;
-
 type JobRow = typeof carrierJobs.$inferSelect;
 type CarrierRow = typeof carriers.$inferSelect;
+type CycleRow = typeof jobPostingCycles.$inferSelect;
 
-interface LoadedJob {
+interface LoadedCycle {
+  cycle: CycleRow;
   job: JobRow;
   carrier: CarrierRow;
 }
 
-async function loadJobFromSlug(slug: string): Promise<LoadedJob | null> {
-  const prefix = jobIdPrefixFromSlug(slug);
+async function loadCycleFromSlug(slug: string): Promise<LoadedCycle | null> {
+  const prefix = postingCycleIdPrefixFromSlug(slug);
   if (!prefix) return null;
 
   const rows = await db
     .select({
+      cycle: jobPostingCycles,
       job: carrierJobs,
       carrier: carriers,
     })
-    .from(carrierJobs)
+    .from(jobPostingCycles)
+    .innerJoin(carrierJobs, eq(carrierJobs.id, jobPostingCycles.jobId))
     .innerJoin(carriers, eq(carriers.id, carrierJobs.carrierId))
     .where(
       and(
-        like(sql`${carrierJobs.id}::text`, jobIdLikePattern(prefix)),
+        like(sql`${jobPostingCycles.id}::text`, jobIdLikePattern(prefix)),
+        eq(jobPostingCycles.status, "active"),
         eq(carrierJobs.status, "active"),
       ),
     )
     .limit(2);
 
-  // Defensive: an 8-char prefix is unique in practice, but if two rows
-  // collide we'd rather 404 than show the wrong job.
+  // Defensive: an 8-char prefix is unique in practice. If two rows
+  // collide, return 404 rather than serve the wrong page.
   if (rows.length !== 1) return null;
-
-  const found = rows[0];
-  return { job: found.job, carrier: found.carrier };
-}
-
-function validThroughISO(job: JobRow): string {
-  const base = job.lastVerifiedAt ?? job.createdAt;
-  const d = new Date(base);
-  d.setUTCDate(d.getUTCDate() + VALID_THROUGH_DAYS);
-  // If validThrough has already passed, Google drops the posting. Bump
-  // forward 30 days from "now" so re-verified jobs get a fresh window
-  // without us re-touching every row.
-  if (d.getTime() < Date.now()) {
-    const future = new Date();
-    future.setUTCDate(future.getUTCDate() + 30);
-    return future.toISOString();
-  }
-  return d.toISOString();
-}
-
-function datePostedISO(job: JobRow): string {
-  // Use createdAt for datePosted (Google wants the date the listing first
-  // went live). We re-affirm freshness via validThrough above. Phase 2's
-  // posting cycles will override this with the cycle's posted_at so each
-  // repost looks fresh to Google.
-  return new Date(job.createdAt).toISOString();
+  return rows[0];
 }
 
 interface JsonLdContext {
-  loaded: LoadedJob;
+  loaded: LoadedCycle;
   slug: string;
-  city: string;
-  state: string;
   description: string;
 }
 
 function jobPostingJsonLd(ctx: JsonLdContext): object {
-  const { loaded, slug, city, state, description } = ctx;
-  const { job, carrier } = loaded;
+  const { loaded, slug, description } = ctx;
+  const { cycle, job, carrier } = loaded;
   const carrierName = displayCarrierName(carrier.name);
   const sameAs = carrier.publicCareersUrl ?? undefined;
 
@@ -134,20 +107,27 @@ function jobPostingJsonLd(ctx: JsonLdContext): object {
         }
       : undefined;
 
+  // Geo coordinates come from the cycle (city we're rendering),
+  // falling back to the domicile if the cycle lat/lng are null
+  // (legacy rows or OTR fallbacks without a precise lat/lng).
+  const geoLat = cycle.lat ?? job.domicileLat;
+  const geoLng = cycle.lng ?? job.domicileLng;
+
   return {
     "@context": "https://schema.org/",
     "@type": "JobPosting",
-    // Title field per Google's spec: job title only, no location/company.
-    // The page <title> tag has the SEO-optimized longer form.
     title: job.positionTitle,
     description,
-    datePosted: datePostedISO(job),
-    validThrough: validThroughISO(job),
+    // Per Google for Jobs: datePosted is when THIS posting went live,
+    // validThrough is when it stops being valid. The cycle table owns
+    // both — reposts get a fresh datePosted so Google sees them as new.
+    datePosted: new Date(cycle.postedAt).toISOString(),
+    validThrough: new Date(cycle.expiresAt).toISOString(),
     employmentType: "FULL_TIME",
     identifier: {
       "@type": "PropertyValue",
       name: carrierName,
-      value: job.id,
+      value: cycle.id,
     },
     hiringOrganization: {
       "@type": "Organization",
@@ -158,31 +138,25 @@ function jobPostingJsonLd(ctx: JsonLdContext): object {
       "@type": "Place",
       address: {
         "@type": "PostalAddress",
-        addressLocality: city,
-        addressRegion: state,
-        // Only include postalCode when the city we're rendering matches
-        // the domicile we have a zip for — otherwise we'd be lying about
-        // the precise location.
+        addressLocality: cycle.city,
+        addressRegion: cycle.state,
         postalCode:
-          job.domicileZip &&
-          city.toLowerCase() === job.domicileCity.toLowerCase() &&
-          state.toUpperCase() === job.domicileState.toUpperCase()
-            ? job.domicileZip
-            : undefined,
+          cycle.zip ??
+          (cycle.city.toLowerCase() === job.domicileCity.toLowerCase() &&
+          cycle.state.toUpperCase() === job.domicileState.toUpperCase()
+            ? job.domicileZip ?? undefined
+            : undefined),
         addressCountry: "US",
       },
       geo:
-        job.domicileLat && job.domicileLng
+        geoLat && geoLng
           ? {
               "@type": "GeoCoordinates",
-              latitude: Number(job.domicileLat),
-              longitude: Number(job.domicileLng),
+              latitude: Number(geoLat),
+              longitude: Number(geoLng),
             }
           : undefined,
     },
-    // OTR jobs (no fixed hiring radius) advertise nationwide hiring per
-    // Google's `applicantLocationRequirements` spec, which they recommend
-    // when jobLocation isn't where the work happens.
     ...(job.hiringRadiusMiles == null
       ? {
           applicantLocationRequirements: {
@@ -246,30 +220,36 @@ function buildResponsibilitiesList(job: JobRow): string {
 }
 
 export async function generateStaticParams() {
-  // Pre-render every active job so first byte is cached HTML. Vercel
-  // will skip params not returned here at build time and render on
-  // demand (we still get ISR via `revalidate`).
+  // Prerender every ACTIVE cycle's slug. Expired cycles aren't
+  // rendered — they 404 so Google drops them from the index.
   const rows = await db
     .select({
-      id: carrierJobs.id,
+      cycleId: jobPostingCycles.id,
+      city: jobPostingCycles.city,
+      state: jobPostingCycles.state,
       name: carriers.name,
       positionTitle: carrierJobs.positionTitle,
-      domicileCity: carrierJobs.domicileCity,
-      domicileState: carrierJobs.domicileState,
     })
-    .from(carrierJobs)
+    .from(jobPostingCycles)
+    .innerJoin(carrierJobs, eq(carrierJobs.id, jobPostingCycles.jobId))
     .innerJoin(carriers, eq(carriers.id, carrierJobs.carrierId))
-    .where(eq(carrierJobs.status, "active"))
-    .limit(5000);
+    .where(
+      and(
+        eq(jobPostingCycles.status, "active"),
+        eq(carrierJobs.status, "active"),
+      ),
+    )
+    .limit(20_000);
 
   return rows.map((r) => ({
     slug: buildJobPostingSlug(
       { name: r.name },
       {
-        id: r.id,
+        // The slug's id suffix is the CYCLE id (not the job id).
+        id: r.cycleId,
         positionTitle: r.positionTitle,
-        domicileCity: r.domicileCity,
-        domicileState: r.domicileState,
+        domicileCity: r.city,
+        domicileState: r.state,
       },
     ),
   }));
@@ -281,18 +261,26 @@ export async function generateMetadata({
   params: Promise<{ slug: string }>;
 }): Promise<Metadata> {
   const { slug } = await params;
-  const loaded = await loadJobFromSlug(slug);
+  const loaded = await loadCycleFromSlug(slug);
   if (!loaded) return {};
 
   const seo = generateSeoCopy({
     job: loaded.job,
     carrier: loaded.carrier,
-    city: loaded.job.domicileCity,
-    state: loaded.job.domicileState,
-    variantIndex: 0,
+    city: loaded.cycle.city,
+    state: loaded.cycle.state,
+    variantIndex: loaded.cycle.variantIndex,
   });
 
-  const canonicalSlug = buildJobPostingSlug(loaded.carrier, loaded.job);
+  const canonicalSlug = buildJobPostingSlug(
+    loaded.carrier,
+    {
+      id: loaded.cycle.id,
+      positionTitle: loaded.job.positionTitle,
+      domicileCity: loaded.cycle.city,
+      domicileState: loaded.cycle.state,
+    },
+  );
   const canonical = `${SITE_ORIGIN}/job/${canonicalSlug}`;
 
   return {
@@ -321,16 +309,16 @@ export default async function JobPostingPage({
   params: Promise<{ slug: string }>;
 }) {
   const { slug } = await params;
-  const loaded = await loadJobFromSlug(slug);
+  const loaded = await loadCycleFromSlug(slug);
   if (!loaded) notFound();
-  const { job, carrier } = loaded;
+  const { cycle, job, carrier } = loaded;
   const carrierName = displayCarrierName(carrier.name);
   const seo = generateSeoCopy({
     job,
     carrier,
-    city: job.domicileCity,
-    state: job.domicileState,
-    variantIndex: 0,
+    city: cycle.city,
+    state: cycle.state,
+    variantIndex: cycle.variantIndex,
   });
   const equipment = deriveEquipmentNoun(job);
 
@@ -348,11 +336,17 @@ export default async function JobPostingPage({
       ? "Hires nationwide (OTR)"
       : `Hires within ${job.hiringRadiusMiles} miles of ${job.domicileCity}, ${job.domicileState}`;
 
+  // If the URL we're rendering uses a city other than the job's
+  // domicile, mention it so drivers and Google both see the same
+  // candid framing — this is a posting in <City>, the carrier's
+  // primary domicile is <DomicileCity>.
+  const isDomicile =
+    cycle.city.toLowerCase() === job.domicileCity.toLowerCase() &&
+    cycle.state.toUpperCase() === job.domicileState.toUpperCase();
+
   const jsonLd = jobPostingJsonLd({
     loaded,
     slug,
-    city: job.domicileCity,
-    state: job.domicileState,
     description: seo.jsonLdDescription,
   });
 
@@ -371,8 +365,8 @@ export default async function JobPostingPage({
           {seo.h1}
         </h1>
         <p className="mt-3 text-base text-brand-muted">
-          {job.domicileCity}, {job.domicileState} · Class A CDL ·{" "}
-          {seo.laneNoun} {equipment} Driver
+          {cycle.city}, {cycle.state} · Class A CDL · {seo.laneNoun}{" "}
+          {equipment} Driver
         </p>
 
         <dl className="mt-8 grid grid-cols-1 gap-5 rounded-2xl border border-brand-rule bg-brand-surface px-5 py-5 sm:grid-cols-3 sm:px-6">
@@ -394,12 +388,16 @@ export default async function JobPostingPage({
           </div>
           <div>
             <dt className="text-xs uppercase tracking-wide text-brand-muted">
-              Domicile
+              {isDomicile ? "Domicile" : "Hiring area"}
             </dt>
             <dd className="mt-1 text-sm font-semibold text-brand-ink">
-              {job.domicileCity}, {job.domicileState}
+              {cycle.city}, {cycle.state}
             </dd>
-            <dd className="text-xs text-brand-muted">{radius}</dd>
+            <dd className="text-xs text-brand-muted">
+              {isDomicile
+                ? radius
+                : `Domiciled at ${job.domicileCity}, ${job.domicileState} — ${radius.toLowerCase()}`}
+            </dd>
           </div>
         </dl>
 
@@ -486,8 +484,8 @@ export default async function JobPostingPage({
             CDLA.jobs is a driver-matching platform. You fill out one
             6-minute intake and we run it against every carrier that
             matches what you want. {carrierName} is one of the carriers
-            we're working with. We never share your information with a
-            carrier until you say it's ok.
+            we&rsquo;re working with. We never share your information
+            with a carrier until you say it&rsquo;s ok.
           </p>
         </Section>
 
@@ -516,21 +514,21 @@ export default async function JobPostingPage({
           </div>
         </div>
 
-        {job.lastVerifiedAt ? (
-          <p className="mt-8 text-xs text-brand-muted">
-            Listing last verified{" "}
-            {new Date(job.lastVerifiedAt).toLocaleDateString(undefined, {
-              month: "short",
-              day: "numeric",
-              year: "numeric",
-            })}
-            . Carriers decide who they hire — CDLA.jobs does not.
-          </p>
-        ) : (
-          <p className="mt-8 text-xs text-brand-muted">
-            Carriers decide who they hire — CDLA.jobs does not.
-          </p>
-        )}
+        <p className="mt-8 text-xs text-brand-muted">
+          Posted{" "}
+          {new Date(cycle.postedAt).toLocaleDateString(undefined, {
+            month: "short",
+            day: "numeric",
+            year: "numeric",
+          })}
+          . This posting expires{" "}
+          {new Date(cycle.expiresAt).toLocaleDateString(undefined, {
+            month: "short",
+            day: "numeric",
+            year: "numeric",
+          })}
+          . Carriers decide who they hire — CDLA.jobs does not.
+        </p>
       </article>
     </SiteShell>
   );

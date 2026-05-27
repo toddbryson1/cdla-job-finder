@@ -205,6 +205,14 @@ function formatPay(job: Job): PayShape {
   return { min: null, max: null, label: "Pay not published", shortLabel: null };
 }
 
+// "OTR" is an acronym, "Local"/"Regional"/"Dedicated" are proper nouns
+// in trucking copy — keep laneNoun capitalized. Equipment ("dry van",
+// "reefer") reads naturally lowercase inside a sentence.
+function laneWithArticle(lane: string): string {
+  // "an OTR", "a Local", "a Regional", "a Dedicated", "a Drayage".
+  return /^[aeiou]/i.test(lane) ? `an ${lane}` : `a ${lane}`;
+}
+
 function buildMetaDescription(
   ctx: {
     laneNoun: string;
@@ -222,9 +230,10 @@ function buildMetaDescription(
   const homeTimeClause = ctx.homeTimeDescription
     ? ` Home time: ${ctx.homeTimeDescription}.`
     : "";
+  const eq = ctx.equipmentNoun.toLowerCase();
   const variants = [
     `${ctx.laneNoun} ${ctx.equipmentNoun} CDL-A driving job in ${ctx.city}, ${ctx.state} with ${ctx.carrierName}.${payClause}${homeTimeClause} Match in 6 minutes on CDLA.jobs.`,
-    `${ctx.carrierName} is hiring Class A CDL ${ctx.laneNoun.toLowerCase()} ${ctx.equipmentNoun.toLowerCase()} drivers out of ${ctx.city}, ${ctx.state}.${payClause}${homeTimeClause} Apply on CDLA.jobs in 6 minutes.`,
+    `${ctx.carrierName} is hiring Class A CDL ${ctx.laneNoun} ${eq} drivers out of ${ctx.city}, ${ctx.state}.${payClause}${homeTimeClause} Apply on CDLA.jobs in 6 minutes.`,
     `Class A CDL ${ctx.laneNoun} ${ctx.equipmentNoun} driver job — ${ctx.city}, ${ctx.state}.${payClause} ${ctx.carrierName} is hiring now.${homeTimeClause} See if you match on CDLA.jobs.`,
   ];
   return variants[variantIndex % variants.length];
@@ -243,10 +252,12 @@ function buildVisibleIntro(
 ): string {
   const payClause =
     ctx.pay.max != null ? `${ctx.pay.label} ` : "Competitive weekly pay ";
+  const eq = ctx.equipmentNoun.toLowerCase();
+  const article = laneWithArticle(ctx.laneNoun);
   const variants = [
-    `${ctx.carrierName} is hiring Class A CDL drivers for a ${ctx.laneNoun.toLowerCase()} ${ctx.equipmentNoun.toLowerCase()} run out of ${ctx.city}, ${ctx.state}. ${payClause}for drivers who meet the carrier's safety criteria below.`,
-    `If you're a Class A driver in or near ${ctx.city}, ${ctx.state} looking for a ${ctx.laneNoun.toLowerCase()} ${ctx.equipmentNoun.toLowerCase()} seat, ${ctx.carrierName} has an opening. ${payClause}— see what the carrier requires before you apply.`,
-    `${ctx.carrierName} has a ${ctx.laneNoun.toLowerCase()} ${ctx.equipmentNoun.toLowerCase()} opening for Class A CDL drivers domiciled near ${ctx.city}, ${ctx.state}. ${payClause}with the carrier's full safety bar listed below.`,
+    `${ctx.carrierName} is hiring Class A CDL drivers for ${article} ${eq} run out of ${ctx.city}, ${ctx.state}. ${payClause}for drivers who meet the carrier's safety criteria below.`,
+    `If you're a Class A driver in or near ${ctx.city}, ${ctx.state} looking for ${article} ${eq} seat, ${ctx.carrierName} has an opening. ${payClause}— see what the carrier requires before you apply.`,
+    `${ctx.carrierName} has ${article} ${eq} opening for Class A CDL drivers domiciled near ${ctx.city}, ${ctx.state}. ${payClause}with the carrier's full safety bar listed below.`,
   ];
   return variants[variantIndex % variants.length];
 }

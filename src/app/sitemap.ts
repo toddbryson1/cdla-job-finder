@@ -1,19 +1,21 @@
 import type { MetadataRoute } from "next";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { db } from "@/db/client";
-import { carrierJobs, carriers } from "@/db/schema";
+import { carrierJobs, carriers, jobPostingCycles } from "@/db/schema";
 import { buildJobPostingSlug } from "@/lib/job-slug";
 import { listSeedSlugs } from "@/lib/page-data";
 
 // Sitemap for crawlers. Three buckets:
 //   1. Static marketing pages (homepage, about, FAQ, partners, etc.)
 //   2. /jobs/[region-equipment] aggregate landing pages
-//   3. /job/[slug] — one URL per active carrier_jobs row (Google for Jobs
-//      pulls JobPosting JSON-LD from these and syndicates them)
+//   3. /job/[slug] — one URL per ACTIVE job_posting_cycles row. Each
+//      cycle is a 20-day public listing of one (carrier_job, city)
+//      pair. Expired cycles are deliberately dropped so Google
+//      naturally rotates them out.
 //
 // We're well under Google's 50k-URL-per-sitemap cap at current scale, so
-// this is a single sitemap. If we ever cross ~30k jobs we'll switch to
-// generateSitemaps() and split by source.
+// this is a single sitemap. If we ever cross ~30k active cycles we'll
+// switch to generateSitemaps() and split by source.
 
 const SITE_ORIGIN = "https://cdla.jobs";
 
@@ -94,36 +96,46 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     }),
   );
 
-  // 3. /job/[slug] — one per active job. lastModified pulls from
-  // updatedAt so Google notices when we re-verify a listing.
-  const jobRows = await db
+  // 3. /job/[slug] — one per ACTIVE posting cycle. Each cycle is its
+  // own URL (different cities for the same job get different URLs).
+  // We also use the cycle's postedAt as the lastModified so Google
+  // sees a fresh date every repost.
+  const cycleRows = await db
     .select({
-      id: carrierJobs.id,
+      cycleId: jobPostingCycles.id,
+      city: jobPostingCycles.city,
+      state: jobPostingCycles.state,
+      postedAt: jobPostingCycles.postedAt,
+      isPrimary: jobPostingCycles.isPrimary,
       positionTitle: carrierJobs.positionTitle,
-      domicileCity: carrierJobs.domicileCity,
-      domicileState: carrierJobs.domicileState,
-      updatedAt: carrierJobs.updatedAt,
-      lastVerifiedAt: carrierJobs.lastVerifiedAt,
       carrierName: carriers.name,
     })
-    .from(carrierJobs)
+    .from(jobPostingCycles)
+    .innerJoin(carrierJobs, eq(carrierJobs.id, jobPostingCycles.jobId))
     .innerJoin(carriers, eq(carriers.id, carrierJobs.carrierId))
-    .where(eq(carrierJobs.status, "active"))
+    .where(
+      and(
+        eq(jobPostingCycles.status, "active"),
+        eq(carrierJobs.status, "active"),
+      ),
+    )
     .limit(45_000); // hard cap below Google's 50k-per-sitemap limit
 
-  const jobPages: MetadataRoute.Sitemap = jobRows.map((r) => ({
+  const jobPages: MetadataRoute.Sitemap = cycleRows.map((r) => ({
     url: `${SITE_ORIGIN}/job/${buildJobPostingSlug(
       { name: r.carrierName },
       {
-        id: r.id,
+        id: r.cycleId,
         positionTitle: r.positionTitle,
-        domicileCity: r.domicileCity,
-        domicileState: r.domicileState,
+        domicileCity: r.city,
+        domicileState: r.state,
       },
     )}`,
-    lastModified: r.lastVerifiedAt ?? r.updatedAt,
+    lastModified: r.postedAt,
     changeFrequency: "weekly",
-    priority: 0.8,
+    // Primary cycles get a slightly higher priority — these are the
+    // canonical postings; secondaries are SEO reach.
+    priority: r.isPrimary ? 0.9 : 0.7,
   }));
 
   return [...staticPages, ...landingPages, ...jobPages];
