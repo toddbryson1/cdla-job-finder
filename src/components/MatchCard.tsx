@@ -5,6 +5,7 @@ import Link from "next/link";
 import type { Match } from "@/lib/matching";
 import type { MatchDisplayExtras } from "@/lib/match-display-data";
 import { EQUIPMENT } from "@/lib/slugs";
+import { buildJobPostingSlugFromFields } from "@/lib/job-slug";
 import { AskDebbie } from "./AskDebbie";
 import { MatchBadge } from "./MatchBadge";
 
@@ -76,6 +77,13 @@ export function MatchCard({ driverId, match, extras, pursuit }: Props) {
   const equipment = equipmentLabel(match.equipment);
   const vNote = verificationNote(match, extras?.lastVerifiedAt ?? null);
   const applyHref = `/match/${driverId}/${match.jobId}/apply`;
+  const jobPostingHref = `/job/${buildJobPostingSlugFromFields({
+    carrierName: match.carrierName,
+    jobId: match.jobId,
+    positionTitle: match.positionTitle,
+    domicileCity: match.domicileCity,
+    domicileState: match.domicileState,
+  })}`;
   const contentId = `match-${match.jobId}-detail`;
   const pursuedDate =
     pursuit && pursuit.consentedAt
@@ -221,6 +229,17 @@ export function MatchCard({ driverId, match, extras, pursuit }: Props) {
           {vNote ? (
             <p className="mt-5 text-xs text-brand-muted">{vNote}</p>
           ) : null}
+
+          <p className="mt-3 text-xs text-brand-muted">
+            <Link
+              href={jobPostingHref}
+              className="underline hover:text-brand-ink"
+              onClick={(e) => e.stopPropagation()}
+            >
+              View the full posting
+            </Link>
+            {" — public job page with the carrier's full listing."}
+          </p>
 
           <div className="mt-6 flex flex-wrap items-center gap-3">
             <Link
