@@ -5,6 +5,7 @@ import { carrierJobs } from "@/db/schema";
 export interface MatchDisplayExtras {
   description: string | null;
   displayHomeTimeDescription: string | null;
+  displayLaneDescription: string | null;
   displayBenefitsSummary: string | null;
   displaySigningBonusUsd: number | null;
   lastVerifiedAt: Date | null;
@@ -21,6 +22,7 @@ export async function loadDisplayExtras(
       id: carrierJobs.id,
       description: carrierJobs.description,
       displayHomeTimeDescription: carrierJobs.displayHomeTimeDescription,
+      displayLaneDescription: carrierJobs.displayLaneDescription,
       displayBenefitsSummary: carrierJobs.displayBenefitsSummary,
       displaySigningBonusUsd: carrierJobs.displaySigningBonusUsd,
       lastVerifiedAt: carrierJobs.lastVerifiedAt,
@@ -32,6 +34,7 @@ export async function loadDisplayExtras(
     out.set(r.id, {
       description: r.description,
       displayHomeTimeDescription: r.displayHomeTimeDescription,
+      displayLaneDescription: r.displayLaneDescription,
       displayBenefitsSummary: r.displayBenefitsSummary,
       displaySigningBonusUsd: r.displaySigningBonusUsd,
       lastVerifiedAt: r.lastVerifiedAt,

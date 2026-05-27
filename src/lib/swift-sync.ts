@@ -64,6 +64,11 @@ export interface MappedJob {
   requiredEndorsements: string[];
   payRangeMaxWeeklyUsd: number | null;
   displayPayRangeMaxWeeklyUsd: number | null;
+  // Surfaced on the match card's expanded view:
+  displayHomeTimeDescription: string | null;
+  displayLaneDescription: string | null;
+  displayBenefitsSummary: string | null;
+  displaySigningBonusUsd: number | null;
 }
 
 export interface SwiftSyncResult {
@@ -136,6 +141,42 @@ function mapEquipment(lob: string | null): string | null {
   if (u.includes("FLATBED")) return "flatbed";
   if (u.includes("INT")) return "intermodal";
   return null;
+}
+
+// Human-readable LOB. Smartsheet uses codes like DED-DRY or OTR-REF.
+// Drivers reading the matches list want lane type + equipment in plain
+// English ("Dedicated Dry Van", "OTR Reefer"), not the carrier-internal code.
+function readableLob(lob: string | null): string {
+  if (!lob) return "";
+  const u = lob.toUpperCase().trim();
+  const laneType = u.startsWith("OTR") ? "OTR" : "Dedicated";
+  let equip = "";
+  if (u.includes("WAL GRO")) equip = "Walmart Grocery";
+  else if (u.includes("DRY")) equip = "Dry Van";
+  else if (u.includes("REF")) equip = "Reefer";
+  else if (u.includes("FLATBED")) equip = "Flatbed";
+  else if (u.includes("INT")) equip = "Intermodal";
+  return equip ? `${laneType} ${equip}` : laneType;
+}
+
+// "Load - Unload" → driver-readable touch-freight summary. Examples from
+// the Smartsheet picklist: No, Live Load, Live Unload, Preload, Drop and
+// Hook, Full Hand Unload, Load Assist, Unload Assist.
+function touchFreightSummary(s: string | null): string | null {
+  if (!s) return null;
+  const u = s.toUpperCase();
+  if (u === "NO" || u.includes("DROP AND HOOK") || u.includes("PRELOAD")) {
+    return "No-touch freight";
+  }
+  if (u.includes("FULL HAND")) return "Full hand unload";
+  if (u.includes("LIVE LOAD") && u.includes("LIVE UNLOAD")) {
+    return "Live load and live unload";
+  }
+  if (u.includes("LIVE LOAD")) return "Live load";
+  if (u.includes("LIVE UNLOAD")) return "Live unload";
+  if (u.includes("ASSIST")) return "Some load/unload assistance";
+  // Fallback: surface the source value so drivers see something accurate.
+  return s;
 }
 
 function mapMinExperienceMonths(
@@ -328,22 +369,82 @@ async function mapRow(
 
   const lane = cm.cellValue(row, "Lane Information") ?? "";
   const favorable = cm.cellValue(row, "Favorable Info on Lane") ?? "";
+  const unfavorable = cm.cellValue(row, "Unfavorable Info on Lane") ?? "";
   const bonus = cm.cellValue(row, "BONUS OFFER") ?? "";
+  const bonusDetails = cm.cellValue(row, "Bonus Details") ?? "";
+  const transitionBonus = cm.cellValue(row, "Transition Bonus") ?? "";
+  const loadUnload = cm.cellValue(row, "Load - Unload");
+  const weekendWork = cm.cellValue(row, "Weekend Work");
+  const holidayWork = cm.cellValue(row, "Holiday Work");
+  const homeTimeRaw = cm.cellValue(row, "Home Time");
+  const weeklyMileage = cm.cellValue(row, "Weekly Mileage");
+
+  // Description: lane prose first, then favorable/unfavorable so drivers
+  // get an honest read on the route before deciding to apply.
   const descParts = [
     lane,
-    favorable ? `Favorable: ${favorable}` : "",
-    bonus && bonus !== "NO BONUS OFFER" ? `Bonus: ${bonus}` : "",
+    favorable ? `What's good about this lane: ${favorable}` : "",
+    unfavorable ? `What to know: ${unfavorable}` : "",
   ].filter((s) => s.length > 0);
 
-  const lobTag = (lob ?? "").trim();
-  const positionTitle = `Swift ${lobTag} — ${geo.city}, ${geo.state}`.trim();
+  // displayLaneDescription: short, scannable lane summary that lands above
+  // the description in the match card detail view.
+  const lobReadable = readableLob(lob);
+  const laneDescParts = [
+    lobReadable,
+    weeklyMileage ? `~${weeklyMileage} mi/wk` : "",
+  ].filter((s) => s.length > 0);
+  const displayLaneDescription =
+    laneDescParts.length > 0 ? laneDescParts.join(" · ") : null;
+
+  // displayBenefitsSummary: the at-a-glance bullets drivers ask about
+  // before they click into the apply flow.
+  const touch = touchFreightSummary(loadUnload);
+  const benefitsParts: string[] = [];
+  if (touch) benefitsParts.push(touch);
+  if (weekendWork && weekendWork.toUpperCase() !== "NO") {
+    benefitsParts.push(
+      weekendWork.toUpperCase() === "VOLUNTARY"
+        ? "Weekend work voluntary"
+        : `Weekend work: ${weekendWork.toLowerCase()}`,
+    );
+  } else if (weekendWork && weekendWork.toUpperCase() === "NO") {
+    benefitsParts.push("No weekend work");
+  }
+  if (holidayWork && holidayWork.toLowerCase() !== "no") {
+    benefitsParts.push(`Holiday work: ${holidayWork}`);
+  }
+  if (bonus && bonus !== "NO BONUS OFFER") {
+    benefitsParts.push(`Bonus: ${bonus}`);
+  }
+  if (
+    bonusDetails &&
+    bonusDetails.toLowerCase() !== "no" &&
+    !benefitsParts.some((b) => b.includes(bonusDetails))
+  ) {
+    benefitsParts.push(bonusDetails);
+  }
+  const displayBenefitsSummary =
+    benefitsParts.length > 0 ? benefitsParts.join(" · ") : null;
+
+  // displaySigningBonusUsd: parse a dollar amount from the bonus columns
+  // if present. Used by the match card to render "$X,XXX sign-on bonus."
+  const displaySigningBonusUsd =
+    parseMoney(transitionBonus) ?? parseMoney(bonus);
+
+  // Job-board-style title: "Dedicated Reefer Driver — Atlanta, GA".
+  // The carrier name (Swift Transportation) is shown separately on the
+  // match card, so we don't repeat it in the title.
+  const positionTitle = lobReadable
+    ? `${lobReadable} Driver — ${geo.city}, ${geo.state}`
+    : `CDL-A Driver — ${geo.city}, ${geo.state}`;
 
   return {
     ok: true,
     job: {
       externalSourceId: `smartsheet:${sheetId}:${row.id}`,
       positionTitle,
-      description: descParts.join(" \n\n"),
+      description: descParts.join("\n\n"),
       domicileCity: geo.city,
       domicileState: geo.state,
       domicileZip: geo.zip,
@@ -356,6 +457,10 @@ async function mapRow(
       requiredEndorsements: endorsements,
       payRangeMaxWeeklyUsd: earnings,
       displayPayRangeMaxWeeklyUsd: earnings,
+      displayHomeTimeDescription: homeTimeRaw,
+      displayLaneDescription,
+      displayBenefitsSummary,
+      displaySigningBonusUsd,
     },
   };
 }
@@ -414,6 +519,10 @@ async function upsertJob(
     requiredEndorsements: job.requiredEndorsements,
     payRangeMaxWeeklyUsd: job.payRangeMaxWeeklyUsd ?? undefined,
     displayPayRangeMaxWeeklyUsd: job.displayPayRangeMaxWeeklyUsd ?? undefined,
+    displayHomeTimeDescription: job.displayHomeTimeDescription ?? undefined,
+    displayLaneDescription: job.displayLaneDescription ?? undefined,
+    displayBenefitsSummary: job.displayBenefitsSummary ?? undefined,
+    displaySigningBonusUsd: job.displaySigningBonusUsd ?? undefined,
     applicationSurface: "tenstreet_intelliapp" as const,
     applicationUrl: SWIFT_INTELLIAPP_URL,
     dataSource: "tenstreet_feed" as const,

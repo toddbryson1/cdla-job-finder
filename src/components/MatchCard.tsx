@@ -160,8 +160,19 @@ export function MatchCard({ driverId, match, extras, pursuit }: Props) {
           id={contentId}
           className="border-t border-brand-rule px-5 pb-6 pt-5 sm:px-6"
         >
-          {extras?.description ? (
+          {extras?.displayLaneDescription ? (
             <section>
+              <h3 className="text-xs uppercase tracking-wide text-brand-muted">
+                Lane
+              </h3>
+              <p className="mt-1.5 text-sm leading-6 text-brand-ink">
+                {extras.displayLaneDescription}
+              </p>
+            </section>
+          ) : null}
+
+          {extras?.description ? (
+            <section className={extras?.displayLaneDescription ? "mt-4" : ""}>
               <h3 className="text-xs uppercase tracking-wide text-brand-muted">
                 About the job
               </h3>
