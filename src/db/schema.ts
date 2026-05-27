@@ -303,6 +303,37 @@ export const zipCodes = pgTable(
   (t) => [index("zip_codes_state_idx").on(t.state)],
 );
 
+// Records each reverse-match alert send per driver. Drives:
+//   - "new matches since last alert" detection (matched_at > most recent
+//     sent_at for that driver)
+//   - the weekly cap (max 3 alerts per driver per rolling 7-day window)
+// /api/cron/reverse-matches reads and writes this table.
+export const driverReverseMatchAlerts = pgTable(
+  "driver_reverse_match_alerts",
+  {
+    id: uuid("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    driverId: uuid("driver_id")
+      .references(() => drivers.id, { onDelete: "cascade" })
+      .notNull(),
+    sentAt: timestamp("sent_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    newMatchCount: integer("new_match_count").notNull(),
+    status: text("status").notNull().default("sent"),
+    skipReason: text("skip_reason"),
+    ghlMessageId: text("ghl_message_id"),
+    errorMessage: text("error_message"),
+  },
+  (t) => [
+    index("driver_reverse_match_alerts_driver_sent_idx").on(
+      t.driverId,
+      t.sentAt,
+    ),
+  ],
+);
+
 // Scheduled-send rows for the 6-email driver nurture sequence. One row
 // per (driver, email_index 1..6), inserted at intake time with
 // scheduled_for = intake_date + (30 * email_index) days. The daily
