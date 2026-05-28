@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { db } from "@/db/client";
+import { runContentMachine } from "@/lib/content-machine/run";
 import { isGhlConfigured } from "@/lib/ghl/client";
 import { runNurtureSends } from "@/lib/nurture-sends";
 import { runReverseMatches } from "@/lib/reverse-matches";
@@ -8,7 +9,11 @@ import { spawnPostingCycles } from "@/lib/posting-cycles";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-export const maxDuration = 60;
+// 300s = Hobby tier max with fluid compute (default in 2026). The
+// content-machine step generates 1–4 articles in parallel via the
+// Anthropic API; one Sonnet call can take 20–60s, and we don't want
+// the parallel batch to hit the previous 60s ceiling.
+export const maxDuration = 300;
 
 // Master daily cron. Vercel Hobby tier caps cron-job count low; one
 // scheduled route runs every daily task in sequence. Each operation is
@@ -17,13 +22,16 @@ export const maxDuration = 60;
 // Order matters: sync-swift refreshes carrier_jobs first, so the
 // downstream reverse-matches step detects newly-inserted jobs as "new
 // matches" for affected drivers. Posting cycles run AFTER sync so new
-// jobs get cycles spawned the same day they're added.
+// jobs get cycles spawned the same day they're added. Content machine
+// runs last so a slow/failed article batch never blocks the carrier-data
+// refresh that drives the matching engine.
 //
 //   1. sync-swift      — refresh carrier_jobs from Smartsheet
 //   2. posting-cycles  — expire 20-day-old cycles, spawn repost cycles
 //                        + multi-city cycles per job
 //   3. nurture         — fire scheduled drip emails
 //   4. reverse-matches — alert drivers whose match list grew
+//   5. content-machine — generate + publish daily SEO articles
 //
 // Auth via CRON_SECRET (Vercel adds Authorization: Bearer <secret>).
 // To run manually use Vercel → Cron Jobs → Run, or hit the individual
@@ -113,6 +121,29 @@ export async function GET(request: Request) {
   } catch (err) {
     console.error("[cron/daily] reverse-matches failed:", err);
     out.reverseMatches = {
+      ok: false,
+      error: err instanceof Error ? err.message : String(err),
+    };
+  }
+
+  // 5. content-machine — daily SEO article generation. Internally
+  // gates on CONTENT_MACHINE_ENABLED (defaults to disabled so a
+  // stray deploy doesn't auto-publish). The orchestrator catches
+  // its own per-article failures and writes a run-log row + sends
+  // its own email, so we only catch catastrophic wrapping errors.
+  try {
+    const result = await runContentMachine();
+    out.contentMachine = {
+      ok: true,
+      status: result.status,
+      requested: result.requestedCount,
+      published: result.publishedCount,
+      failed: result.failedCount,
+      skipped: result.skippedCount,
+    };
+  } catch (err) {
+    console.error("[cron/daily] content-machine failed:", err);
+    out.contentMachine = {
       ok: false,
       error: err instanceof Error ? err.message : String(err),
     };
