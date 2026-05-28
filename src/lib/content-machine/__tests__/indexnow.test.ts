@@ -18,7 +18,7 @@ describe("submitToIndexNow", () => {
     const fetchSpy = vi.fn();
     global.fetch = fetchSpy as unknown as typeof global.fetch;
 
-    const result = await submitToIndexNow(["https://cdla.jobs/articles/x"]);
+    const result = await submitToIndexNow(["https://www.cdla.jobs/articles/x"]);
     expect(result.ok).toBe(false);
     expect(result.body).toMatch(/INDEXNOW_KEY/);
     expect(fetchSpy).not.toHaveBeenCalled();
@@ -33,8 +33,8 @@ describe("submitToIndexNow", () => {
     global.fetch = fetchSpy as unknown as typeof global.fetch;
 
     const result = await submitToIndexNow([
-      "https://cdla.jobs/articles/one",
-      "https://cdla.jobs/articles/two",
+      "https://www.cdla.jobs/articles/one",
+      "https://www.cdla.jobs/articles/two",
     ]);
 
     expect(result.ok).toBe(true);
@@ -48,10 +48,10 @@ describe("submitToIndexNow", () => {
     expect(body).toEqual({
       host: "cdla.jobs",
       key: "abc123",
-      keyLocation: "https://cdla.jobs/abc123.txt",
+      keyLocation: "https://www.cdla.jobs/abc123.txt",
       urlList: [
-        "https://cdla.jobs/articles/one",
-        "https://cdla.jobs/articles/two",
+        "https://www.cdla.jobs/articles/one",
+        "https://www.cdla.jobs/articles/two",
       ],
     });
   });
@@ -61,7 +61,7 @@ describe("submitToIndexNow", () => {
     global.fetch = vi
       .fn()
       .mockResolvedValue({ status: 202, text: async () => "" }) as unknown as typeof global.fetch;
-    const r = await submitToIndexNow(["https://cdla.jobs/x"]);
+    const r = await submitToIndexNow(["https://www.cdla.jobs/x"]);
     expect(r.ok).toBe(true);
     expect(r.status).toBe(202);
   });
@@ -74,7 +74,7 @@ describe("submitToIndexNow", () => {
         status: 422,
         text: async () => "key not found",
       }) as unknown as typeof global.fetch;
-    const r = await submitToIndexNow(["https://cdla.jobs/x"]);
+    const r = await submitToIndexNow(["https://www.cdla.jobs/x"]);
     expect(r.ok).toBe(false);
     expect(r.status).toBe(422);
     expect(r.body).toBe("key not found");
@@ -85,7 +85,7 @@ describe("submitToIndexNow", () => {
     global.fetch = vi
       .fn()
       .mockRejectedValue(new Error("DNS fail")) as unknown as typeof global.fetch;
-    const r = await submitToIndexNow(["https://cdla.jobs/x"]);
+    const r = await submitToIndexNow(["https://www.cdla.jobs/x"]);
     expect(r.ok).toBe(false);
     expect(r.status).toBe(0);
     expect(r.body).toMatch(/DNS fail/);

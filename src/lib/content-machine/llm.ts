@@ -90,35 +90,38 @@ const JSON_ENVELOPE_APPENDIX = `
 
 ---
 
-## Output format addendum (machine-readable)
+## Output format (MACHINE-READABLE — overrides Section 7)
 
-After producing all of the natural Section 5 elements and the REVIEW FLAGS block, append **one final fenced \`\`\`json code block** containing a structured envelope of the article so it can be programmatically parsed. The envelope is the source of truth for what gets saved to the database — the natural-form text above is for the human reviewer's daily email.
+Your entire response must be a single fenced \`\`\`json code block containing the article envelope. **Do not output any natural-form text, headers, or commentary outside the JSON block.** A downstream parser reads only the JSON. The envelope fields together contain everything Section 5 elements 1–10 ask for — the human reviewer reads the populated fields, not duplicated prose.
 
-The envelope shape (strict — extra fields are ignored, missing required fields fail validation):
+Envelope shape (all string fields required; arrays may be empty but the keys must be present):
 
 \`\`\`json
 {
-  "workingTitle": "string",
-  "slug": "kebab-case-string",
-  "primaryKeyword": "string",
+  "workingTitle": "string — Section 5 element 1 (working title)",
+  "slug": "kebab-case-string — Section 5 element 1 (URL slug)",
+  "primaryKeyword": "string — Section 5 element 2",
   "secondaryKeywords": ["string", "string"],
-  "titleTag": "string (<=60 chars)",
-  "metaDescription": "string (<=155 chars)",
-  "bodyMarkdown": "full article body as markdown — H1, body paragraphs, H2/H3 subheadings, internal-link markers, CTA, and the FAQ section all inline. Do NOT include the title tag, meta description, or the JSON-LD schema in this field.",
-  "honestCaveat": "the honest-caveat section text as markdown",
+  "titleTag": "string <=60 chars — Section 5 element 3",
+  "metaDescription": "string <=155 chars — Section 5 element 3",
+  "bodyMarkdown": "FULL article body as markdown: H1 + answer-first opening paragraph, all body paragraphs, H2/H3 subheadings, inline [LINK: ...] markers from element 7, and the FAQ section from element 9. Do NOT include the title tag, meta description, honest caveat, CTA block, or the FAQPage JSON-LD schema in this field — those go in their own fields below.",
+  "honestCaveat": "Section 5 element 6 — the honest-caveat section text as markdown (no heading)",
   "internalLinks": [
     { "anchor": "descriptive anchor text", "targetType": "region-equipment landing page" }
   ],
-  "ctaBlock": "the CTA text",
+  "ctaBlock": "Section 5 element 8 — the CTA text",
   "faq": [
     { "question": "How do drivers actually search for this?", "answer": "Concise answer in first sentence, then expansion." }
   ],
-  "faqSchemaJsonld": "the FAQPage JSON-LD as a string — must parse as valid JSON and the on-page FAQ text must match exactly",
-  "reviewFlags": "the full REVIEW FLAGS block as text, or empty string if nothing to flag"
+  "faqSchemaJsonld": "Section 5 element 10 — the FAQPage JSON-LD as a single-line JSON STRING (must JSON.parse cleanly). The Question/Answer text must match the on-page FAQ text exactly.",
+  "reviewFlags": "Section 6 REVIEW FLAGS block as plain text, or empty string if nothing to flag"
 }
 \`\`\`
 
-Output the natural form first (Section 5 elements 1–10 in order, then REVIEW FLAGS), and the JSON envelope **last** as a single fenced block. The parser extracts the **final** \`\`\`json … \`\`\` block in your response.`;
+Critical:
+- The whole response is the single \`\`\`json block — open the fence on line 1, no preamble.
+- Inside bodyMarkdown, escape newlines as \\n and quotes as \\". JSON string rules apply.
+- Inside faqSchemaJsonld, the value is a STRING containing serialized JSON, not a nested object.`;
 
 let cachedArticlePrompt: string | null = null;
 async function loadArticlePrompt(): Promise<string> {
@@ -199,7 +202,7 @@ export async function generateArticle(
 
   const res = await client.messages.create({
     model,
-    max_tokens: 8000,
+    max_tokens: 16000,
     system: systemBlocks,
     messages: [{ role: "user", content: userText }],
   });
@@ -210,7 +213,16 @@ export async function generateArticle(
   }
   const raw = block.text;
 
-  const jsonStr = extractFinalJsonBlock(raw);
+  let jsonStr: string;
+  try {
+    jsonStr = extractFinalJsonBlock(raw);
+  } catch (err) {
+    // Truncation diagnostic: surface stop_reason + length so the caller's
+    // error message tells us *why* parsing failed, not just that it did.
+    throw new Error(
+      `JSON extraction failed (stop_reason=${res.stop_reason}, output_chars=${raw.length}, output_tokens=${res.usage.output_tokens}): ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
   const parsed = parseEnvelope(jsonStr);
 
   return {

@@ -106,7 +106,8 @@ describe("validateAndFix", () => {
   });
 
   it("fails when body word count too long", () => {
-    const r = validateAndFix(makeArticle({ bodyMarkdown: makeBody(1600) }));
+    // Bounds are 700–1800; pick a clearly-over value.
+    const r = validateAndFix(makeArticle({ bodyMarkdown: makeBody(1900) }));
     expect(r.ok).toBe(false);
     expect(r.failureReasons[0]).toMatch(/above maximum/);
   });

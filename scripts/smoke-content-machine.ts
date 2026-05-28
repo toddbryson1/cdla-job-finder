@@ -16,28 +16,34 @@
 import { config } from "dotenv";
 import { readFileSync } from "node:fs";
 
-// Local DB first.
+// Precedence for ANTHROPIC_API_KEY:
+//   1. .env.local (developer-supplied, intentional)
+//   2. .env.production (fallback)
+//   3. shell env (ignored — Claude Code sessions set a key that only
+//      works against their proxy, not api.anthropic.com)
+//
+// We never pull DATABASE_URL from .env.production — writing a smoke
+// article to the prod DB would be bad.
+
+// Drop any shell-set ANTHROPIC vars before loading dotenv files so
+// dotenv's "don't overwrite existing env" behavior doesn't preserve
+// the wrong key.
+delete process.env.ANTHROPIC_API_KEY;
+delete process.env.ANTHROPIC_BASE_URL;
+
 config({ path: ".env.local" });
 
-// Pull ONLY the Anthropic key from .env.production. Never the
-// DATABASE_URL — writing a smoke article to prod would be bad.
-// We OVERRIDE any shell-set ANTHROPIC_API_KEY here because Claude
-// Code sessions set a key that only works against their proxy, not
-// against api.anthropic.com which we need for real Sonnet calls.
-try {
-  const prod = readFileSync(".env.production", "utf8");
-  const m = prod.match(/^ANTHROPIC_API_KEY=(.+)$/m);
-  if (m) {
-    process.env.ANTHROPIC_API_KEY = m[1].trim();
+if (!process.env.ANTHROPIC_API_KEY) {
+  try {
+    const prod = readFileSync(".env.production", "utf8");
+    const m = prod.match(/^ANTHROPIC_API_KEY=(.+)$/m);
+    if (m) {
+      process.env.ANTHROPIC_API_KEY = m[1].trim();
+    }
+  } catch {
+    // .env.production may not exist — fall through to the check below.
   }
-} catch {
-  // .env.production may not exist — ANTHROPIC_API_KEY must come from
-  // somewhere else (shell, .env.local).
 }
-
-// Clear ANTHROPIC_BASE_URL — if set by a Claude Code session it
-// points at a proxy that doesn't accept our real prod key.
-delete process.env.ANTHROPIC_BASE_URL;
 
 if (!process.env.ANTHROPIC_API_KEY) {
   console.error(

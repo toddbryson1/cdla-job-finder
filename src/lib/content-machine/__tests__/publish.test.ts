@@ -39,7 +39,7 @@ describe("stripLinkMarkers", () => {
 describe("urlForSlug", () => {
   it("builds the canonical published URL", () => {
     expect(urlForSlug("best-cdl-a-lanes")).toBe(
-      "https://cdla.jobs/articles/best-cdl-a-lanes",
+      "https://www.cdla.jobs/articles/best-cdl-a-lanes",
     );
   });
 });

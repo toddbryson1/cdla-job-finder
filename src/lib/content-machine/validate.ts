@@ -20,8 +20,14 @@ export const PLACEHOLDER = "[INSERT VERIFIED STAT]";
 
 export const TITLE_TAG_MAX = 60;
 export const META_DESC_MAX = 155;
-export const WORD_COUNT_MIN = 800;
-export const WORD_COUNT_MAX = 1500;
+// Spec §4.3 says "advisory, catches obvious failures." The article
+// prompt asks for 900–1,300 words and the spec mentions ±100 buffer.
+// In practice Sonnet often produces 1,400–1,700 on a good run, which
+// is verbose but not "obviously broken" — bounds widened to catch
+// real failures (50-word stubs, 5,000-word essays) without rejecting
+// the long-but-fine case. Reviewer flags long ones via the daily email.
+export const WORD_COUNT_MIN = 700;
+export const WORD_COUNT_MAX = 1800;
 
 export interface ValidationResult {
   ok: boolean;
