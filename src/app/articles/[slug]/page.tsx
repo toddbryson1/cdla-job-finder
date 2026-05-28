@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import ReactMarkdown from "react-markdown";
@@ -9,6 +10,37 @@ import {
   loadPublishedArticle,
   stripLinkMarkers,
 } from "@/lib/content-machine/publish";
+
+// Split body markdown into two halves at a sensible boundary so we can
+// insert an inline image between them. Prefers splitting at the H2
+// nearest the middle of the body; falls back to a midpoint paragraph
+// break. Returns [first, second] — second may be empty for very short
+// bodies (in which case we just skip the inline image).
+function splitBodyForInlineImage(body: string): [string, string] {
+  const lines = body.split("\n");
+  const h2Indices: number[] = [];
+  for (let i = 0; i < lines.length; i++) {
+    if (/^##\s+/.test(lines[i])) h2Indices.push(i);
+  }
+  const mid = Math.floor(lines.length / 2);
+  if (h2Indices.length >= 2) {
+    // Pick the H2 line closest to the midpoint (but skip the first H2
+    // — inserting before the first section header would push the image
+    // too high in the article).
+    let best = h2Indices[1];
+    for (const idx of h2Indices.slice(1)) {
+      if (Math.abs(idx - mid) < Math.abs(best - mid)) best = idx;
+    }
+    return [lines.slice(0, best).join("\n"), lines.slice(best).join("\n")];
+  }
+  // No usable H2 — fall back to a blank-line break near the middle.
+  for (let i = mid; i < lines.length; i++) {
+    if (lines[i].trim() === "") {
+      return [lines.slice(0, i).join("\n"), lines.slice(i + 1).join("\n")];
+    }
+  }
+  return [body, ""];
+}
 
 // Published articles from the content machine. One row per published
 // article in the `articles` table. Slugs are kebab-case and unique.
@@ -70,6 +102,12 @@ export default async function ArticlePage({
 
   const bodyForRender = stripLinkMarkers(article.bodyMarkdown);
   const bucketLabel = BUCKET_LABELS[article.bucket] ?? `Bucket ${article.bucket}`;
+  const altText = article.title;
+
+  // Only split the body when an inline image is actually available.
+  const [bodyFirstHalf, bodySecondHalf] = article.inlineImageUrl
+    ? splitBodyForInlineImage(bodyForRender)
+    : [bodyForRender, ""];
 
   // FAQPage JSON-LD goes in a <script> tag at the top of the page body.
   // The LLM is instructed to make the schema text match the on-page FAQ
@@ -91,7 +129,7 @@ export default async function ArticlePage({
       )}
 
       <article className="mx-auto max-w-3xl px-5 py-10">
-        <header className="mb-8 border-b border-brand-rule pb-6">
+        <header className="mb-6">
           <p className="text-xs uppercase tracking-wide text-brand-muted">
             {bucketLabel}
             {article.region ? ` · ${article.region}` : null}
@@ -113,6 +151,20 @@ export default async function ArticlePage({
           )}
         </header>
 
+        {article.heroImageUrl && (
+          <figure className="mb-8 overflow-hidden rounded-md border border-brand-rule">
+            <Image
+              src={article.heroImageUrl}
+              alt={altText}
+              width={1536}
+              height={1024}
+              priority
+              className="h-auto w-full"
+              sizes="(min-width: 768px) 768px, 100vw"
+            />
+          </figure>
+        )}
+
         <div
           // Tailwind typography would normally render this; using
           // explicit className styles for consistency with the rest of
@@ -120,8 +172,27 @@ export default async function ArticlePage({
           className="article-body space-y-4 text-base leading-relaxed text-brand-ink"
         >
           <ReactMarkdown remarkPlugins={[remarkGfm]}>
-            {bodyForRender}
+            {bodyFirstHalf}
           </ReactMarkdown>
+
+          {article.inlineImageUrl && bodySecondHalf && (
+            <figure className="my-8 overflow-hidden rounded-md border border-brand-rule">
+              <Image
+                src={article.inlineImageUrl}
+                alt={altText}
+                width={1024}
+                height={1024}
+                className="h-auto w-full"
+                sizes="(min-width: 768px) 768px, 100vw"
+              />
+            </figure>
+          )}
+
+          {bodySecondHalf && (
+            <ReactMarkdown remarkPlugins={[remarkGfm]}>
+              {bodySecondHalf}
+            </ReactMarkdown>
+          )}
         </div>
 
         {article.honestCaveat?.trim() && (

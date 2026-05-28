@@ -18,8 +18,10 @@
 // retry-once-after-30s helper. Run-level catastrophic failures are
 // caught at the top and sent as a separate "RUN FAILED" email.
 
+import { eq } from "drizzle-orm";
 import { db as defaultDb } from "@/db/client";
-import { contentMachineRuns } from "@/db/schema";
+import { articles, contentMachineRuns } from "@/db/schema";
+import { generateArticleImages } from "./images";
 import {
   sendDailyReport,
   sendFailureEmail,
@@ -329,6 +331,8 @@ async function processPick(
   }
 
   // Post-publish side effects — best-effort, don't fail the article.
+  const sideEffectNotes: string[] = [];
+
   try {
     await markTopicUsed(db, topicId);
   } catch (err) {
@@ -348,9 +352,38 @@ async function processPick(
     );
   }
 
+  // Image generation — also best-effort. If gpt-image-1 or Blob is
+  // misconfigured, the article still publishes (renders without
+  // images) and we surface the failure in reviewFlags. ISR
+  // (revalidate=900) means a successful UPDATE will appear within
+  // 15 min even though the row is already live.
+  try {
+    const images = await generateArticleImages({
+      articleId: publishOutcome.articleId,
+      topic,
+      region: regionLabel,
+      bucket,
+    });
+    await db
+      .update(articles)
+      .set({
+        heroImageUrl: images.heroUrl,
+        heroImagePrompt: images.heroPrompt,
+        inlineImageUrl: images.inlineUrl,
+        inlineImagePrompt: images.inlinePrompt,
+        updatedAt: new Date(),
+      })
+      .where(eq(articles.id, publishOutcome.articleId));
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.warn(`[content-machine] image generation failed: ${msg}`);
+    sideEffectNotes.push(`[images] generation failed: ${msg}`);
+  }
+
   const finalReviewFlags = [
     validation.fixedArticle.reviewFlags,
     ...validation.warnings,
+    ...sideEffectNotes,
   ]
     .filter((s) => s?.trim())
     .join("\n");

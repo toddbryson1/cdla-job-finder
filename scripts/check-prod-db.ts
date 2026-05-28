@@ -97,6 +97,31 @@ async function main() {
   for (const r of regs)
     console.log(`  ${r.city}, ${r.state} (active=${r.active})`);
 
+  console.log("\n=== Most recent articles (any status) ===");
+  const recent = await sql<
+    Array<{
+      bucket: number;
+      topic: string;
+      status: string;
+      slug: string;
+      published_url: string | null;
+      word_count: number;
+      failure_reason: string | null;
+      generated_at: string;
+    }>
+  >`SELECT bucket, topic, status, slug, published_url, word_count,
+           failure_reason, generated_at::text
+    FROM articles ORDER BY generated_at DESC LIMIT 3`;
+  for (const r of recent) {
+    console.log(`\n  ${r.generated_at}  bucket=${r.bucket}  status=${r.status}`);
+    console.log(`  topic: ${r.topic}`);
+    console.log(`  slug:  ${r.slug}`);
+    if (r.published_url) console.log(`  url:   ${r.published_url}`);
+    if (r.word_count) console.log(`  words: ${r.word_count}`);
+    if (r.failure_reason)
+      console.log(`  failure_reason: ${r.failure_reason.slice(0, 400)}`);
+  }
+
   // The Vercel cron logged: syncSwift mapped:89 updated:89.
   // If this DB has ~89 active Swift carrier_jobs, it's the same DB
   // the cron uses. If not, they're connected to different DBs.

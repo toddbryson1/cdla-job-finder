@@ -62,6 +62,7 @@ export const dataSourceEnum = pgEnum("data_source", [
   "tenstreet_feed",
   "carrier_self_service",
   "llm_extract_from_posting",
+  "transport_america",
 ]);
 export const verificationStatusEnum = pgEnum("verification_status", [
   "verified",
@@ -589,6 +590,14 @@ export const articles = pgTable(
     // 'generated' | 'published' | 'failed' | 'skipped'
     status: text("status").notNull().default("generated"),
     failureReason: text("failure_reason"),
+    // AI-generated images via OpenAI gpt-image-1, hosted on Vercel Blob.
+    // Both nullable — image-gen failure does NOT block publish; the
+    // article renders without images and the failure is noted in
+    // reviewFlags. Prompts stored for debugging / regeneration.
+    heroImageUrl: text("hero_image_url"),
+    heroImagePrompt: text("hero_image_prompt"),
+    inlineImageUrl: text("inline_image_url"),
+    inlineImagePrompt: text("inline_image_prompt"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .defaultNow()
       .notNull(),
@@ -668,6 +677,30 @@ export const contentMachineRuns = pgTable(
     errorMessage: text("error_message"),
   },
   (t) => [index("content_machine_runs_date_idx").on(t.runDate)],
+);
+
+// TA Dedicated sync: persisted opening→detail-tab mappings after the
+// §6.1 human review step. The sync orchestrator consults this table
+// first; only divisions WITHOUT a confirmed mapping fall through to
+// fuzzy-match-time. tab_name=NULL = "operator confirmed no matching
+// tab" (distinguishes from "not yet reviewed").
+export const taOpeningTabMappings = pgTable(
+  "ta_opening_tab_mappings",
+  {
+    id: uuid("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    openingDivisionNorm: text("opening_division_norm").notNull().unique(),
+    openingDivisionRaw: text("opening_division_raw").notNull(),
+    tabName: text("tab_name"),
+    confidence: numeric("confidence", { precision: 4, scale: 3 }),
+    confirmedAt: timestamp("confirmed_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    confirmedBy: text("confirmed_by"),
+    notes: text("notes"),
+  },
+  (t) => [index("ta_opening_tab_mappings_tab_name_idx").on(t.tabName)],
 );
 
 // Persistent record of (driver, job) matches. One row per pair; matched_at
