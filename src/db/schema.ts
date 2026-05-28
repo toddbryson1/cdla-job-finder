@@ -486,6 +486,190 @@ export const jobPostingCycles = pgTable(
   ],
 );
 
+// ────────────────────────────────────────────────────────────────────────
+// Content machine — see CONTENT_MACHINE_README.md and docs/CDLAjobs_Daily_Article_Prompt.md
+//
+// Once per day the master cron (/api/cron/daily) selects 1–4 (bucket,
+// topic, region) triples, calls the Anthropic API for each, parses the
+// structured output into `articles`, runs validation, publishes to
+// /articles/[slug], pings IndexNow, and emails the owner a report.
+// Topic rotation uses oldest last_used_at within a bucket; region
+// rotation uses oldest last_used_at across regions. Bucket coverage when
+// count<4 is sequenced via daily_run_state.
+// ────────────────────────────────────────────────────────────────────────
+
+// Seed list of candidate topics, one row per (bucket, topic). The
+// machine picks per bucket: oldest active last_used_at wins. Topics
+// flagged requires_data are de-prioritized when no verified figures are
+// available for the target region (see Section 6 of the article prompt).
+export const articleTopics = pgTable(
+  "article_topics",
+  {
+    id: uuid("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    bucket: integer("bucket").notNull(), // 1..4
+    topic: text("topic").notNull(),
+    regionScoped: boolean("region_scoped").notNull().default(false),
+    requiresData: boolean("requires_data").notNull().default(false),
+    lastUsedAt: timestamp("last_used_at", { withTimezone: true }),
+    active: boolean("active").notNull().default(true),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (t) => [
+    index("article_topics_bucket_active_last_used_idx").on(
+      t.bucket,
+      t.active,
+      t.lastUsedAt,
+    ),
+    check("article_topics_bucket_range", sql`${t.bucket} BETWEEN 1 AND 4`),
+  ],
+);
+
+// The same region applies to all buckets generated on a given day (for
+// thematic coherence in the daily report and site clustering). Selection
+// is oldest active last_used_at. Bucket 4 may ignore the region in its
+// prompt (greed-machine articles are largely region-independent).
+export const articleRegions = pgTable(
+  "article_regions",
+  {
+    id: uuid("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    city: text("city").notNull(),
+    state: varchar("state", { length: 2 }).notNull(),
+    active: boolean("active").notNull().default(true),
+    lastUsedAt: timestamp("last_used_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (t) => [
+    index("article_regions_active_last_used_idx").on(t.active, t.lastUsedAt),
+  ],
+);
+
+// One row per generated article. status transitions:
+//   generated → published   (happy path)
+//   generated → failed      (validation failed)
+//   generated → skipped     (placeholder rewrite failed after 1 retry)
+// Slug is unique against itself; collisions with existing site routes
+// are detected at publish time and a short suffix is appended (logged).
+export const articles = pgTable(
+  "articles",
+  {
+    id: uuid("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    bucket: integer("bucket").notNull(),
+    topic: text("topic").notNull(),
+    region: text("region"), // "City, ST" or null for national
+    title: text("title").notNull(),
+    slug: text("slug").notNull(),
+    primaryKeyword: text("primary_keyword").notNull(),
+    secondaryKeywords: text("secondary_keywords").array().notNull().default([]),
+    titleTag: text("title_tag").notNull(),
+    metaDescription: text("meta_description").notNull(),
+    bodyMarkdown: text("body_markdown").notNull(),
+    honestCaveat: text("honest_caveat").notNull().default(""),
+    internalLinksJson: jsonb("internal_links_json"),
+    ctaBlock: text("cta_block").notNull().default(""),
+    faqJson: jsonb("faq_json"),
+    faqSchemaJsonld: text("faq_schema_jsonld").notNull().default(""),
+    reviewFlags: text("review_flags").notNull().default(""),
+    wordCount: integer("word_count").notNull().default(0),
+    generatedAt: timestamp("generated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    publishedAt: timestamp("published_at", { withTimezone: true }),
+    publishedUrl: text("published_url"),
+    llmModel: text("llm_model").notNull(),
+    // 'generated' | 'published' | 'failed' | 'skipped'
+    status: text("status").notNull().default("generated"),
+    failureReason: text("failure_reason"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (t) => [
+    uniqueIndex("articles_slug_uniq").on(t.slug),
+    index("articles_status_idx").on(t.status),
+    index("articles_published_at_idx").on(t.publishedAt),
+    index("articles_bucket_idx").on(t.bucket),
+    check("articles_bucket_range", sql`${t.bucket} BETWEEN 1 AND 4`),
+  ],
+);
+
+// Dormant — populated only when GSC_INTEGRATION_ENABLED=true. One row per
+// (article, daysSincePublish in {1,3,7}). The daily cron picks up rows
+// where check_at <= now() AND checked_at IS NULL, hits the GSC URL
+// Inspection API, writes coverage_state + raw_response back.
+export const articleIndexStatus = pgTable(
+  "article_index_status",
+  {
+    id: uuid("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    articleId: uuid("article_id")
+      .references(() => articles.id, { onDelete: "cascade" })
+      .notNull(),
+    daysSincePublish: integer("days_since_publish").notNull(), // 1, 3, or 7
+    checkAt: timestamp("check_at", { withTimezone: true }).notNull(),
+    checkedAt: timestamp("checked_at", { withTimezone: true }),
+    coverageState: text("coverage_state"),
+    rawResponse: jsonb("raw_response"),
+    errorMessage: text("error_message"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (t) => [
+    index("article_index_status_pending_idx").on(t.checkedAt, t.checkAt),
+    index("article_index_status_article_idx").on(t.articleId),
+  ],
+);
+
+// Singleton-ish state for the bucket-skip sequencer when daily count<4.
+// `lastBucketCursor` is an integer 1..4 indicating where the last run
+// ended in the rotation; the next run continues from there. See
+// src/lib/content-machine/select.ts for the exact semantics.
+export const contentMachineState = pgTable("content_machine_state", {
+  id: integer("id").primaryKey().default(1), // singleton row
+  lastRunDate: date("last_run_date"),
+  lastBucketCursor: integer("last_bucket_cursor").notNull().default(0),
+  updatedAt: timestamp("updated_at", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+});
+
+// One row per daily run for observability and the email report.
+export const contentMachineRuns = pgTable(
+  "content_machine_runs",
+  {
+    id: uuid("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    runDate: date("run_date").notNull(),
+    startedAt: timestamp("started_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+    // 'success' | 'partial' | 'failed' | 'disabled'
+    status: text("status").notNull().default("success"),
+    requestedCount: integer("requested_count").notNull().default(0),
+    publishedCount: integer("published_count").notNull().default(0),
+    failedCount: integer("failed_count").notNull().default(0),
+    skippedCount: integer("skipped_count").notNull().default(0),
+    errorMessage: text("error_message"),
+  },
+  (t) => [index("content_machine_runs_date_idx").on(t.runDate)],
+);
+
 // Persistent record of (driver, job) matches. One row per pair; matched_at
 // is when the driver first saw this match. Drives Tier 1 exclusivity
 // (getFirstMatchTime) and aggregate landing-page stats.
