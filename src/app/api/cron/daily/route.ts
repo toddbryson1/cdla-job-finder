@@ -5,6 +5,7 @@ import { isGhlConfigured } from "@/lib/ghl/client";
 import { runNurtureSends } from "@/lib/nurture-sends";
 import { runReverseMatches } from "@/lib/reverse-matches";
 import { syncSwiftJobs } from "@/lib/swift-sync";
+import { runFullSync as runTaSync } from "@/lib/transport-america/sync";
 import { spawnPostingCycles } from "@/lib/posting-cycles";
 
 export const runtime = "nodejs";
@@ -27,11 +28,16 @@ export const maxDuration = 300;
 // refresh that drives the matching engine.
 //
 //   1. sync-swift      — refresh carrier_jobs from Smartsheet
-//   2. posting-cycles  — expire 20-day-old cycles, spawn repost cycles
+//   2. sync-ta         — refresh Transport America Dedicated from
+//                        Google Sheets (openings + detail workbook).
+//                        Opt-in: gated on TA_SYNC_ENABLED=true env var
+//                        because the full-tab scan takes ~3 minutes
+//                        of the 5-minute maxDuration budget.
+//   3. posting-cycles  — expire 20-day-old cycles, spawn repost cycles
 //                        + multi-city cycles per job
-//   3. nurture         — fire scheduled drip emails
-//   4. reverse-matches — alert drivers whose match list grew
-//   5. content-machine — generate + publish daily SEO articles
+//   4. nurture         — fire scheduled drip emails
+//   5. reverse-matches — alert drivers whose match list grew
+//   6. content-machine — generate + publish daily SEO articles
 //
 // Auth via CRON_SECRET (Vercel adds Authorization: Bearer <secret>).
 // To run manually use Vercel → Cron Jobs → Run, or hit the individual
@@ -82,7 +88,40 @@ export async function GET(request: Request) {
     };
   }
 
-  // 2. posting-cycles — expire stale URLs, spawn fresh ones for SEO rotation
+  // 2. sync-ta — Transport America (TA Dedicated) sync.
+  // Opt-in via TA_SYNC_ENABLED=true. Reuses the same service-account
+  // key as the Indexing API (GOOGLE_INDEXING_SERVICE_ACCOUNT_KEY) for
+  // Google Sheets auth. Skips cleanly if either is missing.
+  try {
+    if (process.env.TA_SYNC_ENABLED !== "true") {
+      out.syncTa = { ok: true, skipped: "TA_SYNC_ENABLED != true" };
+    } else if (!process.env.GOOGLE_INDEXING_SERVICE_ACCOUNT_KEY) {
+      out.syncTa = {
+        ok: false,
+        error: "GOOGLE_INDEXING_SERVICE_ACCOUNT_KEY not set (reused for Sheets auth)",
+      };
+    } else {
+      const result = await runTaSync({ apply: true });
+      out.syncTa = {
+        ok: true,
+        upserted: result.upserted,
+        archived: result.archived,
+        skipped: result.skipped,
+        cdlBExcluded: result.cdlBExcluded,
+        complete: result.qualityCounts.complete,
+        partial: result.qualityCounts.partial,
+        minimal: result.qualityCounts.minimal,
+      };
+    }
+  } catch (err) {
+    console.error("[cron/daily] sync-ta failed:", err);
+    out.syncTa = {
+      ok: false,
+      error: err instanceof Error ? err.message : String(err),
+    };
+  }
+
+  // 3. posting-cycles — expire stale URLs, spawn fresh ones for SEO rotation
   try {
     const result = await spawnPostingCycles(db);
     out.postingCycles = { ok: true, ...result };
@@ -94,7 +133,7 @@ export async function GET(request: Request) {
     };
   }
 
-  // 3. nurture
+  // 4. nurture
   try {
     if (!isGhlConfigured()) {
       out.nurture = { ok: false, error: "GHL not configured" };
@@ -110,7 +149,7 @@ export async function GET(request: Request) {
     };
   }
 
-  // 4. reverse-matches
+  // 5. reverse-matches
   try {
     if (!isGhlConfigured()) {
       out.reverseMatches = { ok: false, error: "GHL not configured" };
@@ -126,7 +165,7 @@ export async function GET(request: Request) {
     };
   }
 
-  // 5. content-machine — daily SEO article generation. Internally
+  // 6. content-machine — daily SEO article generation. Internally
   // gates on CONTENT_MACHINE_ENABLED (defaults to disabled so a
   // stray deploy doesn't auto-publish). The orchestrator catches
   // its own per-article failures and writes a run-log row + sends
