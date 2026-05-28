@@ -30,6 +30,7 @@ import { parseDetailTab } from "./parse-detail-tab";
 import { parseOpenings } from "./parse-openings";
 import {
   listDetailTabNames,
+  readAllPopulatedTabs,
   readDetailTab,
   readOpeningsTab,
 } from "./sheets-client";
@@ -141,11 +142,17 @@ export async function runFullSync(opts: {
     );
   }
 
-  // 1. Read sources in parallel.
-  const [openings, detailNames] = await Promise.all([
+  // 1. Read openings + scan every detail tab once to discover which
+  //    are populated. Empty/abandoned tabs are dropped from the
+  //    fuzzy-match candidate pool so we never pick a stub when a
+  //    populated alternative exists. ~40s wall time on ~163 tabs.
+  const [openings, populatedTabs] = await Promise.all([
     listOpenings(),
-    listDetailTabNames(),
+    readAllPopulatedTabs(),
   ]);
+  notes.push(
+    `populated tab pool: ${populatedTabs.length} (empty tabs filtered out)`,
+  );
 
   // 2. Consult mapping table — operator-confirmed mappings override
   //    fuzzy match results.
@@ -154,10 +161,11 @@ export async function runFullSync(opts: {
     confirmedMappings.map((m) => [m.openingDivisionNorm, m]),
   );
 
-  // 3. Fuzzy-match the openings that don't have confirmed mappings.
+  // 3. Fuzzy-match against POPULATED tabs only.
+  const populatedTabNames = populatedTabs.map((t) => t.tabName);
   const fuzzyResults = matchAllOpenings(
     openings.rows,
-    detailNames.jobTabs,
+    populatedTabNames,
     opts.confidenceThreshold,
   );
 
@@ -169,17 +177,19 @@ export async function runFullSync(opts: {
     qualityCounts: { complete: 0, partial: 0, minimal: 0 },
   };
 
-  // Memoize parsed tabs — many openings can resolve to the same tab.
-  const tabCache = new Map<string, DetailTab | null>();
+  // We already fetched all populated tabs above — use that cache so we
+  // don't re-hit the Sheets API per opening (and burn quota).
+  const populatedByName = new Map(
+    populatedTabs.map((t) => [t.tabName, parseDetailTab(t.tabName, t.grid)]),
+  );
   async function getDetailTab(tabName: string): Promise<DetailTab | null> {
-    if (tabCache.has(tabName)) return tabCache.get(tabName)!;
+    if (populatedByName.has(tabName)) return populatedByName.get(tabName)!;
+    // Operator-confirmed mapping might point at a tab outside our
+    // populated set — read it on demand. If empty, it stays null.
     const grid = await readDetailTab(tabName);
-    if (grid.rows.length === 0) {
-      tabCache.set(tabName, null);
-      return null;
-    }
+    if (grid.rows.length === 0) return null;
     const parsed = parseDetailTab(tabName, grid);
-    tabCache.set(tabName, parsed);
+    populatedByName.set(tabName, parsed);
     return parsed;
   }
 

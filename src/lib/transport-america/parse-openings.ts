@@ -78,6 +78,20 @@ export function parseOpenings(grid: SheetGrid): {
     );
   }
 
+  // Per Todd: "filled" is signaled by grey shading in the dated
+  // columns (the orientation-class date columns starting after Drivers
+  // Needed). Columns D-F (zero-indexed 3-5) typically hold the
+  // nearest orientation dates. If ALL of D, E, F (when present) are
+  // grey, the opening is filled.
+  //
+  // Detection strategy: check columns at indices cols.driversNeeded+1
+  // through cols.driversNeeded+3 (i.e., the first 3 dated columns).
+  // If at least 2 of them are grey-shaded, treat as filled. This is
+  // tolerant to partial shading (DLM sometimes shades only the
+  // earliest classes).
+  const dateColStart = cols.driversNeeded + 1;
+  const dateColIndices = [dateColStart, dateColStart + 1, dateColStart + 2];
+
   const rows: OpeningRow[] = [];
   let cdlBExcluded = 0;
 
@@ -101,14 +115,21 @@ export function parseOpenings(grid: SheetGrid): {
       continue;
     }
 
+    // Filled detection — D-F columns grey-shaded.
+    const dateColShading = dateColIndices
+      .map((idx) => row[idx]?.isGreyShaded)
+      .filter((b) => b !== undefined) as boolean[];
+    const greyCount = dateColShading.filter(Boolean).length;
+    const isFilled =
+      dateColShading.length > 0 && greyCount >= Math.ceil(dateColShading.length / 2);
+
     rows.push({
       rowIndex: i,
       dateOpened,
       division,
       driversNeededRaw,
       driversNeeded,
-      // Filled signal comes from the Division cell's background per §4.
-      isFilled: divisionCell?.isGreyShaded ?? false,
+      isFilled,
       isCdlB: false,
     });
   }

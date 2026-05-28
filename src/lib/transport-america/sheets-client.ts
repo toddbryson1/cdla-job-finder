@@ -119,6 +119,23 @@ interface SheetGrid {
   rows: CellValue[][];
 }
 
+// Sheets API has two read quotas:
+//   - 300 reads/min per project (rarely a problem)
+//   - 60 reads/min PER USER — and the service account counts as one
+//     user, so this is the binding constraint
+//
+// 1100ms throttle = ~55 req/min, safely under 60. Scanning 163 tabs
+// takes ~3 minutes, but the result is cached for the rest of the
+// daily sync (we read every tab once at the top of runFullSync).
+const SHEETS_READ_THROTTLE_MS = 1100;
+let lastReadAt = 0;
+async function rateLimit(): Promise<void> {
+  const elapsed = Date.now() - lastReadAt;
+  const wait = SHEETS_READ_THROTTLE_MS - elapsed;
+  if (wait > 0) await new Promise((r) => setTimeout(r, wait));
+  lastReadAt = Date.now();
+}
+
 /**
  * Read the openings sheet's "Dedicated Spreadsheet" tab WITH cell
  * background formatting so we can detect grey-shaded (filled) rows
@@ -252,6 +269,7 @@ export async function readDetailTab(tabName: string): Promise<SheetGrid> {
       `Refusing to read policy tab "${tabName}" — per spec §8, policy tabs are never synced as jobs`,
     );
   }
+  await rateLimit();
   const token = await getAccessToken();
   const url = new URL(
     `https://sheets.googleapis.com/v4/spreadsheets/${DETAIL_WORKBOOK_ID}`,
@@ -288,6 +306,54 @@ export async function readDetailTab(tabName: string): Promise<SheetGrid> {
       })) ?? [],
   );
   return { rows };
+}
+
+/**
+ * Read every job tab once and return the names + parsed grid for tabs
+ * that have actual content. Empty/abandoned tabs are dropped so they
+ * don't pollute the fuzzy-match candidate set.
+ *
+ * Rate-limited (250ms/req) to stay under Sheets API quota when
+ * scanning ~160 tabs (~40s total wall time).
+ */
+/**
+ * True if this tab has actual content (vs. an empty stub). We define
+ * "populated" as at least 5 non-empty cells across the whole tab —
+ * enough to suggest someone wrote real fields here. Tabs with 1-2
+ * stray edits get filtered out as still-essentially-empty.
+ */
+function isTabPopulated(grid: SheetGrid): boolean {
+  let nonEmpty = 0;
+  for (const row of grid.rows) {
+    for (const cell of row) {
+      if (cell.text && cell.text.trim().length > 0) {
+        nonEmpty++;
+        if (nonEmpty >= 5) return true;
+      }
+    }
+  }
+  return false;
+}
+
+export async function readAllPopulatedTabs(): Promise<
+  Array<{ tabName: string; grid: SheetGrid }>
+> {
+  const { jobTabs } = await listDetailTabNames();
+  const out: Array<{ tabName: string; grid: SheetGrid }> = [];
+  for (const tabName of jobTabs) {
+    try {
+      const grid = await readDetailTab(tabName);
+      if (isTabPopulated(grid)) {
+        out.push({ tabName, grid });
+      }
+    } catch (e) {
+      // Don't let one bad tab kill the whole pass. Log and continue.
+      console.warn(
+        `[ta-sync] readDetailTab(${tabName}) failed: ${e instanceof Error ? e.message : e}`,
+      );
+    }
+  }
+  return out;
 }
 
 export { OPENINGS_SHEET_ID, DETAIL_WORKBOOK_ID, POLICY_TAB_NAMES };
