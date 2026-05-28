@@ -27,7 +27,7 @@ export const META_DESC_MAX = 155;
 // real failures (50-word stubs, 5,000-word essays) without rejecting
 // the long-but-fine case. Reviewer flags long ones via the daily email.
 export const WORD_COUNT_MIN = 700;
-export const WORD_COUNT_MAX = 2200;
+export const WORD_COUNT_MAX = 2500;
 
 export interface ValidationResult {
   ok: boolean;

@@ -104,7 +104,7 @@ Envelope shape (all string fields required; arrays may be empty but the keys mus
   "secondaryKeywords": ["string", "string"],
   "titleTag": "string <=60 chars — Section 5 element 3",
   "metaDescription": "string <=155 chars — Section 5 element 3",
-  "bodyMarkdown": "FULL article body as markdown: H1 + answer-first opening paragraph, all body paragraphs, H2/H3 subheadings, inline [LINK: ...] markers from element 7, and the FAQ section from element 9. Do NOT include the title tag, meta description, honest caveat, CTA block, or the FAQPage JSON-LD schema in this field — those go in their own fields below.",
+  "bodyMarkdown": "FULL article body as markdown: H1 + answer-first opening paragraph, all body paragraphs, H2/H3 subheadings, inline [LINK: ...] markers from element 7, and the FAQ section from element 9. Do NOT include the title tag, meta description, honest caveat, CTA block, or the FAQPage JSON-LD schema in this field — those go in their own fields below. HARD LIMIT: bodyMarkdown must be between 900 and 1,500 words inclusive (counted whitespace-separated). Articles above 1,500 words are auto-rejected by downstream validation. Aim for 1,100–1,400 — tighter than longer.",
   "honestCaveat": "Section 5 element 6 — the honest-caveat section text as markdown (no heading)",
   "internalLinks": [
     { "anchor": "descriptive anchor text", "targetType": "region-equipment landing page" }
