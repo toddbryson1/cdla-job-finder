@@ -75,7 +75,7 @@ export function bucketsForCount(count: DailyCount, cursor: number): Bucket[] {
  * Returns null only if the bucket has no active topics at all.
  */
 export async function pickTopic(
-  db: PostgresJsDatabase,
+  db: PostgresJsDatabase<Record<string, unknown>>,
   bucket: Bucket,
   hasVerifiedData: boolean,
 ): Promise<PickedTopic | null> {
@@ -108,7 +108,7 @@ export async function pickTopic(
  * (caller must treat this as "national" or skip region-scoped topics).
  */
 export async function pickRegion(
-  db: PostgresJsDatabase,
+  db: PostgresJsDatabase<Record<string, unknown>>,
 ): Promise<PickedRegion | null> {
   const rows = await db
     .select({
@@ -128,7 +128,7 @@ export async function pickRegion(
  * Read the singleton cursor, defaulting to 0 if the row is somehow
  * missing (the seed migration inserts id=1, but defensive read).
  */
-export async function readCursor(db: PostgresJsDatabase): Promise<number> {
+export async function readCursor(db: PostgresJsDatabase<Record<string, unknown>>): Promise<number> {
   const rows = await db
     .select({ cursor: contentMachineState.lastBucketCursor })
     .from(contentMachineState)
@@ -143,7 +143,7 @@ export async function readCursor(db: PostgresJsDatabase): Promise<number> {
  * after the corresponding article successfully publishes.
  */
 export async function planDailyRun(opts: {
-  db: PostgresJsDatabase;
+  db: PostgresJsDatabase<Record<string, unknown>>;
   count: DailyCount;
   hasVerifiedData: boolean;
 }): Promise<DailyPlan> {
@@ -171,7 +171,7 @@ export async function planDailyRun(opts: {
  * decides what counts as "used" — published, or just generated.
  */
 export async function markTopicUsed(
-  db: PostgresJsDatabase,
+  db: PostgresJsDatabase<Record<string, unknown>>,
   topicId: string,
 ): Promise<void> {
   await db
@@ -185,7 +185,7 @@ export async function markTopicUsed(
  * Called once per run, not per article.
  */
 export async function markRegionUsed(
-  db: PostgresJsDatabase,
+  db: PostgresJsDatabase<Record<string, unknown>>,
   regionId: string,
 ): Promise<void> {
   await db
@@ -199,7 +199,7 @@ export async function markRegionUsed(
  * per cron invocation regardless of per-article outcomes.
  */
 export async function advanceCursor(
-  db: PostgresJsDatabase,
+  db: PostgresJsDatabase<Record<string, unknown>>,
   newCursor: number,
   runDate: Date,
 ): Promise<void> {

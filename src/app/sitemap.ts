@@ -1,17 +1,19 @@
 import type { MetadataRoute } from "next";
 import { and, eq } from "drizzle-orm";
 import { db } from "@/db/client";
-import { carrierJobs, carriers, jobPostingCycles } from "@/db/schema";
+import { articles, carrierJobs, carriers, jobPostingCycles } from "@/db/schema";
 import { buildJobPostingSlug } from "@/lib/job-slug";
 import { listSeedSlugs } from "@/lib/page-data";
 
-// Sitemap for crawlers. Three buckets:
+// Sitemap for crawlers. Four buckets:
 //   1. Static marketing pages (homepage, about, FAQ, partners, etc.)
 //   2. /jobs/[region-equipment] aggregate landing pages
 //   3. /job/[slug] — one URL per ACTIVE job_posting_cycles row. Each
 //      cycle is a 20-day public listing of one (carrier_job, city)
 //      pair. Expired cycles are deliberately dropped so Google
 //      naturally rotates them out.
+//   4. /articles/[slug] — one URL per published content-machine
+//      article (status='published'). Articles don't expire.
 //
 // We're well under Google's 50k-URL-per-sitemap cap at current scale, so
 // this is a single sitemap. If we ever cross ~30k active cycles we'll
@@ -172,5 +174,30 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     priority: r.isPrimary ? 0.9 : 0.7,
   }));
 
-  return [...staticPages, ...landingPages, ...jobPages];
+  // 4. /articles/[slug] — published content-machine articles. Same
+  // try/catch resilience as #2 and #3 so a DB hiccup doesn't blank
+  // the sitemap.
+  type ArticleRow = { slug: string; publishedAt: Date | null };
+  let articleRows: ArticleRow[] = [];
+  try {
+    articleRows = await db
+      .select({
+        slug: articles.slug,
+        publishedAt: articles.publishedAt,
+      })
+      .from(articles)
+      .where(eq(articles.status, "published"));
+  } catch (err) {
+    console.warn(
+      `[sitemap] article URL list skipped — DB query failed (${err instanceof Error ? err.message : String(err)})`,
+    );
+  }
+  const articlePages: MetadataRoute.Sitemap = articleRows.map((r) => ({
+    url: `${SITE_ORIGIN}/articles/${r.slug}`,
+    lastModified: r.publishedAt ?? now,
+    changeFrequency: "monthly",
+    priority: 0.6,
+  }));
+
+  return [...staticPages, ...landingPages, ...jobPages, ...articlePages];
 }
