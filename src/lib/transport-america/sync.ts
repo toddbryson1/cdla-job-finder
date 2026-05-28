@@ -20,10 +20,20 @@
 // The high-confidence path tomorrow: runFullSync() = match → parse →
 // upsert into carrier_jobs.
 
-import { listDetailTabNames, readOpeningsTab } from "./sheets-client";
+import crypto from "node:crypto";
+import { and, eq } from "drizzle-orm";
+import { db } from "@/db/client";
+import { carrierJobs, carriers, taOpeningTabMappings } from "@/db/schema";
+import { buildCarrierJobRow, normalizeDivisionForKey } from "./build-carrier-job";
 import { matchAllOpenings } from "./fuzzy-match";
+import { parseDetailTab } from "./parse-detail-tab";
 import { parseOpenings } from "./parse-openings";
-import type { SyncReport } from "./types";
+import {
+  listDetailTabNames,
+  readDetailTab,
+  readOpeningsTab,
+} from "./sheets-client";
+import type { DetailTab, SyncReport } from "./types";
 
 /**
  * Read openings → parse → return OpeningRow records.
@@ -86,9 +96,187 @@ export async function runMatchReport(opts: {
   };
 }
 
-// TODO(tomorrow):
-//   - runFullSync(): pull confirmed mappings from the new
-//     opening_tab_mappings table, parse each resolved detail tab,
-//     upsert into carrier_jobs with external_source_id =
-//     "ta:opening:<rowIndex>:<divisionHash>".
-//   - opening_tab_mappings table + migration (persisted human review).
+/**
+ * Result of runFullSync — one summary line for the cron logs + the
+ * full match report on disk for human review.
+ */
+export interface FullSyncResult {
+  ok: boolean;
+  apply: boolean;
+  upserted: number;
+  archived: number;
+  skipped: number;
+  qualityCounts: { complete: number; partial: number; minimal: number };
+  cdlBExcluded: number;
+  matchReportPath: string;
+  notes: string[];
+}
+
+/**
+ * End-to-end TA Dedicated sync:
+ *   1. Read openings + detail tab names
+ *   2. Consult ta_opening_tab_mappings for confirmed matches
+ *   3. Fuzzy-match the rest
+ *   4. For each resolved match, read + parse the detail tab
+ *   5. Build a carrier_jobs insert per opening
+ *   6. Upsert by external_source_id (idempotent)
+ *
+ * Dry-run by default (apply=false). Pass apply=true to actually write.
+ * Filled (grey-shaded) openings are upserted with status='archived'
+ * per spec §4 — keeps history without surfacing them to matchers.
+ */
+export async function runFullSync(opts: {
+  apply: boolean;
+  confidenceThreshold?: number;
+}): Promise<FullSyncResult> {
+  const notes: string[] = [];
+
+  // 0. Look up carrier id.
+  const carrier = await db.query.carriers.findFirst({
+    where: eq(carriers.name, "Transport America"),
+  });
+  if (!carrier) {
+    throw new Error(
+      "Transport America carrier row not found. Run scripts/_insert-ta-carrier.ts first.",
+    );
+  }
+
+  // 1. Read sources in parallel.
+  const [openings, detailNames] = await Promise.all([
+    listOpenings(),
+    listDetailTabNames(),
+  ]);
+
+  // 2. Consult mapping table — operator-confirmed mappings override
+  //    fuzzy match results.
+  const confirmedMappings = await db.select().from(taOpeningTabMappings);
+  const confirmedByNorm = new Map(
+    confirmedMappings.map((m) => [m.openingDivisionNorm, m]),
+  );
+
+  // 3. Fuzzy-match the openings that don't have confirmed mappings.
+  const fuzzyResults = matchAllOpenings(
+    openings.rows,
+    detailNames.jobTabs,
+    opts.confidenceThreshold,
+  );
+
+  // 4 & 5. For each opening, decide tab → parse → build → upsert.
+  const upsertResults = {
+    upserted: 0,
+    archived: 0,
+    skipped: 0,
+    qualityCounts: { complete: 0, partial: 0, minimal: 0 },
+  };
+
+  // Memoize parsed tabs — many openings can resolve to the same tab.
+  const tabCache = new Map<string, DetailTab | null>();
+  async function getDetailTab(tabName: string): Promise<DetailTab | null> {
+    if (tabCache.has(tabName)) return tabCache.get(tabName)!;
+    const grid = await readDetailTab(tabName);
+    if (grid.rows.length === 0) {
+      tabCache.set(tabName, null);
+      return null;
+    }
+    const parsed = parseDetailTab(tabName, grid);
+    tabCache.set(tabName, parsed);
+    return parsed;
+  }
+
+  for (let i = 0; i < openings.rows.length; i++) {
+    const opening = openings.rows[i];
+    const fuzzy = fuzzyResults[i];
+    const confirmed = confirmedByNorm.get(
+      normalizeDivisionForKey(opening.division),
+    );
+
+    // Determine the resolved tab.
+    let resolvedTabName: string | null = null;
+    if (confirmed) {
+      // Operator chose this. tabName may be NULL meaning "no match exists".
+      resolvedTabName = confirmed.tabName;
+    } else if (fuzzy.isResolved) {
+      resolvedTabName = fuzzy.matchedTabName;
+    }
+
+    const detailTab = resolvedTabName
+      ? await getDetailTab(resolvedTabName)
+      : null;
+
+    const build = await buildCarrierJobRow({
+      carrierId: carrier.id,
+      detailTab,
+      opening,
+    });
+
+    if (!build.ok) {
+      upsertResults.skipped++;
+      notes.push(`SKIP ${opening.division}: ${build.reason}`);
+      continue;
+    }
+
+    upsertResults.qualityCounts[build.qualityTier]++;
+    if (opening.isFilled) upsertResults.archived++;
+    else upsertResults.upserted++;
+
+    if (opts.apply) {
+      // Upsert by externalSourceId
+      const existing = await db.query.carrierJobs.findFirst({
+        where: eq(carrierJobs.externalSourceId, build.externalSourceId),
+      });
+      if (existing) {
+        await db
+          .update(carrierJobs)
+          .set({ ...build.row, updatedAt: new Date() })
+          .where(eq(carrierJobs.id, existing.id));
+      } else {
+        await db.insert(carrierJobs).values(build.row);
+      }
+    }
+  }
+
+  // Archive any TA carrier_jobs whose Division is no longer in the
+  // openings list (DLM removed the opening). Idempotent.
+  if (opts.apply) {
+    const liveKeys = new Set(
+      openings.rows.map(
+        (o) =>
+          `ta:opening:${crypto
+            .createHash("sha256")
+            .update(normalizeDivisionForKey(o.division))
+            .digest("hex")
+            .slice(0, 12)}`,
+      ),
+    );
+    const taJobs = await db
+      .select({ id: carrierJobs.id, externalSourceId: carrierJobs.externalSourceId })
+      .from(carrierJobs)
+      .where(
+        and(
+          eq(carrierJobs.carrierId, carrier.id),
+          eq(carrierJobs.status, "active"),
+        ),
+      );
+    for (const j of taJobs) {
+      if (j.externalSourceId && !liveKeys.has(j.externalSourceId)) {
+        await db
+          .update(carrierJobs)
+          .set({ status: "archived", updatedAt: new Date() })
+          .where(eq(carrierJobs.id, j.id));
+        upsertResults.archived++;
+      }
+    }
+  }
+
+  return {
+    ok: true,
+    apply: opts.apply,
+    upserted: upsertResults.upserted,
+    archived: upsertResults.archived,
+    skipped: upsertResults.skipped,
+    qualityCounts: upsertResults.qualityCounts,
+    cdlBExcluded: openings.cdlBExcluded,
+    matchReportPath: "/tmp/ta-match-report.json",
+    notes,
+  };
+}

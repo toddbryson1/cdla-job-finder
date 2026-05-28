@@ -113,6 +113,20 @@
       "when": 1781200000000,
       "tag": "0015_article_images",
       "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1781300000000,
+      "tag": "0016_ta_opening_tab_mappings",
+      "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1781400000000,
+      "tag": "0017_data_source_transport_america",
+      "breakpoints": true
     }
   ]
 }
