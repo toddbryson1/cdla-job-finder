@@ -222,24 +222,43 @@ function buildResponsibilitiesList(job: JobRow): string {
 export async function generateStaticParams() {
   // Prerender every ACTIVE cycle's slug. Expired cycles aren't
   // rendered — they 404 so Google drops them from the index.
-  const rows = await db
-    .select({
-      cycleId: jobPostingCycles.id,
-      city: jobPostingCycles.city,
-      state: jobPostingCycles.state,
-      name: carriers.name,
-      positionTitle: carrierJobs.positionTitle,
-    })
-    .from(jobPostingCycles)
-    .innerJoin(carrierJobs, eq(carrierJobs.id, jobPostingCycles.jobId))
-    .innerJoin(carriers, eq(carriers.id, carrierJobs.carrierId))
-    .where(
-      and(
-        eq(jobPostingCycles.status, "active"),
-        eq(carrierJobs.status, "active"),
-      ),
-    )
-    .limit(20_000);
+  //
+  // Wrapped in try/catch so a missing table (e.g., during the deploy
+  // window between code push and migration apply) or a Neon hiccup
+  // doesn't fail the entire build. Returning [] just means zero
+  // prerendered job pages; they still render on-demand via ISR.
+  let rows: Array<{
+    cycleId: string;
+    city: string;
+    state: string;
+    name: string;
+    positionTitle: string;
+  }> = [];
+  try {
+    rows = await db
+      .select({
+        cycleId: jobPostingCycles.id,
+        city: jobPostingCycles.city,
+        state: jobPostingCycles.state,
+        name: carriers.name,
+        positionTitle: carrierJobs.positionTitle,
+      })
+      .from(jobPostingCycles)
+      .innerJoin(carrierJobs, eq(carrierJobs.id, jobPostingCycles.jobId))
+      .innerJoin(carriers, eq(carriers.id, carrierJobs.carrierId))
+      .where(
+        and(
+          eq(jobPostingCycles.status, "active"),
+          eq(carrierJobs.status, "active"),
+        ),
+      )
+      .limit(20_000);
+  } catch (err) {
+    console.warn(
+      `[job/[slug]] generateStaticParams skipped — DB query failed (${err instanceof Error ? err.message : String(err)}). Pages will render on-demand via ISR.`,
+    );
+    return [];
+  }
 
   return rows.map((r) => ({
     slug: buildJobPostingSlug(

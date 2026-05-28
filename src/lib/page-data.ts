@@ -66,6 +66,20 @@ const EMPTY: PageData = {
 const PAY_MIN_SAMPLE_SIZE = 3;
 
 export async function resolvePageData(parsed: ParsedSlug): Promise<PageData> {
+  try {
+    return await resolvePageDataInner(parsed);
+  } catch (err) {
+    // DB unavailable during build or ISR regeneration — fall back to
+    // the empty/zero shape so the page still renders (Section-14
+    // low-data variant) instead of 500ing.
+    console.warn(
+      `[resolvePageData] DB query failed for ${parsed.region}-${parsed.equipment} (${err instanceof Error ? err.message : String(err)}); falling back to EMPTY`,
+    );
+    return EMPTY;
+  }
+}
+
+async function resolvePageDataInner(parsed: ParsedSlug): Promise<PageData> {
   const geo = resolveRegionGeo(parsed.region);
   if (!geo) return EMPTY;
 
@@ -188,33 +202,51 @@ export async function resolvePageData(parsed: ParsedSlug): Promise<PageData> {
  * Combos with sparse data still resolve at request time (Next.js falls
  * back to runtime rendering for params we don't return here, and ISR
  * caches them with the 15-min revalidate).
+ *
+ * Wrapped in try/catch so a DB hiccup during a deploy doesn't fail the
+ * build — we fall through to the FALLBACK_SLUGS list and rely on ISR.
  */
 export async function listSeedSlugs(): Promise<string[]> {
   const MIN_JOBS_FOR_PRERENDER = 3;
+  const FALLBACK_SLUGS = [
+    "atlanta-reefer",
+    "dallas-flatbed",
+    "houston-tanker",
+    "chicago-dry-van",
+    "southeast-otr",
+  ];
 
-  // For each (region, equipment) combo with our region map, count
-  // matching jobs and keep those above the threshold. This runs against
-  // a small static set (16 regions × ~15 equipment slugs) so an explicit
-  // loop is fine — under 250 cheap queries even in the worst case.
   const out: string[] = [];
-  const { REGIONS, EQUIPMENT } = await import("@/lib/slugs");
+  try {
+    // For each (region, equipment) combo with our region map, count
+    // matching jobs and keep those above the threshold. This runs
+    // against a small static set (16 regions × ~15 equipment slugs)
+    // so an explicit loop is fine — under 250 cheap queries even in
+    // the worst case.
+    const { REGIONS, EQUIPMENT } = await import("@/lib/slugs");
 
-  for (const regionSlug of Object.keys(REGIONS)) {
-    const geo = resolveRegionGeo(regionSlug);
-    if (!geo) continue;
-    const predicate = carrierJobsInRegionSql(geo);
-    for (const equipment of Object.keys(EQUIPMENT)) {
-      const rows = (await db.execute(sql`
-        SELECT COUNT(*)::int AS n
-        FROM carrier_jobs
-        WHERE status='active'
-          AND equipment=${equipment}
-          AND ${predicate}
-      `)) as unknown as Array<{ n: number }>;
-      if ((rows[0]?.n ?? 0) >= MIN_JOBS_FOR_PRERENDER) {
-        out.push(`${regionSlug}-${equipment}`);
+    for (const regionSlug of Object.keys(REGIONS)) {
+      const geo = resolveRegionGeo(regionSlug);
+      if (!geo) continue;
+      const predicate = carrierJobsInRegionSql(geo);
+      for (const equipment of Object.keys(EQUIPMENT)) {
+        const rows = (await db.execute(sql`
+          SELECT COUNT(*)::int AS n
+          FROM carrier_jobs
+          WHERE status='active'
+            AND equipment=${equipment}
+            AND ${predicate}
+        `)) as unknown as Array<{ n: number }>;
+        if ((rows[0]?.n ?? 0) >= MIN_JOBS_FOR_PRERENDER) {
+          out.push(`${regionSlug}-${equipment}`);
+        }
       }
     }
+  } catch (err) {
+    console.warn(
+      `[listSeedSlugs] DB query failed (${err instanceof Error ? err.message : String(err)}); falling back to FALLBACK_SLUGS only`,
+    );
+    return [...FALLBACK_SLUGS];
   }
 
   // Always keep the original five fallback slugs so we don't drop any

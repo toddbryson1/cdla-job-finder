@@ -86,7 +86,25 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   ];
 
   // 2. /jobs/[region-equipment] aggregate landing pages.
-  const regionEquipmentSlugs = await listSeedSlugs();
+  // listSeedSlugs queries carrier_jobs and may throw if DB transiently
+  // unavailable or table missing during a deploy window — fall back
+  // to the static fallback slugs in that case so we still publish a
+  // sitemap with the marketing pages even if data tier is down.
+  let regionEquipmentSlugs: string[];
+  try {
+    regionEquipmentSlugs = await listSeedSlugs();
+  } catch (err) {
+    console.warn(
+      `[sitemap] listSeedSlugs fallback — DB query failed (${err instanceof Error ? err.message : String(err)})`,
+    );
+    regionEquipmentSlugs = [
+      "atlanta-reefer",
+      "dallas-flatbed",
+      "houston-tanker",
+      "chicago-dry-van",
+      "southeast-otr",
+    ];
+  }
   const landingPages: MetadataRoute.Sitemap = regionEquipmentSlugs.map(
     (slug) => ({
       url: `${SITE_ORIGIN}/jobs/${slug}`,
@@ -99,27 +117,43 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   // 3. /job/[slug] — one per ACTIVE posting cycle. Each cycle is its
   // own URL (different cities for the same job get different URLs).
   // We also use the cycle's postedAt as the lastModified so Google
-  // sees a fresh date every repost.
-  const cycleRows = await db
-    .select({
-      cycleId: jobPostingCycles.id,
-      city: jobPostingCycles.city,
-      state: jobPostingCycles.state,
-      postedAt: jobPostingCycles.postedAt,
-      isPrimary: jobPostingCycles.isPrimary,
-      positionTitle: carrierJobs.positionTitle,
-      carrierName: carriers.name,
-    })
-    .from(jobPostingCycles)
-    .innerJoin(carrierJobs, eq(carrierJobs.id, jobPostingCycles.jobId))
-    .innerJoin(carriers, eq(carriers.id, carrierJobs.carrierId))
-    .where(
-      and(
-        eq(jobPostingCycles.status, "active"),
-        eq(carrierJobs.status, "active"),
-      ),
-    )
-    .limit(45_000); // hard cap below Google's 50k-per-sitemap limit
+  // sees a fresh date every repost. Same try/catch resilience as #2.
+  type CycleRow = {
+    cycleId: string;
+    city: string;
+    state: string;
+    postedAt: Date;
+    isPrimary: boolean;
+    positionTitle: string;
+    carrierName: string;
+  };
+  let cycleRows: CycleRow[] = [];
+  try {
+    cycleRows = await db
+      .select({
+        cycleId: jobPostingCycles.id,
+        city: jobPostingCycles.city,
+        state: jobPostingCycles.state,
+        postedAt: jobPostingCycles.postedAt,
+        isPrimary: jobPostingCycles.isPrimary,
+        positionTitle: carrierJobs.positionTitle,
+        carrierName: carriers.name,
+      })
+      .from(jobPostingCycles)
+      .innerJoin(carrierJobs, eq(carrierJobs.id, jobPostingCycles.jobId))
+      .innerJoin(carriers, eq(carriers.id, carrierJobs.carrierId))
+      .where(
+        and(
+          eq(jobPostingCycles.status, "active"),
+          eq(carrierJobs.status, "active"),
+        ),
+      )
+      .limit(45_000); // hard cap below Google's 50k-per-sitemap limit
+  } catch (err) {
+    console.warn(
+      `[sitemap] cycle URL list skipped — DB query failed (${err instanceof Error ? err.message : String(err)})`,
+    );
+  }
 
   const jobPages: MetadataRoute.Sitemap = cycleRows.map((r) => ({
     url: `${SITE_ORIGIN}/job/${buildJobPostingSlug(
