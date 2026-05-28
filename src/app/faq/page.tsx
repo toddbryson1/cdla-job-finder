@@ -13,7 +13,7 @@ export const metadata: Metadata = {
   title: "FAQ — CDLA.jobs",
   description:
     "Common questions from CDL-A drivers about CDLA.jobs: pricing, privacy, matching, records, and what happens after you submit.",
-  alternates: { canonical: "https://cdla.jobs/faq" },
+  alternates: { canonical: "https://www.cdla.jobs/faq" },
 };
 
 export default function FaqPage() {

@@ -15,7 +15,7 @@ export const metadata: Metadata = {
   title: "24-hour exclusivity on matched CDL-A drivers — CDLA.jobs Tier 1",
   description:
     "Tier 1 carriers get 24-hour first-look on every matched CDL-A driver, priority placement, and quarterly business reviews. $2,500/month flat. No per-hire fees.",
-  alternates: { canonical: "https://cdla.jobs/partners/exclusivity" },
+  alternates: { canonical: "https://www.cdla.jobs/partners/exclusivity" },
 };
 
 const TIER1_PRICING = [

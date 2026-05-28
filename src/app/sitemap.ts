@@ -19,7 +19,7 @@ import { listSeedSlugs } from "@/lib/page-data";
 // this is a single sitemap. If we ever cross ~30k active cycles we'll
 // switch to generateSitemaps() and split by source.
 
-const SITE_ORIGIN = "https://cdla.jobs";
+const SITE_ORIGIN = "https://www.cdla.jobs";
 
 export const revalidate = 900; // Re-crawl the sitemap every 15 min so new
 // jobs show up to Google quickly. Same cadence as the job pages

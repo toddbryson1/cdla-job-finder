@@ -23,7 +23,7 @@ export const metadata: Metadata = {
   title: "About CDLA.jobs — Built for drivers.",
   description:
     "CDLA.jobs is an AI-driven matching platform for CDL-A drivers. Founded by Todd Bryson, built to fix what's broken in trucking hiring.",
-  alternates: { canonical: "https://cdla.jobs/about" },
+  alternates: { canonical: "https://www.cdla.jobs/about" },
 };
 
 export default function AboutPage() {

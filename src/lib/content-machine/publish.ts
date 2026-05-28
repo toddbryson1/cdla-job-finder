@@ -13,7 +13,7 @@ import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import { articles } from "@/db/schema";
 import type { ParsedArticle } from "./llm";
 
-export const SITE_ORIGIN = "https://cdla.jobs";
+export const SITE_ORIGIN = "https://www.cdla.jobs";
 export const ARTICLES_PATH = "/articles";
 
 export interface InsertGeneratedInput {

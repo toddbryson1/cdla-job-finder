@@ -10,7 +10,7 @@ export const metadata: Metadata = {
   title: "Terms of Service — CDLA.jobs",
   description:
     "Terms of Service for CDLA.jobs — the CDL-A driver matching and recruiting support service.",
-  alternates: { canonical: "https://cdla.jobs/terms" },
+  alternates: { canonical: "https://www.cdla.jobs/terms" },
 };
 
 const LAST_UPDATED = "May 25, 2026";

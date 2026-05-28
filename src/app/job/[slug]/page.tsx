@@ -39,7 +39,7 @@ import {
 
 export const revalidate = 900; // 15-min ISR
 
-const SITE_ORIGIN = "https://cdla.jobs";
+const SITE_ORIGIN = "https://www.cdla.jobs";
 
 type JobRow = typeof carrierJobs.$inferSelect;
 type CarrierRow = typeof carriers.$inferSelect;

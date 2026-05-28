@@ -26,7 +26,7 @@ export default function robots(): MetadataRoute.Robots {
         ],
       },
     ],
-    sitemap: "https://cdla.jobs/sitemap.xml",
-    host: "https://cdla.jobs",
+    sitemap: "https://www.cdla.jobs/sitemap.xml",
+    host: "https://www.cdla.jobs",
   };
 }

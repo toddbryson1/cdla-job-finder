@@ -16,7 +16,7 @@ export const metadata: Metadata = {
   title: "Matched CDL-A driver leads to your Tenstreet — CDLA.jobs",
   description:
     "Tier 2 carriers receive matched CDL-A driver prequalifications in their Tenstreet account. Free. No per-hire fees. No setup fees. Cancel anytime.",
-  alternates: { canonical: "https://cdla.jobs/partners/integration" },
+  alternates: { canonical: "https://www.cdla.jobs/partners/integration" },
 };
 
 const TIER2_PRICING = [

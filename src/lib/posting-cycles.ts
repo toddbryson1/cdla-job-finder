@@ -43,7 +43,7 @@ import {
   type IndexingNotificationType,
 } from "@/lib/google-indexing";
 
-const SITE_ORIGIN = "https://cdla.jobs";
+const SITE_ORIGIN = "https://www.cdla.jobs";
 
 type DB =
   | PostgresJsDatabase<Record<string, unknown>>

@@ -13,7 +13,7 @@ export const metadata: Metadata = {
   title: "Partner with CDLA.jobs — Carrier options",
   description:
     "CDLA.jobs has two carrier tiers: Tier 2 free (matched leads to your Tenstreet) and Tier 1 $2,500/month flat (24-hour exclusivity, priority placement, QBR).",
-  alternates: { canonical: "https://cdla.jobs/partners" },
+  alternates: { canonical: "https://www.cdla.jobs/partners" },
 };
 
 export default function PartnersIndex() {

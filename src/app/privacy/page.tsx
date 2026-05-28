@@ -9,7 +9,7 @@ export const metadata: Metadata = {
   title: "Privacy Policy — CDLA.jobs",
   description:
     "How CDLA.jobs collects, uses, shares, and protects personal information for CDL-A drivers, carriers, and recruiting partners.",
-  alternates: { canonical: "https://cdla.jobs/privacy" },
+  alternates: { canonical: "https://www.cdla.jobs/privacy" },
 };
 
 const LAST_UPDATED = "May 25, 2026";

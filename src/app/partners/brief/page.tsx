@@ -7,7 +7,7 @@ export const metadata: Metadata = {
   description:
     "One-page brief on how CDLA.jobs delivers matched CDL-A drivers to your ATS. Free PDF, sent to your inbox.",
   robots: { index: false, follow: false },
-  alternates: { canonical: "https://cdla.jobs/partners/brief" },
+  alternates: { canonical: "https://www.cdla.jobs/partners/brief" },
 };
 
 export default function CarrierBriefPage() {

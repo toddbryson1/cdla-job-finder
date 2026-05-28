@@ -15,12 +15,12 @@ export const metadata: Metadata = {
   title: "CDLA.jobs — Class A driver matching. Built for drivers.",
   description:
     "Find your next CDL-A driving job in five minutes. Talk to Debbie, our AI driver matcher. Real carriers, no recruiter spam. Free for drivers.",
-  alternates: { canonical: "https://cdla.jobs/" },
+  alternates: { canonical: "https://www.cdla.jobs/" },
   openGraph: {
     title: "CDLA.jobs — Class A driver matching. Built for drivers.",
     description:
       "Find your next CDL-A driving job in five minutes. Talk to Debbie, our AI driver matcher. Real carriers, no recruiter spam. Free for drivers.",
-    url: "https://cdla.jobs/",
+    url: "https://www.cdla.jobs/",
     siteName: "CDLA.jobs",
     type: "website",
   },
