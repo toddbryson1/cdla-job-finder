@@ -16,6 +16,7 @@ export default function robots(): MetadataRoute.Robots {
         userAgent: "*",
         allow: ["/"],
         disallow: [
+          "/admin",
           "/api/",
           "/authenticate",
           "/intake/done",
