@@ -79,6 +79,11 @@ function SiteFooter() {
                 </Link>
               </li>
               <li>
+                <Link href="/carriers" className="hover:text-brand-ink">
+                  Browse carriers
+                </Link>
+              </li>
+              <li>
                 <Link href="/faq" className="hover:text-brand-ink">
                   FAQ
                 </Link>
