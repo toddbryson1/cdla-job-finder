@@ -13,10 +13,13 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import {
   getCarrierBreakdown,
+  getCarrierPerformance30d,
   getCyclesExpiringSoon,
   getDashboardCounts,
+  getDriverFunnel30d,
   getRecentActivity,
   getRecentArchivedJobs,
+  getRecentConsents,
   getTaUnresolved,
 } from "@/lib/admin/dashboard-queries";
 
@@ -53,6 +56,9 @@ export default async function AdminPage({ searchParams }: PageProps) {
     expiring,
     taUnresolved,
     recentArchived,
+    funnel,
+    carrierPerf,
+    recentConsents,
   ] = await Promise.all([
     getDashboardCounts(),
     getCarrierBreakdown(),
@@ -60,6 +66,9 @@ export default async function AdminPage({ searchParams }: PageProps) {
     getCyclesExpiringSoon(5),
     getTaUnresolved(),
     getRecentArchivedJobs(10),
+    getDriverFunnel30d(),
+    getCarrierPerformance30d(),
+    getRecentConsents(20),
   ]);
 
   const minimalTotal = breakdown.reduce(
@@ -161,6 +170,166 @@ export default async function AdminPage({ searchParams }: PageProps) {
               />
             ))}
           </div>
+        </Section>
+
+        {/* DRIVER FUNNEL (last 30d) */}
+        <Section title="Driver funnel — last 30 days">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            <CountCard
+              label="Intakes"
+              value={funnel.intakes}
+              sub={`${funnel.intakesWithAnyMatch} with ≥1 match · ${funnel.intakesWithAnyConsent} consented`}
+              small
+            />
+            <CountCard
+              label="Impressions"
+              value={funnel.totalImpressions}
+              sub={
+                funnel.intakes > 0
+                  ? `${(funnel.totalImpressions / funnel.intakes).toFixed(1)} avg/intake`
+                  : "—"
+              }
+              small
+            />
+            <CountCard
+              label="Consents"
+              value={funnel.totalConsents}
+              sub={
+                funnel.totalImpressions > 0
+                  ? `${((100 * funnel.totalConsents) / funnel.totalImpressions).toFixed(1)}% of impressions`
+                  : "—"
+              }
+              small
+            />
+            <CountCard
+              label="Qualified"
+              value={funnel.totalQualified}
+              sub={
+                funnel.totalConsents > 0
+                  ? `${((100 * funnel.totalQualified) / funnel.totalConsents).toFixed(1)}% of consents`
+                  : "—"
+              }
+              small
+            />
+          </div>
+          <p className="mt-4 mb-2 text-xs uppercase tracking-wide text-brand-muted">
+            Match-count distribution
+          </p>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            <CountCard
+              label="0 matches"
+              value={funnel.matchCountBuckets.zero}
+              sub="supply gap"
+              small
+            />
+            <CountCard
+              label="1 match"
+              value={funnel.matchCountBuckets.one}
+              small
+            />
+            <CountCard
+              label="2–4 matches"
+              value={funnel.matchCountBuckets.twoToFour}
+              small
+            />
+            <CountCard
+              label="5+ matches"
+              value={funnel.matchCountBuckets.fivePlus}
+              sub="strong fit"
+              small
+            />
+          </div>
+        </Section>
+
+        {/* PER-CARRIER PERFORMANCE (last 30d) */}
+        <Section title="Per-carrier performance — last 30 days">
+          {carrierPerf.length === 0 ? (
+            <Empty>No carrier activity in the last 30 days.</Empty>
+          ) : (
+            <Table>
+              <thead className="text-left text-xs uppercase tracking-wide text-brand-muted">
+                <tr>
+                  <th className="px-3 py-2">Carrier</th>
+                  <th className="px-3 py-2">Tier</th>
+                  <th className="px-3 py-2 text-right">Impressions</th>
+                  <th className="px-3 py-2 text-right">Consents</th>
+                  <th className="px-3 py-2 text-right">Consent rate</th>
+                  <th className="px-3 py-2 text-right">Qualified</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-brand-rule">
+                {carrierPerf.map((r) => (
+                  <tr key={r.carrier} className="text-sm">
+                    <td className="px-3 py-2 font-medium text-brand-ink">
+                      {r.carrier}
+                    </td>
+                    <td className="px-3 py-2 text-brand-muted">
+                      {r.tier === "tier_1"
+                        ? "Tier 1"
+                        : r.tier === "tier_2"
+                          ? "Tier 2"
+                          : r.kind}
+                    </td>
+                    <td className="px-3 py-2 text-right">{r.impressions}</td>
+                    <td className="px-3 py-2 text-right">{r.consents}</td>
+                    <td className="px-3 py-2 text-right">
+                      {r.consent_rate_pct.toFixed(1)}%
+                    </td>
+                    <td className="px-3 py-2 text-right">{r.qualified}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </Table>
+          )}
+        </Section>
+
+        {/* RECENT CONSENTS */}
+        <Section title="Recent consents (last 20)">
+          {recentConsents.length === 0 ? (
+            <Empty>No consents yet.</Empty>
+          ) : (
+            <Table>
+              <thead className="text-left text-xs uppercase tracking-wide text-brand-muted">
+                <tr>
+                  <th className="px-3 py-2">When</th>
+                  <th className="px-3 py-2">Driver</th>
+                  <th className="px-3 py-2">CDL state</th>
+                  <th className="px-3 py-2">Carrier</th>
+                  <th className="px-3 py-2">Position</th>
+                  <th className="px-3 py-2">Qualified?</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-brand-rule">
+                {recentConsents.map((r, i) => (
+                  <tr key={i} className="text-sm">
+                    <td className="px-3 py-2 text-brand-muted">
+                      {new Date(r.consented_at).toLocaleString(undefined, {
+                        dateStyle: "short",
+                        timeStyle: "short",
+                      })}
+                    </td>
+                    <td className="px-3 py-2 text-brand-ink">
+                      {r.driver_first_name}
+                    </td>
+                    <td className="px-3 py-2 text-brand-muted">
+                      {r.cdl_state}
+                    </td>
+                    <td className="px-3 py-2 text-brand-muted">{r.carrier}</td>
+                    <td className="px-3 py-2 text-brand-ink">
+                      {r.position_title}
+                    </td>
+                    <td className="px-3 py-2 text-brand-muted">
+                      {r.qualified === null
+                        ? "—"
+                        : r.qualified
+                          ? "✓"
+                          : "no"}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </Table>
+          )}
         </Section>
 
         {/* CYCLES EXPIRING */}

@@ -231,3 +231,177 @@ export async function getRecentArchivedJobs(limit = 20): Promise<RecentArchivedR
   `)) as unknown as RecentArchivedRow[];
   return rows;
 }
+
+export interface DriverFunnel30d {
+  intakes: number;
+  intakesWithAnyMatch: number;
+  intakesWithAnyConsent: number;
+  totalImpressions: number;
+  totalConsents: number;
+  totalQualified: number;
+  matchCountBuckets: { zero: number; one: number; twoToFour: number; fivePlus: number };
+}
+
+/**
+ * Driver-side conversion funnel for the last 30 days. Intakes → had at
+ * least one match shown → consented to share with at least one carrier.
+ * Plus the distribution of match counts so we can see if drivers are
+ * mostly getting 0/1 matches (carrier-supply problem) vs 5+ (good).
+ */
+export async function getDriverFunnel30d(): Promise<DriverFunnel30d> {
+  const [main] = (await db.execute(sql`
+    WITH recent_drivers AS (
+      SELECT id FROM drivers
+      WHERE created_at >= NOW() - INTERVAL '30 days'
+    ),
+    match_counts AS (
+      SELECT d.id AS driver_id, COUNT(m.id)::int AS n_matches
+      FROM recent_drivers d
+      LEFT JOIN driver_carrier_matches m ON m.driver_id = d.id
+      GROUP BY d.id
+    ),
+    consent_counts AS (
+      SELECT d.id AS driver_id, COUNT(a.id)::int AS n_consents
+      FROM recent_drivers d
+      LEFT JOIN driver_carrier_applications a ON a.driver_id = d.id
+      GROUP BY d.id
+    )
+    SELECT
+      (SELECT COUNT(*)::int FROM recent_drivers) AS intakes,
+      (SELECT COUNT(*)::int FROM match_counts WHERE n_matches > 0) AS intakes_with_any_match,
+      (SELECT COUNT(*)::int FROM consent_counts WHERE n_consents > 0) AS intakes_with_any_consent,
+      (SELECT COALESCE(SUM(n_matches), 0)::int FROM match_counts) AS total_impressions,
+      (SELECT COALESCE(SUM(n_consents), 0)::int FROM consent_counts) AS total_consents,
+      (SELECT COUNT(*)::int FROM driver_carrier_applications a
+        JOIN recent_drivers d ON d.id = a.driver_id
+        WHERE a.last_qualified = TRUE) AS total_qualified,
+      (SELECT COUNT(*)::int FROM match_counts WHERE n_matches = 0) AS bucket_zero,
+      (SELECT COUNT(*)::int FROM match_counts WHERE n_matches = 1) AS bucket_one,
+      (SELECT COUNT(*)::int FROM match_counts WHERE n_matches BETWEEN 2 AND 4) AS bucket_two_four,
+      (SELECT COUNT(*)::int FROM match_counts WHERE n_matches >= 5) AS bucket_five_plus
+  `)) as unknown as Array<{
+    intakes: number;
+    intakes_with_any_match: number;
+    intakes_with_any_consent: number;
+    total_impressions: number;
+    total_consents: number;
+    total_qualified: number;
+    bucket_zero: number;
+    bucket_one: number;
+    bucket_two_four: number;
+    bucket_five_plus: number;
+  }>;
+
+  return {
+    intakes: main.intakes,
+    intakesWithAnyMatch: main.intakes_with_any_match,
+    intakesWithAnyConsent: main.intakes_with_any_consent,
+    totalImpressions: main.total_impressions,
+    totalConsents: main.total_consents,
+    totalQualified: main.total_qualified,
+    matchCountBuckets: {
+      zero: main.bucket_zero,
+      one: main.bucket_one,
+      twoToFour: main.bucket_two_four,
+      fivePlus: main.bucket_five_plus,
+    },
+  };
+}
+
+export interface CarrierPerformanceRow {
+  carrier: string;
+  kind: string;
+  tier: string;
+  impressions: number;
+  consents: number;
+  qualified: number;
+  consent_rate_pct: number; // 0..100, rounded to 1 decimal
+}
+
+/**
+ * Per-carrier conversion for the last 30 days. Impressions = times the
+ * carrier appeared on a /matches page; consents = drivers who picked
+ * the carrier to share their info with; qualified = consents where the
+ * Stage 2 qualification check passed.
+ *
+ * Ordered by impressions desc so the carriers in front of the most
+ * drivers float to the top.
+ */
+export async function getCarrierPerformance30d(): Promise<CarrierPerformanceRow[]> {
+  const rows = (await db.execute(sql`
+    SELECT
+      c.name AS carrier,
+      c.kind::text AS kind,
+      c.tier::text AS tier,
+      COALESCE(imp.n, 0)::int AS impressions,
+      COALESCE(con.n, 0)::int AS consents,
+      COALESCE(con.qualified_n, 0)::int AS qualified,
+      CASE
+        WHEN COALESCE(imp.n, 0) = 0 THEN 0
+        ELSE ROUND(100.0 * COALESCE(con.n, 0)::numeric / imp.n, 1)
+      END AS consent_rate_pct
+    FROM carriers c
+    LEFT JOIN (
+      SELECT carrier_id, COUNT(*)::int AS n
+      FROM driver_carrier_matches
+      WHERE matched_at >= NOW() - INTERVAL '30 days'
+      GROUP BY carrier_id
+    ) imp ON imp.carrier_id = c.id
+    LEFT JOIN (
+      SELECT carrier_id,
+             COUNT(*)::int AS n,
+             (COUNT(*) FILTER (WHERE last_qualified = TRUE))::int AS qualified_n
+      FROM driver_carrier_applications
+      WHERE consented_at >= NOW() - INTERVAL '30 days'
+      GROUP BY carrier_id
+    ) con ON con.carrier_id = c.id
+    WHERE c.status = 'active'
+      AND (COALESCE(imp.n, 0) > 0 OR COALESCE(con.n, 0) > 0)
+    ORDER BY impressions DESC, consents DESC, c.name ASC
+  `)) as unknown as Array<{
+    carrier: string;
+    kind: string;
+    tier: string;
+    impressions: number;
+    consents: number;
+    qualified: number;
+    consent_rate_pct: string | number;
+  }>;
+  return rows.map((r) => ({
+    ...r,
+    consent_rate_pct: Number(r.consent_rate_pct),
+  }));
+}
+
+export interface RecentConsentRow {
+  carrier: string;
+  position_title: string;
+  driver_first_name: string;
+  cdl_state: string;
+  consented_at: Date;
+  qualified: boolean | null;
+}
+
+/**
+ * Most recent driver→carrier consents. The actionable inbox: each row
+ * is a lead a carrier just got. Useful for spot-checking that consents
+ * are flowing and that qualification is running.
+ */
+export async function getRecentConsents(limit = 20): Promise<RecentConsentRow[]> {
+  const rows = (await db.execute(sql`
+    SELECT
+      c.name AS carrier,
+      j.position_title,
+      d.first_name AS driver_first_name,
+      d.cdl_state,
+      a.consented_at,
+      a.last_qualified AS qualified
+    FROM driver_carrier_applications a
+    JOIN carriers c ON c.id = a.carrier_id
+    JOIN carrier_jobs j ON j.id = a.job_id
+    JOIN drivers d ON d.id = a.driver_id
+    ORDER BY a.consented_at DESC
+    LIMIT ${limit}
+  `)) as unknown as RecentConsentRow[];
+  return rows;
+}
