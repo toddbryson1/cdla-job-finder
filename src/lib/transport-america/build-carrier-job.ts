@@ -15,6 +15,7 @@ import crypto from "node:crypto";
 import { sql } from "drizzle-orm";
 import { db } from "@/db/client";
 import type { carrierJobs } from "@/db/schema";
+import { buildMinimalDescription } from "./build-description";
 import { polishDivisionForTitle } from "./display-title";
 import type { DetailTab, OpeningRow } from "./types";
 
@@ -233,12 +234,26 @@ export async function buildCarrierJobRow(
   const titleSource = detailTab?.tabName?.trim() || opening.division.trim();
   const positionTitle = polishDivisionForTitle(titleSource);
 
-  // Description: structured composite of what we have, like Swift sync does.
+  // Description: stack what we know.
+  //
+  // For COMPLETE/PARTIAL jobs (detail tab resolved): the tab's content
+  // wins — we surface lanes, pay, notes verbatim, the original
+  // Division string in a header line for traceability.
+  //
+  // For MINIMAL jobs (no detail tab): synthesize from Division semantics
+  // using buildMinimalDescription. Honest copy that explains the
+  // role + account + location without pretending to know pay or
+  // home-time. This is what drivers see on prod today for the 22 TA
+  // openings whose tabs DLM hasn't populated yet.
   const descLines: string[] = [];
-  descLines.push(`Transport America Dedicated — ${opening.division}`);
-  if (detailTab?.lanesDescription) descLines.push(`Lanes: ${detailTab.lanesDescription}`);
-  if (detailTab?.payRangeRawText) descLines.push(`Pay: ${detailTab.payRangeRawText}`);
-  if (detailTab?.notes?.length) descLines.push(...detailTab.notes);
+  if (detailTab) {
+    descLines.push(`Transport America Dedicated — ${opening.division}`);
+    if (detailTab.lanesDescription) descLines.push(`Lanes: ${detailTab.lanesDescription}`);
+    if (detailTab.payRangeRawText) descLines.push(`Pay: ${detailTab.payRangeRawText}`);
+    if (detailTab.notes?.length) descLines.push(...detailTab.notes);
+  } else {
+    descLines.push(buildMinimalDescription(opening.division));
+  }
 
   const row: CarrierJobInsert = {
     carrierId,
