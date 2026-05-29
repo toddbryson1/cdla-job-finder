@@ -287,8 +287,89 @@ const US_STATE_NAME_TO_ABBR: Record<string, string> = {
   "district of columbia": "DC",
 };
 
+export interface AdzunaCompanyQuery {
+  companyName: string;
+  /** Cap on results. Adzuna max is 50. */
+  limit?: number;
+  /** Optional, restricts to the given state if provided. */
+  state?: string;
+  fetchImpl?: typeof fetch;
+}
+
+/**
+ * Search Adzuna for CDL postings explicitly attributed to a company.
+ * Used by carrier-discovery as a fallback when a carrier's own
+ * careers page doesn't expose JSON-LD.
+ *
+ * We use Adzuna's `company` param when supplied (some accounts have
+ * it via `what_or` syntax). To be safe, we encode the company name
+ * into `what_phrase` so all returned postings mention that exact
+ * phrase somewhere — then post-filter the response so we only keep
+ * rows whose `company.display_name` matches the requested name with
+ * decent fuzz tolerance.
+ */
+export async function searchAdzunaByCompany(
+  query: AdzunaCompanyQuery,
+): Promise<ExternalJobListing[]> {
+  const appId = process.env.ADZUNA_APP_ID;
+  const appKey = process.env.ADZUNA_APP_KEY;
+  if (!appId || !appKey) return [];
+
+  const fetchImpl = query.fetchImpl ?? fetch;
+  const params = new URLSearchParams({
+    app_id: appId,
+    app_key: appKey,
+    results_per_page: String(Math.min(query.limit ?? 50, 50)),
+    what_and: "CDL driver",
+    what_phrase: query.companyName,
+    category: CATEGORY,
+    sort_by: "date",
+    max_days_old: "60",
+    "content-type": "application/json",
+  });
+  if (query.state) {
+    params.set("where", query.state);
+  }
+
+  const url = `${ADZUNA_BASE}?${params.toString()}`;
+  let json: AdzunaSearchResponse;
+  try {
+    const res = await fetchImpl(url);
+    if (!res.ok) {
+      console.error(
+        `[adzuna] company search failed: ${res.status} ${res.statusText}`,
+      );
+      return [];
+    }
+    json = (await res.json()) as AdzunaSearchResponse;
+  } catch (err) {
+    console.error("[adzuna] company search network error:", err);
+    return [];
+  }
+
+  const wantedNorm = normalizeName(query.companyName);
+  const results = json.results ?? [];
+  return results
+    .filter((r) => {
+      const got = normalizeName(r.company?.display_name ?? "");
+      // Both directions: handle "Heartland" vs "Heartland Express".
+      return got.includes(wantedNorm) || wantedNorm.includes(got);
+    })
+    .map(toListing)
+    .filter((l): l is ExternalJobListing => l !== null);
+}
+
+function normalizeName(s: string): string {
+  return s
+    .toLowerCase()
+    .replace(/\b(inc|llc|corp|corporation|company|co|ltd|usa)\b/g, "")
+    .replace(/[^a-z0-9]+/g, "")
+    .trim();
+}
+
 // Exported for tests.
 export const __test__ = {
   buildKeyword,
   toListing,
+  normalizeName,
 };
