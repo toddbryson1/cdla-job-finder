@@ -41,7 +41,7 @@ const DEFAULT_HIRING_RADIUS_MILES = 75;
 // portion cannot contain "/" or "-" — those are separators between
 // account name and city. Walk backwards from each ", ST" match and
 // stop at the last clean stretch.
-function parseCityStateFromDivision(
+export function parseCityStateFromDivision(
   division: string,
 ): { city: string; state: string } | null {
   // Find every ", ST" candidate
@@ -117,7 +117,7 @@ export function normalizeDivisionForKey(division: string): string {
     .trim();
 }
 
-function divisionHash(division: string): string {
+export function divisionHash(division: string): string {
   return crypto
     .createHash("sha256")
     .update(normalizeDivisionForKey(division))
@@ -271,7 +271,7 @@ export async function buildCarrierJobRow(
  * Returns null if we can't make a confident call — the row builder
  * falls back to "dry-van" (the dominant dedicated category).
  */
-function deriveEquipmentSlug(text: string | null | undefined): string | null {
+export function deriveEquipmentSlug(text: string | null | undefined): string | null {
   if (!text) return null;
   const t = text.toLowerCase();
   if (/\bflatbed\b/.test(t)) return "flatbed";
@@ -285,7 +285,7 @@ function deriveEquipmentSlug(text: string | null | undefined): string | null {
   return null;
 }
 
-function deriveHomeTimeArray(
+export function deriveHomeTimeArray(
   text: string | null | undefined,
 ): ("daily" | "weekly" | "biweekly" | "otr")[] {
   if (!text) return ["weekly"];

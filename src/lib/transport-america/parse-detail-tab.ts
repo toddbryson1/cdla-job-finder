@@ -112,7 +112,11 @@ export function parseDetailTab(tabName: string, grid: SheetGrid): DetailTab {
   const endorsementsRaw = findFieldValue(grid, FIELD_LABELS.endorsements);
   const requirementsRaw = findFieldValue(grid, FIELD_LABELS.experience);
   const homeTimeRaw = findFieldValue(grid, FIELD_LABELS.homeTime);
-  const equipmentRaw = findFieldValue(grid, FIELD_LABELS.equipment);
+  // Equipment falls back to Freight Types — populated tabs (e.g.,
+  // Ecolab Garland-home weekly) use "Freight Types" as the label.
+  const equipmentRaw =
+    findFieldValue(grid, FIELD_LABELS.equipment) ??
+    findFieldValue(grid, FIELD_LABELS.freightTypes);
   const payRaw = findFieldValue(grid, FIELD_LABELS.pay);
   const lanesRaw = findFieldValue(grid, FIELD_LABELS.lanes);
 

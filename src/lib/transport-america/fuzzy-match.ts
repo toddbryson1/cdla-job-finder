@@ -179,8 +179,22 @@ export function matchOpening(
     .map((tab) => ({ tabName: tab, score: scoreMatch(opening.division, tab) }))
     .sort((a, b) => b.score - a.score);
 
-  const top = scored[0];
   const notes: string[] = [];
+
+  // Empty candidate set — no possible match.
+  if (scored.length === 0) {
+    notes.push("no candidate tabs available");
+    return {
+      opening,
+      matchedTabName: null,
+      confidence: null,
+      candidates: [],
+      isResolved: false,
+      notes,
+    };
+  }
+
+  const top = scored[0];
 
   // Check for "tied" matches — if the top 2 scores are within 0.05,
   // we don't trust the choice and mark unresolved.
