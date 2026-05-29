@@ -13,6 +13,7 @@ import {
   buildJobPostingSlug,
   jobIdLikePattern,
 } from "@/lib/job-slug";
+import { buildCarrierSlug } from "@/lib/carrier-slug";
 import { postingCycleIdPrefixFromSlug } from "@/lib/posting-cycles";
 import {
   generateSeoCopy,
@@ -378,7 +379,14 @@ export default async function JobPostingPage({
 
       <article className="mx-auto max-w-3xl px-5 py-10 sm:py-14">
         <p className="text-xs uppercase tracking-wide text-brand-muted">
-          {carrierName} · {seo.laneNoun} {equipment}
+          <Link
+            href={`/carriers/${buildCarrierSlug(carrier)}`}
+            className="hover:text-brand-ink hover:underline"
+          >
+            {carrierName}
+          </Link>
+          {" · "}
+          {seo.laneNoun} {equipment}
         </p>
         <h1 className="mt-2 text-3xl font-semibold leading-tight text-brand-ink sm:text-4xl">
           {seo.h1}

@@ -3,6 +3,7 @@ import { and, eq } from "drizzle-orm";
 import { db } from "@/db/client";
 import { articles, carrierJobs, carriers, jobPostingCycles } from "@/db/schema";
 import { buildJobPostingSlug } from "@/lib/job-slug";
+import { buildCarrierSlug } from "@/lib/carrier-slug";
 import { listSeedSlugs } from "@/lib/page-data";
 
 // Sitemap for crawlers. Four buckets:
@@ -199,5 +200,34 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     priority: 0.6,
   }));
 
-  return [...staticPages, ...landingPages, ...jobPages, ...articlePages];
+  // 5. /carriers/[slug] — one profile page per active carrier
+  // (excluding composite seed rows). Same try/catch resilience.
+  type CarrierRow = { name: string };
+  let carrierRows: CarrierRow[] = [];
+  try {
+    carrierRows = await db
+      .select({ name: carriers.name })
+      .from(carriers)
+      .where(eq(carriers.status, "active"));
+  } catch (err) {
+    console.warn(
+      `[sitemap] carrier URL list skipped — DB query failed (${err instanceof Error ? err.message : String(err)})`,
+    );
+  }
+  const carrierPages: MetadataRoute.Sitemap = carrierRows
+    .filter((r) => !/composite/i.test(r.name))
+    .map((r) => ({
+      url: `${SITE_ORIGIN}/carriers/${buildCarrierSlug(r)}`,
+      lastModified: now,
+      changeFrequency: "weekly",
+      priority: 0.7,
+    }));
+
+  return [
+    ...staticPages,
+    ...landingPages,
+    ...jobPages,
+    ...articlePages,
+    ...carrierPages,
+  ];
 }
