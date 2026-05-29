@@ -744,3 +744,76 @@ export const driverCarrierMatches = pgTable(
     index("driver_carrier_matches_matched_at_idx").on(t.matchedAt),
   ],
 );
+
+// External job listings sourced from public aggregators (Adzuna for
+// now) so drivers in zero-supply regions get *something* to look at
+// when our internal carrier_jobs come back sparse. 24-hour cache: a
+// (lat, lng, equipment) query is served from this table if any row
+// fetched within 24h matches, otherwise we call Adzuna and upsert.
+//
+// We have NO relationship with the hiring carrier here — the apply
+// CTA links straight to redirect_url, no consent flow, no info-share.
+export const externalJobs = pgTable(
+  "external_jobs",
+  {
+    id: uuid("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    source: text("source").notNull(), // "adzuna" for now
+    sourceId: text("source_id").notNull(), // unique id within source
+    title: text("title").notNull(),
+    companyName: text("company_name"),
+    city: text("city"),
+    state: varchar("state", { length: 2 }),
+    lat: numeric("lat", { precision: 9, scale: 6 }),
+    lng: numeric("lng", { precision: 9, scale: 6 }),
+    equipmentGuess: text("equipment_guess"), // best-effort tag from title/desc
+    salaryMinAnnualUsd: integer("salary_min_annual_usd"),
+    salaryMaxAnnualUsd: integer("salary_max_annual_usd"),
+    salaryIsPredicted: boolean("salary_is_predicted").notNull().default(false),
+    descriptionExcerpt: text("description_excerpt"),
+    redirectUrl: text("redirect_url").notNull(),
+    postedAt: timestamp("posted_at", { withTimezone: true }),
+    fetchedAt: timestamp("fetched_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (t) => [
+    uniqueIndex("external_jobs_source_source_id_uniq").on(t.source, t.sourceId),
+    index("external_jobs_geo_idx").on(t.lat, t.lng),
+    index("external_jobs_equipment_idx").on(t.equipmentGuess),
+    index("external_jobs_fetched_at_idx").on(t.fetchedAt),
+  ],
+);
+
+// One row per (driver, external_job) shown on /matches. Tracks
+// whether the driver clicked through to the source. Lets us measure
+// whether external top-ups are actually useful.
+export const driverExternalJobImpressions = pgTable(
+  "driver_external_job_impressions",
+  {
+    id: uuid("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    driverId: uuid("driver_id")
+      .references(() => drivers.id, { onDelete: "cascade" })
+      .notNull(),
+    externalJobId: uuid("external_job_id")
+      .references(() => externalJobs.id, { onDelete: "cascade" })
+      .notNull(),
+    shownAt: timestamp("shown_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    clickThroughAt: timestamp("click_through_at", { withTimezone: true }),
+  },
+  (t) => [
+    uniqueIndex("driver_external_job_impressions_driver_job_uniq").on(
+      t.driverId,
+      t.externalJobId,
+    ),
+    index("driver_external_job_impressions_driver_idx").on(
+      t.driverId,
+      t.shownAt,
+    ),
+  ],
+);

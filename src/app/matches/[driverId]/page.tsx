@@ -6,9 +6,20 @@ import { db } from "@/db/client";
 import { driverCarrierApplications, drivers, zipCodes } from "@/db/schema";
 import { matchDriver } from "@/lib/matching";
 import { loadDisplayExtras } from "@/lib/match-display-data";
+import {
+  recordExternalImpressions,
+  topUpWithExternal,
+} from "@/lib/external-jobs";
 import { getSessionState } from "@/lib/stytch/session";
 import { MatchCard } from "@/components/MatchCard";
+import { ExternalJobCard } from "@/components/ExternalJobCard";
 import { EmptyMatches } from "@/components/EmptyMatches";
+
+// We aim to show every driver at least this many matches. When our
+// internal carrier_jobs come up short, we top up with external
+// listings (Adzuna). Keeps drivers in zero-supply regions from
+// hitting a dead end.
+const TARGET_MATCH_COUNT = 5;
 
 export const metadata: Metadata = {
   title: "Your matches",
@@ -73,6 +84,30 @@ export default async function MatchesPage({ params }: PageProps) {
   const result = await matchDriver(driverId);
   const extras = await loadDisplayExtras(result.matches.map((m) => m.jobId));
 
+  // Top up to TARGET_MATCH_COUNT with external listings when our
+  // internal matches are sparse. No-op when Adzuna isn't configured
+  // or when internal already meets the target.
+  const externalMatches =
+    driver.homeLat != null && driver.homeLng != null
+      ? await topUpWithExternal({
+          driver: {
+            id: driver.id,
+            homeLat: Number(driver.homeLat),
+            homeLng: Number(driver.homeLng),
+            desiredEquipment: driver.desiredEquipment,
+            minWeeklyPay: driver.minWeeklyPay,
+            willingToRelocate: driver.willingToRelocate,
+          },
+          targetCount: TARGET_MATCH_COUNT,
+          internalCount: result.matches.length,
+        })
+      : [];
+
+  // Best-effort impression tracking for the externals we render.
+  if (externalMatches.length > 0) {
+    void recordExternalImpressions(driverId, externalMatches);
+  }
+
   // Look up which (driver, job) pairs the driver has already pursued
   // (consented through the Stage 2 flow). Used to badge the carrier card
   // so the driver can tell what they've already engaged with.
@@ -100,23 +135,49 @@ export default async function MatchesPage({ params }: PageProps) {
       <Header
         firstName={driver.firstName}
         matchCount={result.matches.length}
+        externalCount={externalMatches.length}
         truncated={result.truncated}
       />
-      {result.matches.length === 0 ? (
+      {result.matches.length === 0 && externalMatches.length === 0 ? (
         <EmptyMatches firstName={driver.firstName} />
       ) : (
-        <ul className="mt-8 flex flex-col gap-4">
-          {result.matches.map((m) => (
-            <li key={m.jobId}>
-              <MatchCard
-                driverId={driverId}
-                match={m}
-                extras={extras.get(m.jobId)}
-                pursuit={pursued.get(m.jobId) ?? null}
-              />
-            </li>
-          ))}
-        </ul>
+        <>
+          {result.matches.length > 0 ? (
+            <ul className="mt-8 flex flex-col gap-4">
+              {result.matches.map((m) => (
+                <li key={m.jobId}>
+                  <MatchCard
+                    driverId={driverId}
+                    match={m}
+                    extras={extras.get(m.jobId)}
+                    pursuit={pursued.get(m.jobId) ?? null}
+                  />
+                </li>
+              ))}
+            </ul>
+          ) : null}
+
+          {externalMatches.length > 0 ? (
+            <section className="mt-10">
+              <h2 className="text-sm font-semibold uppercase tracking-wide text-brand-muted">
+                Other CDL jobs near you
+              </h2>
+              <p className="mt-2 text-sm leading-6 text-brand-muted">
+                These are public listings we found on the open web. We
+                don&rsquo;t work with these carriers, so you&rsquo;d apply
+                directly with them — your CDLA.jobs profile isn&rsquo;t
+                shared.
+              </p>
+              <ul className="mt-4 flex flex-col gap-4">
+                {externalMatches.map((m) => (
+                  <li key={m.externalJobId}>
+                    <ExternalJobCard match={m} />
+                  </li>
+                ))}
+              </ul>
+            </section>
+          ) : null}
+        </>
       )}
       <FooterNote />
     </Shell>
@@ -134,18 +195,27 @@ function Shell({ children }: { children: React.ReactNode }) {
 function Header({
   firstName,
   matchCount,
+  externalCount,
   truncated,
 }: {
   firstName: string;
   matchCount: number;
+  externalCount: number;
   truncated: boolean;
 }) {
-  const intro =
-    matchCount === 0
-      ? "We ran your profile against every carrier we work with. Here is what came back."
-      : truncated
-        ? `${matchCount}+ carriers came back. We are showing the strongest fits first.`
-        : `${matchCount} ${matchCount === 1 ? "carrier" : "carriers"} came back. You pick which ones see your info.`;
+  let intro: string;
+  if (matchCount === 0 && externalCount === 0) {
+    intro =
+      "We ran your profile against every carrier we work with. Here is what came back.";
+  } else if (matchCount === 0 && externalCount > 0) {
+    intro = `None of the carriers we work with are hiring exactly what you said you want right now. We pulled ${externalCount} open listing${externalCount === 1 ? "" : "s"} from public job boards below — you would apply directly with those carriers.`;
+  } else if (truncated) {
+    intro = `${matchCount}+ carriers came back. We are showing the strongest fits first.`;
+  } else if (externalCount > 0) {
+    intro = `${matchCount} ${matchCount === 1 ? "carrier" : "carriers"} came back. You pick which ones see your info. We also pulled ${externalCount} open listing${externalCount === 1 ? "" : "s"} from public job boards below.`;
+  } else {
+    intro = `${matchCount} ${matchCount === 1 ? "carrier" : "carriers"} came back. You pick which ones see your info.`;
+  }
   return (
     <header className="mb-2">
       <p className="text-sm font-medium text-brand-medium">CDLA.jobs</p>
