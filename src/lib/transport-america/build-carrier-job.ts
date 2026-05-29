@@ -15,6 +15,7 @@ import crypto from "node:crypto";
 import { sql } from "drizzle-orm";
 import { db } from "@/db/client";
 import type { carrierJobs } from "@/db/schema";
+import { polishDivisionForTitle } from "./display-title";
 import type { DetailTab, OpeningRow } from "./types";
 
 type CarrierJobInsert = typeof carrierJobs.$inferInsert;
@@ -225,10 +226,12 @@ export async function buildCarrierJobRow(
   // (which it always is for TA dedicated; we never go NULL radius).
   const acceptedHomeTimeTypes = deriveHomeTimeArray(detailTab?.homeTimeDescription);
 
-  // Title — prefer the carrier's named position, fall back to a
-  // generated one with role + city.
-  const positionTitle =
-    detailTab?.tabName?.trim() || `${opening.division.trim()}`;
+  // Title — prefer the resolved detail-tab name (when it exists and
+  // is driver-friendly), fall back to the polished Division string.
+  // We polish whichever source we use because both can carry DLM
+  // abbreviations (AAP/CQ, NFS, etc.) that mean nothing to drivers.
+  const titleSource = detailTab?.tabName?.trim() || opening.division.trim();
+  const positionTitle = polishDivisionForTitle(titleSource);
 
   // Description: structured composite of what we have, like Swift sync does.
   const descLines: string[] = [];
