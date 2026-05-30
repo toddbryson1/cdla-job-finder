@@ -83,11 +83,13 @@ async function loadCycleFromSlug(slug: string): Promise<LoadedCycle | null> {
 interface JsonLdContext {
   loaded: LoadedCycle;
   slug: string;
+  /** Synthesized title (from generateSeoCopy.h1) — see comment at title. */
+  title: string;
   description: string;
 }
 
 function jobPostingJsonLd(ctx: JsonLdContext): object {
-  const { loaded, slug, description } = ctx;
+  const { loaded, slug, title, description } = ctx;
   const { cycle, job, carrier } = loaded;
   const carrierName = displayCarrierName(carrier.name);
   const sameAs = carrier.publicCareersUrl ?? undefined;
@@ -117,7 +119,12 @@ function jobPostingJsonLd(ctx: JsonLdContext): object {
   return {
     "@context": "https://schema.org/",
     "@type": "JobPosting",
-    title: job.positionTitle,
+    // Use the same SEO-friendly title we render in the page <h1>
+    // (see job-seo-copy.buildPublicJobTitle). The raw carrier-feed
+    // title is too noisy for Google for Jobs — e.g. "Dedicated CDL A
+    // Truck Driver - Weekend Hometime $.55-$.58 cpm" would have hurt
+    // SERP CTR vs. "Regional Class A Driver in Atlanta, GA".
+    title,
     description,
     // Per Google for Jobs: datePosted is when THIS posting went live,
     // validThrough is when it stops being valid. The cycle table owns
@@ -367,6 +374,7 @@ export default async function JobPostingPage({
   const jsonLd = jobPostingJsonLd({
     loaded,
     slug,
+    title: seo.h1,
     description: seo.jsonLdDescription,
   });
 

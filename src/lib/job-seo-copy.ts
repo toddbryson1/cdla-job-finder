@@ -67,9 +67,27 @@ export function generateSeoCopy(input: SeoCopyInput): SeoCopy {
   const titleTail = pay.shortLabel ?? carrierName;
   const pageTitle = `${titleHead} - ${titleTail}`;
 
-  // <h1>: drivers see this on the page itself. Keep human, not
-  // keyword-stuffed. Position title from the carrier feed wins here.
-  const h1 = job.positionTitle;
+  // <h1> + JobPosting.title: drivers + Google see this.
+  //
+  // We *don't* use the raw carrier-feed position_title here because
+  // Adzuna/Tenstreet/etc. surface noisy marketing strings like
+  // "Dedicated CDL A Truck Driver - Weekend Hometime $.55-$.58 cpm"
+  // — they're inconsistent across sources and SEO-hostile. Instead
+  // we synthesize a clean lane+equipment+city title so every
+  // /job/[slug] page reads the same way:
+  //   "Regional Class A Dry Van Driver in Atlanta, GA"
+  //   "OTR Class A Reefer Driver in Dallas, TX"
+  //   "Local Class A Driver in Kansas City, MO"
+  //
+  // The raw feed title is still stored on carrier_jobs for matcher
+  // de-dup and admin debugging.
+  const h1 = buildPublicJobTitle({
+    laneNoun,
+    equipmentNoun,
+    equipmentSlug: job.equipment,
+    city,
+    state,
+  });
 
   // Meta description: 1 sentence, must include city+state+pay+carrier.
   const metaDescription = buildMetaDescription(
@@ -121,6 +139,47 @@ export function displayCarrierName(name: string): string {
  * literally named the job) → accepted home-time array → hiring radius
  * (null means OTR).
  */
+/**
+ * Generic, SEO-friendly public job title used on /job/[slug] pages
+ * and in the JobPosting JSON-LD. Built deterministically from the
+ * job's lane + equipment + the cycle's city, so every prospect job
+ * reads cleanly regardless of how noisy the upstream feed was.
+ *
+ * Format: "{Lane} Class A {Equipment} Driver in {City}, {State}"
+ *
+ * We omit the equipment when:
+ *   - the slug is `dry_van` (the default; mentioning "Dry Van" in
+ *     every title would look spammy on the SERP)
+ *   - the equipment noun already overlaps with the lane noun (no
+ *     "Local Class A Local Driver")
+ *
+ * Examples:
+ *   Regional + dry_van + Atlanta, GA  → "Regional Class A Driver in Atlanta, GA"
+ *   OTR + reefer + Dallas, TX         → "OTR Class A Reefer Driver in Dallas, TX"
+ *   Local + tanker + Kansas City, MO  → "Local Class A Tanker Driver in Kansas City, MO"
+ */
+export function buildPublicJobTitle(input: {
+  laneNoun: string;
+  equipmentNoun: string;
+  equipmentSlug: string;
+  city: string;
+  state: string;
+}): string {
+  const { laneNoun, equipmentNoun, equipmentSlug, city, state } = input;
+
+  const slugIsDefault =
+    equipmentSlug.toLowerCase().replace(/-/g, "_") === "dry_van";
+  const equipmentOverlapsLane =
+    equipmentNoun.toLowerCase() === laneNoun.toLowerCase();
+  const includeEquipment = !slugIsDefault && !equipmentOverlapsLane;
+
+  const core = includeEquipment
+    ? `${laneNoun} Class A ${equipmentNoun} Driver`
+    : `${laneNoun} Class A Driver`;
+
+  return `${core} in ${city}, ${state}`;
+}
+
 export function deriveLaneNoun(job: Job): string {
   // Position title is what the carrier called this job — most authoritative.
   const title = job.positionTitle.toLowerCase();
