@@ -316,13 +316,21 @@ async function crawlJobDetailPages(
   return out;
 }
 
+// Cap per-fetch so a single slow carrier site can't stall the
+// batch crawler. Some carrier homepages hang indefinitely waiting
+// on third-party scripts; we'd rather return null + move on.
+const FETCH_TIMEOUT_MS = 15_000;
+
 async function fetchText(
   url: string,
   fetchImpl: typeof fetch,
 ): Promise<string | null> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
   try {
     const res = await fetchImpl(url, {
       redirect: "follow",
+      signal: controller.signal,
       headers: {
         "User-Agent":
           "CDLA.jobs/1.0 (+https://www.cdla.jobs/about/crawler) carrier-discovery",
@@ -332,5 +340,7 @@ async function fetchText(
     return await res.text();
   } catch {
     return null;
+  } finally {
+    clearTimeout(timer);
   }
 }
