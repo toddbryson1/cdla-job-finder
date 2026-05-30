@@ -781,6 +781,12 @@ export const pendingCarriers = pgTable(
       () => carriers.id,
       { onDelete: "set null" },
     ),
+    // Operator-supplied apply URL that overrides every job's
+    // apply_url at persist + promote time. Setting this also flips
+    // application_surface to tenstreet_intelliapp (the URL itself is
+    // re-classified at write time so a non-Tenstreet URL would land
+    // as custom_intake_form instead). Persists across re-discovery.
+    applyUrlOverride: text("apply_url_override"),
   },
   (t) => [
     uniqueIndex("pending_carriers_name_uniq").on(sql`LOWER(${t.name})`),

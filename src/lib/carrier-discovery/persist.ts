@@ -52,6 +52,7 @@ export async function commitDiscovery(
     .select({
       id: pendingCarriers.id,
       promotedCarrierId: pendingCarriers.promotedCarrierId,
+      applyUrlOverride: pendingCarriers.applyUrlOverride,
     })
     .from(pendingCarriers)
     .where(sql`LOWER(${pendingCarriers.name}) = LOWER(${input.name})`)
@@ -59,6 +60,10 @@ export async function commitDiscovery(
 
   let pendingCarrierId: string;
   let isReDiscovery = false;
+  // Operator-set override (Tenstreet IntelliApp URL) — preserved
+  // across re-discovery so the crawler can refresh the job set
+  // without overwriting the curated apply URL.
+  let applyUrlOverride: string | null = null;
 
   if (existing.length === 0) {
     const [row] = await database
@@ -75,6 +80,7 @@ export async function commitDiscovery(
   } else {
     pendingCarrierId = existing[0].id;
     isReDiscovery = true;
+    applyUrlOverride = existing[0].applyUrlOverride;
 
     const note = existing[0].promotedCarrierId
       ? "Re-discovered after promotion — review whether new jobs need to be merged into the live carrier."
@@ -97,12 +103,17 @@ export async function commitDiscovery(
       .where(eq(pendingCarrierJobs.pendingCarrierId, pendingCarrierId));
   }
 
-  // Insert jobs with classified application_surface.
+  // Insert jobs with classified application_surface. If the carrier
+  // has an operator-set apply_url_override (e.g. their Tenstreet
+  // IntelliApp link), every job uses that URL and we re-classify
+  // the surface from the override host instead of the crawler's
+  // bouncing aggregator URL.
   let jobsInserted = 0;
   if (input.report.jobs.length > 0) {
     const values = input.report.jobs.map((j) => {
+      const finalApplyUrl = applyUrlOverride ?? j.applyUrl;
       const { surface } = classifyApplicationSurface({
-        applyUrl: j.applyUrl,
+        applyUrl: finalApplyUrl,
         carrierHosts,
       });
       return {
@@ -120,7 +131,7 @@ export async function commitDiscovery(
         payMinWeeklyUsd: j.payMinWeeklyUsd,
         payMaxWeeklyUsd: j.payMaxWeeklyUsd,
         payOriginalPeriod: j.payOriginalPeriod,
-        applyUrl: j.applyUrl,
+        applyUrl: finalApplyUrl,
         postedAt: j.postedAt,
         applicationSurface: surface,
       };
