@@ -17,11 +17,13 @@ import {
   getCyclesExpiringSoon,
   getDashboardCounts,
   getDriverFunnel30d,
+  getPendingCarriersReviewQueue,
   getRecentActivity,
   getRecentArchivedJobs,
   getRecentConsents,
   getTaUnresolved,
 } from "@/lib/admin/dashboard-queries";
+import { PendingCarrierActions } from "./PendingCarrierActions";
 
 export const dynamic = "force-dynamic"; // never cache
 export const revalidate = 0;
@@ -59,6 +61,7 @@ export default async function AdminPage({ searchParams }: PageProps) {
     funnel,
     carrierPerf,
     recentConsents,
+    pendingCarriers,
   ] = await Promise.all([
     getDashboardCounts(),
     getCarrierBreakdown(),
@@ -69,6 +72,7 @@ export default async function AdminPage({ searchParams }: PageProps) {
     getDriverFunnel30d(),
     getCarrierPerformance30d(),
     getRecentConsents(20),
+    getPendingCarriersReviewQueue(),
   ]);
 
   const minimalTotal = breakdown.reduce(
@@ -365,6 +369,92 @@ export default async function AdminPage({ searchParams }: PageProps) {
                 ))}
               </tbody>
             </Table>
+          )}
+        </Section>
+
+        {/* PENDING CARRIERS REVIEW QUEUE */}
+        <Section title="Carrier discovery — review queue">
+          {pendingCarriers.length === 0 ? (
+            <Empty>
+              No pending carriers. Run{" "}
+              <code className="rounded bg-brand-surface px-1 py-0.5 text-brand-ink">
+                npx tsx scripts/discover-carrier.ts --name &quot;Carrier&quot; --url
+                https://carrier.com --commit
+              </code>{" "}
+              to stage a discovered carrier here.
+            </Empty>
+          ) : (
+            <>
+              <p className="mb-3 text-xs text-brand-muted">
+                Carriers found by the crawler awaiting review. Approve to
+                promote into the live carriers + carrier_jobs tables (kind =
+                prospect). Reject to keep the row staged but not promote.
+                Per spec §9 Phase 1.
+              </p>
+              <Table>
+                <thead className="text-left text-xs uppercase tracking-wide text-brand-muted">
+                  <tr>
+                    <th className="px-3 py-2">Carrier</th>
+                    <th className="px-3 py-2 text-right">Jobs</th>
+                    <th className="px-3 py-2">Surfaces</th>
+                    <th className="px-3 py-2">Sample titles</th>
+                    <th className="px-3 py-2">Discovered</th>
+                    <th className="px-3 py-2">Action</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-brand-rule">
+                  {pendingCarriers.map((p) => (
+                    <tr key={p.id} className="text-sm align-top">
+                      <td className="px-3 py-2 font-medium text-brand-ink">
+                        <div>{p.name}</div>
+                        <a
+                          href={p.careers_url ?? p.homepage_url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-xs text-brand-muted underline"
+                        >
+                          {(p.careers_url ?? p.homepage_url).replace(
+                            /^https?:\/\//,
+                            "",
+                          )}
+                        </a>
+                      </td>
+                      <td className="px-3 py-2 text-right">
+                        {p.job_count}
+                        {p.has_pay_data ? (
+                          <div className="text-xs text-brand-muted">with pay</div>
+                        ) : null}
+                      </td>
+                      <td className="px-3 py-2 text-xs text-brand-muted">
+                        {Object.entries(p.surface_breakdown).map(([k, v]) => (
+                          <div key={k}>
+                            {k.replace(/_/g, " ")}: {v}
+                          </div>
+                        ))}
+                      </td>
+                      <td className="px-3 py-2 text-xs text-brand-ink">
+                        {p.sample_titles.map((t, i) => (
+                          <div key={i} className="truncate max-w-xs">
+                            {t}
+                          </div>
+                        ))}
+                      </td>
+                      <td className="px-3 py-2 text-xs text-brand-muted whitespace-nowrap">
+                        {new Date(p.discovered_at).toLocaleDateString()}
+                      </td>
+                      <td className="px-3 py-2">
+                        <PendingCarrierActions
+                          pendingCarrierId={p.id}
+                          carrierName={p.name}
+                          status={p.status}
+                          token={key ?? ""}
+                        />
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </Table>
+            </>
           )}
         </Section>
 

@@ -373,6 +373,83 @@ export async function getCarrierPerformance30d(): Promise<CarrierPerformanceRow[
   }));
 }
 
+export interface PendingCarrierRow {
+  id: string;
+  name: string;
+  homepage_url: string;
+  careers_url: string | null;
+  status: string;
+  discovered_at: Date;
+  job_count: number;
+  has_pay_data: boolean;
+  surface_breakdown: Record<string, number>;
+  sample_titles: string[];
+}
+
+/**
+ * Pending-carrier review queue per
+ * SPEC_prospect-carrier-job-ingestion-v1.md §9 Phase 1. Lists carriers
+ * the crawler discovered + their staged jobs awaiting human approval.
+ *
+ * Ordered: pending first (oldest first — review FIFO), then approved,
+ * then rejected.
+ */
+export async function getPendingCarriersReviewQueue(): Promise<PendingCarrierRow[]> {
+  const rows = (await db.execute(sql`
+    SELECT
+      pc.id,
+      pc.name,
+      pc.homepage_url,
+      pc.careers_url,
+      pc.status::text AS status,
+      pc.discovered_at,
+      COALESCE(j.job_count, 0)::int AS job_count,
+      COALESCE(j.has_pay_data, false) AS has_pay_data,
+      COALESCE(j.surface_breakdown, '{}'::jsonb) AS surface_breakdown,
+      COALESCE(j.sample_titles, ARRAY[]::text[]) AS sample_titles
+    FROM pending_carriers pc
+    LEFT JOIN (
+      SELECT
+        pending_carrier_id,
+        COUNT(*)::int AS job_count,
+        bool_or(pay_max_weekly_usd IS NOT NULL) AS has_pay_data,
+        jsonb_object_agg(application_surface, n) AS surface_breakdown,
+        (array_agg(title ORDER BY title))[1:3] AS sample_titles
+      FROM (
+        SELECT pending_carrier_id, application_surface, title, pay_max_weekly_usd,
+               COUNT(*) OVER (PARTITION BY pending_carrier_id, application_surface) AS n
+        FROM pending_carrier_jobs
+      ) inner_jobs
+      GROUP BY pending_carrier_id
+    ) j ON j.pending_carrier_id = pc.id
+    ORDER BY
+      CASE pc.status
+        WHEN 'pending' THEN 0
+        WHEN 'approved' THEN 1
+        WHEN 'duplicate' THEN 2
+        WHEN 'rejected' THEN 3
+      END,
+      pc.discovered_at DESC
+    LIMIT 50
+  `)) as unknown as Array<{
+    id: string;
+    name: string;
+    homepage_url: string;
+    careers_url: string | null;
+    status: string;
+    discovered_at: Date;
+    job_count: number;
+    has_pay_data: boolean;
+    surface_breakdown: Record<string, number> | null;
+    sample_titles: string[] | null;
+  }>;
+  return rows.map((r) => ({
+    ...r,
+    surface_breakdown: r.surface_breakdown ?? {},
+    sample_titles: r.sample_titles ?? [],
+  }));
+}
+
 export interface RecentConsentRow {
   carrier: string;
   position_title: string;

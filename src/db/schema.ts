@@ -745,6 +745,93 @@ export const driverCarrierMatches = pgTable(
   ],
 );
 
+// Staging for the prospect-carrier ingestion pipeline per
+// SPEC_prospect-carrier-job-ingestion-v1.md §9 Phase 1. The
+// carrier-discovery CLI emits DiscoveredJob[] rows; we land those
+// here so an admin can review before they hit live carrier_jobs.
+export const pendingCarrierStatusEnum = pgEnum("pending_carrier_status", [
+  "pending",
+  "approved",
+  "rejected",
+  "duplicate",
+]);
+
+export const pendingCarriers = pgTable(
+  "pending_carriers",
+  {
+    id: uuid("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    name: text("name").notNull(),
+    homepageUrl: text("homepage_url").notNull(),
+    careersUrl: text("careers_url"),
+    status: pendingCarrierStatusEnum("status").notNull().default("pending"),
+    notes: text("notes"),
+    reviewerEmail: text("reviewer_email"),
+    discoveredAt: timestamp("discovered_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    reviewedAt: timestamp("reviewed_at", { withTimezone: true }),
+    // Full attempts log from the DiscoveryReport so the reviewer
+    // can see which sources succeeded and what URLs were probed.
+    discoveryAttempts: jsonb("discovery_attempts")
+      .notNull()
+      .default(sql`'[]'::jsonb`),
+    promotedCarrierId: uuid("promoted_carrier_id").references(
+      () => carriers.id,
+      { onDelete: "set null" },
+    ),
+  },
+  (t) => [
+    uniqueIndex("pending_carriers_name_uniq").on(sql`LOWER(${t.name})`),
+    index("pending_carriers_status_idx").on(t.status, t.discoveredAt),
+  ],
+);
+
+export const pendingCarrierJobs = pgTable(
+  "pending_carrier_jobs",
+  {
+    id: uuid("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    pendingCarrierId: uuid("pending_carrier_id")
+      .references(() => pendingCarriers.id, { onDelete: "cascade" })
+      .notNull(),
+    source: text("source").notNull(), // "json_ld" | "adzuna_company"
+    sourceId: text("source_id").notNull(),
+    title: text("title").notNull(),
+    description: text("description"),
+    carrierNameRaw: text("carrier_name_raw"),
+    city: text("city"),
+    state: varchar("state", { length: 2 }),
+    lat: numeric("lat", { precision: 9, scale: 6 }),
+    lng: numeric("lng", { precision: 9, scale: 6 }),
+    equipmentGuess: text("equipment_guess"),
+    payMinWeeklyUsd: integer("pay_min_weekly_usd"),
+    payMaxWeeklyUsd: integer("pay_max_weekly_usd"),
+    payOriginalPeriod: text("pay_original_period"),
+    applyUrl: text("apply_url").notNull(),
+    postedAt: timestamp("posted_at", { withTimezone: true }),
+    // Application-surface classification per spec §5.2-5.3, stored
+    // as text (the promoter casts to the live application_surface
+    // enum at promotion time).
+    applicationSurface: text("application_surface")
+      .notNull()
+      .default("unknown"),
+    discoveredAt: timestamp("discovered_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (t) => [
+    uniqueIndex("pending_carrier_jobs_source_uniq").on(
+      t.pendingCarrierId,
+      t.source,
+      t.sourceId,
+    ),
+    index("pending_carrier_jobs_pending_idx").on(t.pendingCarrierId),
+  ],
+);
+
 // External job listings sourced from public aggregators (Adzuna for
 // now) so drivers in zero-supply regions get *something* to look at
 // when our internal carrier_jobs come back sparse. 24-hour cache: a
