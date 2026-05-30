@@ -12,6 +12,43 @@ function toPgTextArray(values: string[]): string {
   return `{${escaped.join(",")}}`;
 }
 
+/**
+ * Module-cached PostGIS-availability check.
+ *
+ * The polygon hiring-area filter relies on ST_Contains. Calling that
+ * on a Postgres without PostGIS installed (e.g. local Homebrew
+ * postgresql@16 without the matching postgis package) fails at SQL
+ * parse time even if no row would actually hit the branch. So we
+ * detect once at first matcher call and build the SQL accordingly.
+ *
+ * On Neon prod PostGIS is installed → polygon path active.
+ * On local without PostGIS → polygon path omitted, classic
+ * haversine-only behavior. (We seed no polygon rows locally anyway,
+ * so behavior is correct either way.)
+ *
+ * Exported for tests that need to force the cache.
+ */
+let _postgisAvailable: Promise<boolean> | null = null;
+export async function isPostgisAvailable(
+  database: typeof defaultDb = defaultDb,
+): Promise<boolean> {
+  if (_postgisAvailable != null) return _postgisAvailable;
+  _postgisAvailable = (async () => {
+    try {
+      const rows = (await database.execute(
+        sql`SELECT 1 FROM pg_extension WHERE extname = 'postgis' LIMIT 1`,
+      )) as unknown as unknown[];
+      return rows.length > 0;
+    } catch {
+      return false;
+    }
+  })();
+  return _postgisAvailable;
+}
+export function __resetPostgisCache(): void {
+  _postgisAvailable = null;
+}
+
 export interface DriverProfile {
   id: string;
   homeLat: number;
@@ -20,6 +57,21 @@ export interface DriverProfile {
   desiredEquipment: string[];
   experienceMonths: number;
   otrExperienceMonths: number;
+  /**
+   * Total verified CDL-A tractor-trailer months over the driver's
+   * whole career. Powers the lifetime-experience qualifying path
+   * (Path B). null on pre-Path-B intake rows → driver only matches
+   * via the 36-month Path A filter.
+   */
+  totalCareerExperienceMonths: number | null;
+  /**
+   * Months since the driver last drove commercially. 0 = currently
+   * driving. null on pre-Path-B intake rows. Used together with
+   * `min_experience_months_lifetime_window_months` so a carrier
+   * that says "12 months in the last 10 years" rejects a driver
+   * who has been out longer than 10 years.
+   */
+  monthsSinceLastDrove: number | null;
   cdlState: string;
   endorsements: string[];
   homeTime: string[];
@@ -71,6 +123,33 @@ export async function runHardFilter(
   const homeLat = driver.homeLat;
   const homeLng = driver.homeLng;
   const willingToRelocate = driver.willingToRelocate;
+  const totalCareerMonths = driver.totalCareerExperienceMonths;
+  const monthsSinceLastDrove = driver.monthsSinceLastDrove;
+
+  const postgis = await isPostgisAvailable(database);
+
+  // Polygon hiring-area branch. When PostGIS is available and a job
+  // has a hiring_polygon set, the driver passes the geo check iff
+  // their home is contained by the polygon — the polygon TAKES
+  // PRECEDENCE over the radius circle even if they'd pass the
+  // radius (USX explicitly geo-fences these out).
+  const polygonPass = postgis
+    ? sql`
+        (j.hiring_polygon IS NOT NULL
+          AND ST_Contains(
+            j.hiring_polygon::geometry,
+            ST_SetSRID(ST_MakePoint(${homeLng}::numeric, ${homeLat}::numeric), 4326)
+          ))
+      `
+    : sql`FALSE`;
+
+  // When PostGIS isn't available, treat hiring_polygon as never set so
+  // those rows fall through to the radius branch (which will reject
+  // them since no row should have polygon-only geofencing on a
+  // PostGIS-less DB).
+  const polygonExists = postgis
+    ? sql`(j.hiring_polygon IS NOT NULL)`
+    : sql`FALSE`;
 
   const rawResult = await database.execute(sql`
     SELECT
@@ -85,16 +164,44 @@ export async function runHardFilter(
       j.domicile_city,
       j.domicile_state,
       j.hiring_radius_miles,
-      CASE
-        WHEN j.hiring_radius_miles IS NULL THEN NULL
-        ELSE 3959 * acos(
-          LEAST(1.0, GREATEST(-1.0,
-            cos(radians(${homeLat}::numeric)) * cos(radians(j.domicile_lat)) *
-            cos(radians(j.domicile_lng) - radians(${homeLng}::numeric)) +
-            sin(radians(${homeLat}::numeric)) * sin(radians(j.domicile_lat))
-          ))
-        )
-      END AS distance_miles,
+      -- Distance score for soft-rank. When a polygon is present we
+      -- measure from its centroid (per the prompt). Otherwise from
+      -- the domicile point. NULL distance keeps the OTR-no-radius
+      -- behavior for jobs without either a polygon or a radius.
+      ${
+        postgis
+          ? sql`
+        CASE
+          WHEN j.hiring_polygon IS NOT NULL THEN 3959 * acos(
+            LEAST(1.0, GREATEST(-1.0,
+              cos(radians(${homeLat}::numeric)) * cos(radians(ST_Y(ST_Centroid(j.hiring_polygon::geometry)))) *
+              cos(radians(ST_X(ST_Centroid(j.hiring_polygon::geometry))) - radians(${homeLng}::numeric)) +
+              sin(radians(${homeLat}::numeric)) * sin(radians(ST_Y(ST_Centroid(j.hiring_polygon::geometry))))
+            ))
+          )
+          WHEN j.hiring_radius_miles IS NULL THEN NULL
+          ELSE 3959 * acos(
+            LEAST(1.0, GREATEST(-1.0,
+              cos(radians(${homeLat}::numeric)) * cos(radians(j.domicile_lat)) *
+              cos(radians(j.domicile_lng) - radians(${homeLng}::numeric)) +
+              sin(radians(${homeLat}::numeric)) * sin(radians(j.domicile_lat))
+            ))
+          )
+        END
+      `
+          : sql`
+        CASE
+          WHEN j.hiring_radius_miles IS NULL THEN NULL
+          ELSE 3959 * acos(
+            LEAST(1.0, GREATEST(-1.0,
+              cos(radians(${homeLat}::numeric)) * cos(radians(j.domicile_lat)) *
+              cos(radians(j.domicile_lng) - radians(${homeLng}::numeric)) +
+              sin(radians(${homeLat}::numeric)) * sin(radians(j.domicile_lat))
+            ))
+          )
+        END
+      `
+      } AS distance_miles,
       j.pay_range_max_weekly_usd,
       j.display_pay_range_min_weekly_usd,
       j.display_pay_range_max_weekly_usd,
@@ -109,50 +216,90 @@ export async function runHardFilter(
     FROM carrier_jobs j
     INNER JOIN carriers c ON c.id = j.carrier_id
     WHERE c.status = 'active' AND j.status = 'active'
-      -- Geospatial filter has three pass-conditions, applied to both
-      -- the bounding-box prefilter and the exact haversine check below.
+      -- Geospatial filter. There are now four pass-conditions:
       --
-      -- (a) OTR job (NULL hiring_radius_miles) AND driver explicitly
-      --     wants OTR. The radius=NULL convention means "this job is
-      --     OTR — hires nationwide". A driver who didn't pick OTR
-      --     shouldn't match these even if their home_time array
-      --     happens to overlap (e.g., a misconfigured Swift job that
-      --     lists ['weekly', 'otr'] for an OTR lane).
-      -- (b) Willing to relocate AND driver wants OTR AND job accepts
-      --     OTR. The driver will move to the job's hiring zone for an
-      --     OTR seat regardless of the standard radius.
-      -- (c) Job's domicile is geographically inside the driver's
-      --     ~250mi bounding box (and, in the second clause, within
-      --     the carrier's stated hiring_radius_miles).
+      -- (a) Polygon hiring area (when set): point-in-polygon test
+      --     against driver home. Takes precedence — outside-polygon
+      --     drivers fail even if they'd be within the radius. (USX
+      --     uses these to geo-fence drivers in/out of state-line
+      --     hiring zones.)
+      -- (b) OTR job (NULL hiring_radius_miles AND no polygon) AND
+      --     driver explicitly wants OTR.
+      -- (c) Willing to relocate AND driver wants OTR AND job
+      --     accepts OTR.
+      -- (d) Job's domicile is geographically within the driver's
+      --     bounding box (prefilter), AND within hiring_radius_miles
+      --     (exact haversine).
+      --
+      -- When a row has a polygon, branches (b)-(d) are skipped — the
+      -- polygon is the ONLY accepted-area definition for that job.
       AND (
-        (j.hiring_radius_miles IS NULL
-          AND 'otr' = ANY(${homeTime}::home_time[]))
-        OR (${willingToRelocate}::boolean
-            AND 'otr' = ANY(j.accepted_home_time_types)
-            AND 'otr' = ANY(${homeTime}::home_time[]))
+        -- Polygon-only path (takes precedence when present).
+        ${polygonPass}
+        -- Otherwise the existing circle-based pass conditions.
         OR (
-          j.domicile_lat BETWEEN ${homeLat}::numeric - 4 AND ${homeLat}::numeric + 4
-          AND j.domicile_lng BETWEEN ${homeLng}::numeric - 4 AND ${homeLng}::numeric + 4
+          NOT ${polygonExists}
+          AND (
+            (j.hiring_radius_miles IS NULL
+              AND 'otr' = ANY(${homeTime}::home_time[]))
+            OR (${willingToRelocate}::boolean
+                AND 'otr' = ANY(j.accepted_home_time_types)
+                AND 'otr' = ANY(${homeTime}::home_time[]))
+            OR (
+              j.domicile_lat BETWEEN ${homeLat}::numeric - 4 AND ${homeLat}::numeric + 4
+              AND j.domicile_lng BETWEEN ${homeLng}::numeric - 4 AND ${homeLng}::numeric + 4
+            )
+          )
         )
       )
-      -- Exact geospatial filter (haversine).
+      -- Exact geospatial filter (haversine). Same structure: polygon
+      -- branch passes by itself, circle branch needs the haversine.
       AND (
-        (j.hiring_radius_miles IS NULL
-          AND 'otr' = ANY(${homeTime}::home_time[]))
-        OR (${willingToRelocate}::boolean
-            AND 'otr' = ANY(j.accepted_home_time_types)
-            AND 'otr' = ANY(${homeTime}::home_time[]))
-        OR 3959 * acos(
-          LEAST(1.0, GREATEST(-1.0,
-            cos(radians(${homeLat}::numeric)) * cos(radians(j.domicile_lat)) *
-            cos(radians(j.domicile_lng) - radians(${homeLng}::numeric)) +
-            sin(radians(${homeLat}::numeric)) * sin(radians(j.domicile_lat))
-          ))
-        ) <= j.hiring_radius_miles
+        ${polygonPass}
+        OR (
+          NOT ${polygonExists}
+          AND (
+            (j.hiring_radius_miles IS NULL
+              AND 'otr' = ANY(${homeTime}::home_time[]))
+            OR (${willingToRelocate}::boolean
+                AND 'otr' = ANY(j.accepted_home_time_types)
+                AND 'otr' = ANY(${homeTime}::home_time[]))
+            OR 3959 * acos(
+              LEAST(1.0, GREATEST(-1.0,
+                cos(radians(${homeLat}::numeric)) * cos(radians(j.domicile_lat)) *
+                cos(radians(j.domicile_lng) - radians(${homeLng}::numeric)) +
+                sin(radians(${homeLat}::numeric)) * sin(radians(j.domicile_lat))
+              ))
+            ) <= j.hiring_radius_miles
+          )
+        )
       )
       AND j.equipment = ANY(${desiredEquipment}::text[])
-      -- desiredEquipment serialized via toPgTextArray
-      AND j.min_experience_months <= ${driver.experienceMonths}
+      -- desiredEquipment serialized via toPgTextArray.
+      --
+      -- Experience filter — driver passes if EITHER:
+      --   Path A: current experience (last 36 mo) >= min_experience_months
+      --   Path B: total career experience >= min_experience_months_lifetime
+      --           AND (no window OR months_since_last_drove <= window)
+      --
+      -- Path B requires lifetime fields on BOTH sides. Driver-side
+      -- NULLs (pre-Path-B intake rows) fail Path B closed so the
+      -- driver only matches via Path A.
+      AND (
+        j.min_experience_months <= ${driver.experienceMonths}
+        OR (
+          j.min_experience_months_lifetime IS NOT NULL
+          AND ${totalCareerMonths === null ? sql`NULL::int` : sql`${totalCareerMonths}::int`}
+              >= j.min_experience_months_lifetime
+          AND (
+            j.min_experience_months_lifetime_window_months IS NULL
+            OR (
+              ${monthsSinceLastDrove === null ? sql`NULL::int` : sql`${monthsSinceLastDrove}::int`}
+                <= j.min_experience_months_lifetime_window_months
+            )
+          )
+        )
+      )
       AND (
         j.min_otr_experience_months IS NULL
         OR j.min_otr_experience_months <= ${driver.otrExperienceMonths}

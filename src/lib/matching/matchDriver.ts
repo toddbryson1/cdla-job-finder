@@ -48,6 +48,8 @@ export async function matchDriver(
     desiredRegions: driverRow.desiredRegions,
     experienceMonths: Math.round(Number(driverRow.yearsHeld) * 12),
     otrExperienceMonths: Math.round(Number(driverRow.otrYears) * 12),
+    totalCareerExperienceMonths: driverRow.totalCareerExperienceMonths,
+    monthsSinceLastDrove: driverRow.monthsSinceLastDrove,
     cdlState: driverRow.cdlState,
     endorsements: driverRow.endorsements,
     homeTime: driverRow.homeTime as string[],
