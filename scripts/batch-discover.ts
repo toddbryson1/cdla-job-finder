@@ -94,17 +94,30 @@ interface SweepRow {
 
 async function runOne(
   carrier: { name: string; url: string; careers?: string },
-  { commit }: { commit: boolean },
+  {
+    commit,
+    existingDirectCarrierNames,
+  }: { commit: boolean; existingDirectCarrierNames: Set<string> },
   importer: typeof import("../src/lib/carrier-discovery/discover"),
   persistImporter:
     | typeof import("../src/lib/carrier-discovery/persist")
     | null,
 ): Promise<SweepRow> {
   try {
+    // Forward-looking rule: if we already have direct data on this
+    // carrier (CSV import, partner feed, anything but llm_extract),
+    // we still let the JSON-LD path try to refresh — but we never
+    // pollute pending_carriers with Adzuna's lower-fidelity data
+    // when a higher-fidelity source already exists.
+    const skipAdzunaFallback = existingDirectCarrierNames.has(
+      carrier.name.toLowerCase(),
+    );
+
     const report = await importer.discoverCarrierJobs({
       name: carrier.name,
       homepageUrl: carrier.url,
       careersUrl: carrier.careers,
+      skipAdzunaFallback,
     });
     const hit = report.jobs.length > 0;
     const attemptSummary = report.attempts
@@ -180,9 +193,15 @@ async function main() {
     ? await import("../src/lib/carrier-discovery/persist")
     : null;
 
+  // Pull names of carriers we already have direct data on (anything
+  // not sourced from Adzuna aggregation). The Adzuna fallback gets
+  // skipped for these — see runOne.
+  const existingDirectCarrierNames = await loadExistingDirectCarriers();
+
   console.log(
     `Batch discovery: ${carriers.length} carriers, concurrency ${args.concurrency}` +
-      (args.commit ? ", --commit ON" : ", dry-run"),
+      (args.commit ? ", --commit ON" : ", dry-run") +
+      `, ${existingDirectCarrierNames.size} existing direct carriers`,
   );
   console.log("");
 
@@ -190,7 +209,16 @@ async function main() {
   const results = await runWithConcurrency(
     carriers,
     args.concurrency,
-    (c) => runOne(c, { commit: args.commit }, importer, persistImporter),
+    (c) =>
+      runOne(
+        c,
+        {
+          commit: args.commit,
+          existingDirectCarrierNames,
+        },
+        importer,
+        persistImporter,
+      ),
     (carrier, result, i) => {
       // Stream results as they finish so a long run gives feedback.
       const marker = result.hit ? "✓" : result.error ? "!" : "·";
@@ -234,6 +262,38 @@ async function main() {
   } else if (hits.length > 0) {
     console.log("\nRe-run with --commit to stage every winner to pending_carriers.");
   }
+}
+
+/**
+ * Pull names of carriers we already have direct data on. Direct
+ * means: anything where `data_source` is NOT an aggregator (Adzuna).
+ * Carriers we've ingested via CSV, partner feed, or JSON-LD crawl
+ * should not get an Adzuna refresh on top.
+ *
+ * Returns lowercased names for case-insensitive matching.
+ */
+async function loadExistingDirectCarriers(): Promise<Set<string>> {
+  const { db } = await import("../src/db/client");
+  const { sql } = await import("drizzle-orm");
+  const rows = (await db.execute(sql`
+    SELECT DISTINCT LOWER(c.name) AS name
+    FROM carriers c
+    JOIN carrier_jobs j ON j.carrier_id = c.id
+    WHERE c.status = 'active'
+      AND j.data_source IN (
+        'manual_partner_intake',
+        'manual_subscription_onboarding',
+        'tenstreet_feed',
+        'carrier_self_service',
+        'fmcsa_census_scrape',
+        'transport_america',
+        -- 'llm_extract_from_posting' covers crawler-derived rows
+        -- (Heartland was promoted as this) — once we have direct
+        -- JSON-LD data on a carrier, don't degrade with Adzuna.
+        'llm_extract_from_posting'
+      )
+  `)) as unknown as Array<{ name: string }>;
+  return new Set(rows.map((r) => r.name));
 }
 
 main().catch((err) => {

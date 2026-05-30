@@ -41,6 +41,14 @@ export interface DiscoverCarrierInput {
   homepageUrl: string;
   /** If you already know the careers URL, pass it to skip the finder. */
   careersUrl?: string;
+  /**
+   * When set, skip the Adzuna company-name fallback. Use this for
+   * carriers we already have direct data on (CSV imports, partner
+   * feeds, JSON-LD on their own website) — aggregated Adzuna data
+   * would be lower-fidelity and would conflict with the direct rows
+   * on (carrier_name, external_source_id).
+   */
+  skipAdzunaFallback?: boolean;
   fetchImpl?: typeof fetch;
 }
 
@@ -176,7 +184,21 @@ export async function discoverCarrierJobs(
     }
   }
 
-  // Step 3: Adzuna company-name fallback.
+  // Step 3: Adzuna company-name fallback — but only when we don't
+  // already have direct data on this carrier. Adzuna is third-party
+  // aggregation; if we have a CSV import, partner feed, or JSON-LD
+  // hit on our own crawl, that data is higher fidelity and we don't
+  // want lower-fidelity Adzuna rows competing with it on the same
+  // (carrier, equipment, city) match space.
+  if (input.skipAdzunaFallback) {
+    attempts.push({
+      source: "adzuna_company",
+      ok: false,
+      note: "skipped — carrier already has direct data source",
+    });
+    return { attempts, jobs: [] };
+  }
+
   const adzunaListings = await searchAdzunaByCompany({
     companyName: input.name,
     fetchImpl,

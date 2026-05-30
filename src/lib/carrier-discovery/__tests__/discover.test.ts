@@ -191,6 +191,68 @@ describe("discoverCarrierJobs", () => {
     expect(report.jobs.length).toBe(2);
   });
 
+  it("skipAdzunaFallback: short-circuits without calling Adzuna", async () => {
+    process.env.ADZUNA_APP_ID = "test";
+    process.env.ADZUNA_APP_KEY = "test";
+    try {
+      let adzunaHit = false;
+      const fakeFetch: typeof fetch = async (input) => {
+        const url =
+          typeof input === "string" ? input : (input as URL).toString();
+        if (url === "https://carrier.example/careers") {
+          return new Response(careersHtmlWithoutJsonLd, { status: 200 });
+        }
+        if (url.startsWith("https://api.adzuna.com/")) {
+          adzunaHit = true;
+          return new Response(JSON.stringify({ results: [] }), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          });
+        }
+        return new Response("", { status: 404 });
+      };
+      const report = await discoverCarrierJobs({
+        name: "Already-Direct Carrier",
+        homepageUrl: "https://carrier.example",
+        careersUrl: "https://carrier.example/careers",
+        skipAdzunaFallback: true,
+        fetchImpl: fakeFetch,
+      });
+      expect(adzunaHit).toBe(false);
+      expect(report.jobs).toEqual([]);
+      const adzunaAttempt = report.attempts.find(
+        (a) => a.source === "adzuna_company",
+      );
+      expect(adzunaAttempt?.ok).toBe(false);
+      expect(adzunaAttempt?.note).toMatch(/skipped/);
+    } finally {
+      delete process.env.ADZUNA_APP_ID;
+      delete process.env.ADZUNA_APP_KEY;
+    }
+  });
+
+  it("skipAdzunaFallback still lets JSON-LD succeed", async () => {
+    // We have direct partner data, but the JSON-LD path can still
+    // refresh the carrier's job list with first-party data.
+    const fakeFetch: typeof fetch = async (input) => {
+      const url =
+        typeof input === "string" ? input : (input as URL).toString();
+      if (url === "https://carrier.example/careers") {
+        return new Response(careersHtmlWithOneJob, { status: 200 });
+      }
+      return new Response("", { status: 404 });
+    };
+    const report = await discoverCarrierJobs({
+      name: "Atlanta Reefer Co",
+      homepageUrl: "https://carrier.example",
+      careersUrl: "https://carrier.example/careers",
+      skipAdzunaFallback: true,
+      fetchImpl: fakeFetch,
+    });
+    expect(report.jobs.length).toBe(1);
+    expect(report.jobs[0].source).toBe("json_ld");
+  });
+
   it("returns empty jobs and explains in attempts when everything fails", async () => {
     const fakeFetch: typeof fetch = async () =>
       new Response("nope", { status: 404 });

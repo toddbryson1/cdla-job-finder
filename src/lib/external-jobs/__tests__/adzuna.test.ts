@@ -2,6 +2,7 @@
 
 import { describe, expect, it } from "vitest";
 import {
+  __companyTest__,
   __test__,
   guessEquipment,
   parseLocation,
@@ -10,6 +11,41 @@ import {
 } from "@/lib/external-jobs/adzuna";
 
 const { buildKeyword, toListing } = __test__;
+const { companyKeywordRoot, normalizeName } = __companyTest__;
+
+describe("adzuna.companyKeywordRoot", () => {
+  it("strips Inc.", () => {
+    expect(companyKeywordRoot("Prime Inc.")).toBe("Prime");
+  });
+  it("strips National", () => {
+    expect(companyKeywordRoot("Schneider National")).toBe("Schneider");
+  });
+  it("strips Trucking + Transportation", () => {
+    expect(companyKeywordRoot("Maverick Transportation")).toBe("Maverick");
+    expect(companyKeywordRoot("TMC Transportation")).toBe("TMC");
+  });
+  it("strips Enterprises", () => {
+    expect(companyKeywordRoot("Werner Enterprises")).toBe("Werner");
+  });
+  it("picks the longest token when multiple remain", () => {
+    // "C.R. England" after stripping → ["CR", "England"]
+    expect(companyKeywordRoot("C.R. England")).toBe("England");
+  });
+  it("falls back to original when nothing survives stripping", () => {
+    // "Inc LLC" strips to nothing — return as-is.
+    expect(companyKeywordRoot("Inc LLC")).toBe("Inc LLC");
+  });
+  it("strips Express", () => {
+    expect(companyKeywordRoot("Heartland Express")).toBe("Heartland");
+  });
+});
+
+describe("adzuna.normalizeName", () => {
+  it("strips suffixes + punctuation + case", () => {
+    expect(normalizeName("Prime, Inc.")).toBe("prime");
+    expect(normalizeName("WERNER ENTERPRISES")).toBe("wernerenterprises");
+  });
+});
 
 describe("adzuna.buildKeyword", () => {
   it("maps reefer", () => {
