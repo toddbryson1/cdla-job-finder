@@ -14,12 +14,22 @@
 // produces an attempt log entry and we try the next step.
 
 import { searchAdzunaByCompany } from "@/lib/external-jobs/adzuna";
-import { findCareersPage } from "./careers-page-finder";
+import {
+  findCareersPage,
+  findJobBoardSubdomainLinks,
+  findJobDetailLinks,
+} from "./careers-page-finder";
 import {
   extractJobPostingJsonLd,
   toDiscoveredJob,
 } from "./json-ld-parser";
 import type { DiscoveredJob, DiscoveryReport } from "./types";
+
+// Polite-crawl knobs. Heartland alone has ~150 active job pages;
+// without a cap a single carrier discovery could burst-request a
+// site enough to trigger rate limits or upset the operator.
+const MAX_JOB_DETAIL_FETCHES = 60;
+const DETAIL_FETCH_CONCURRENCY = 4;
 
 export interface DiscoverCarrierInput {
   /** Display name. Used for the Adzuna fallback. */
@@ -90,6 +100,82 @@ export async function discoverCarrierJobs(
     return { attempts, jobs: jsonLdJobs };
   }
 
+  // Step 2b: follow job-detail links from the careers/jobs index.
+  // Most carriers don't put JSON-LD on the index page itself — the
+  // structured data lives on each per-job page. Heartland is the
+  // canonical example: /jobs (no JSON-LD) → /jobs/{id}/{slug}
+  // (full JobPosting).
+  let deepJobs: DiscoveredJob[] = [];
+  if (careersUrl) {
+    const html = await fetchText(careersUrl, fetchImpl);
+    if (html !== null) {
+      const candidates = findJobDetailLinks(
+        html,
+        new URL(careersUrl),
+      ).slice(0, MAX_JOB_DETAIL_FETCHES);
+      if (candidates.length > 0) {
+        deepJobs = await crawlJobDetailPages(candidates, fetchImpl);
+        attempts.push({
+          source: "json_ld",
+          ok: deepJobs.length > 0,
+          note:
+            deepJobs.length > 0
+              ? `followed ${candidates.length} job-detail link(s), got ${deepJobs.length} JobPosting block(s)`
+              : `followed ${candidates.length} job-detail link(s), no JobPosting found on any`,
+        });
+      }
+    }
+  }
+
+  if (deepJobs.length > 0) {
+    return { attempts, jobs: deepJobs };
+  }
+
+  // Step 2c: cross-origin subdomain fallback. Many carriers split
+  // marketing (foo.com) from their job board (jobs.foo.com,
+  // drivefoo.com). If the careers page on the main domain came up
+  // empty, look for an obvious cross-origin link pointing at a
+  // dedicated jobs subdomain and re-run discovery against that.
+  if (careersUrl) {
+    const html = await fetchText(careersUrl, fetchImpl);
+    if (html !== null) {
+      const subdomains = findJobBoardSubdomainLinks(html, new URL(careersUrl));
+      for (const subUrl of subdomains) {
+        attempts.push({
+          source: "careers_page_lookup",
+          ok: true,
+          note: `cross-origin subdomain candidate: ${subUrl}`,
+        });
+
+        // First try the subdomain root itself...
+        let subResult = await crawlCareersUrl(subUrl, fetchImpl, attempts);
+        if (subResult.length > 0) {
+          return { attempts, jobs: subResult };
+        }
+
+        // ...and if that produces nothing, run the careers-page
+        // finder against the subdomain so we hit its /jobs or
+        // /careers path.
+        const subCareers = await findCareersPage(subUrl, { fetchImpl });
+        if (subCareers && subCareers.url !== subUrl) {
+          attempts.push({
+            source: "careers_page_lookup",
+            ok: true,
+            note: `subdomain careers-page: ${subCareers.source} → ${subCareers.url}`,
+          });
+          subResult = await crawlCareersUrl(
+            subCareers.url,
+            fetchImpl,
+            attempts,
+          );
+          if (subResult.length > 0) {
+            return { attempts, jobs: subResult };
+          }
+        }
+      }
+    }
+  }
+
   // Step 3: Adzuna company-name fallback.
   const adzunaListings = await searchAdzunaByCompany({
     companyName: input.name,
@@ -130,6 +216,104 @@ export async function discoverCarrierJobs(
   }));
 
   return { attempts, jobs: adzunaJobs };
+}
+
+/**
+ * Run the careers→deep-crawl flow against a single URL. Returns the
+ * jobs found, and appends notes to `attempts`. Used by step 2c
+ * cross-origin recursion so we can try a subdomain candidate with
+ * the same logic.
+ */
+async function crawlCareersUrl(
+  url: string,
+  fetchImpl: typeof fetch,
+  attempts: DiscoveryReport["attempts"],
+): Promise<DiscoveredJob[]> {
+  const html = await fetchText(url, fetchImpl);
+  if (html === null) {
+    attempts.push({
+      source: "json_ld",
+      ok: false,
+      note: `failed to fetch subdomain ${url}`,
+    });
+    return [];
+  }
+
+  // Try JSON-LD on the subdomain root.
+  const postings = extractJobPostingJsonLd(html);
+  const direct = postings
+    .map((p) => toDiscoveredJob(p, url))
+    .filter((j): j is DiscoveredJob => j !== null);
+  if (direct.length > 0) {
+    attempts.push({
+      source: "json_ld",
+      ok: true,
+      note: `subdomain ${url}: ${direct.length} JobPosting block(s)`,
+    });
+    return direct;
+  }
+
+  // Deep crawl from the subdomain.
+  const candidates = findJobDetailLinks(html, new URL(url)).slice(
+    0,
+    MAX_JOB_DETAIL_FETCHES,
+  );
+  if (candidates.length === 0) {
+    attempts.push({
+      source: "json_ld",
+      ok: false,
+      note: `subdomain ${url} had no JSON-LD and no job-detail links`,
+    });
+    return [];
+  }
+  const deep = await crawlJobDetailPages(candidates, fetchImpl);
+  attempts.push({
+    source: "json_ld",
+    ok: deep.length > 0,
+    note:
+      deep.length > 0
+        ? `subdomain ${url}: followed ${candidates.length} detail links, got ${deep.length} job(s)`
+        : `subdomain ${url}: ${candidates.length} detail links, no JSON-LD on any`,
+  });
+  return deep;
+}
+
+/**
+ * Fetch a batch of job-detail pages in parallel (capped to
+ * DETAIL_FETCH_CONCURRENCY) and aggregate every JobPosting JSON-LD
+ * block from all of them. Skips pages that fail to fetch or have no
+ * structured data.
+ */
+async function crawlJobDetailPages(
+  urls: string[],
+  fetchImpl: typeof fetch,
+): Promise<DiscoveredJob[]> {
+  const out: DiscoveredJob[] = [];
+  const seenSourceIds = new Set<string>();
+
+  for (let i = 0; i < urls.length; i += DETAIL_FETCH_CONCURRENCY) {
+    const batch = urls.slice(i, i + DETAIL_FETCH_CONCURRENCY);
+    const pages = await Promise.all(
+      batch.map(async (url) => ({
+        url,
+        html: await fetchText(url, fetchImpl),
+      })),
+    );
+    for (const { url, html } of pages) {
+      if (!html) continue;
+      const postings = extractJobPostingJsonLd(html);
+      for (const p of postings) {
+        const job = toDiscoveredJob(p, url);
+        if (!job) continue;
+        // Dedup across pages: the same posting often appears with
+        // two JSON-LD blocks (one HTML-decorated, one plaintext).
+        if (seenSourceIds.has(job.sourceId)) continue;
+        seenSourceIds.add(job.sourceId);
+        out.push(job);
+      }
+    }
+  }
+  return out;
 }
 
 async function fetchText(

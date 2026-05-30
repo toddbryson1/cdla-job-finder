@@ -110,6 +110,87 @@ describe("discoverCarrierJobs", () => {
     }
   });
 
+  it("deep-crawls job-detail links when the index has none", async () => {
+    // Index with two job-detail links, no JSON-LD itself.
+    const indexHtml = `
+      <html><body>
+        <a href="/jobs/100/cdl-driver-atlanta">Atlanta</a>
+        <a href="/jobs/200/cdl-driver-dallas">Dallas</a>
+      </body></html>`;
+    const detailHtml = (city: string, id: string) => `
+      <html><head>
+      <script type="application/ld+json">
+      {
+        "@type": "JobPosting",
+        "title": "CDL Driver — ${city}",
+        "identifier": {"@type": "PropertyValue", "value": "${id}"},
+        "jobLocation": {"address": {"addressLocality": "${city}", "addressRegion": "GA"}},
+        "url": "https://carrier.example/jobs/${id}/cdl-driver-${city.toLowerCase()}"
+      }
+      </script>
+      </head></html>`;
+    const fakeFetch: typeof fetch = async (input) => {
+      const url =
+        typeof input === "string" ? input : (input as URL).toString();
+      if (url === "https://carrier.example/jobs") {
+        return new Response(indexHtml, { status: 200 });
+      }
+      if (url === "https://carrier.example/jobs/100/cdl-driver-atlanta") {
+        return new Response(detailHtml("Atlanta", "100"), { status: 200 });
+      }
+      if (url === "https://carrier.example/jobs/200/cdl-driver-dallas") {
+        return new Response(detailHtml("Dallas", "200"), { status: 200 });
+      }
+      return new Response("", { status: 404 });
+    };
+    const report = await discoverCarrierJobs({
+      name: "Test Carrier",
+      homepageUrl: "https://carrier.example",
+      careersUrl: "https://carrier.example/jobs",
+      fetchImpl: fakeFetch,
+    });
+    expect(report.jobs.length).toBe(2);
+    expect(report.jobs.map((j) => j.title).sort()).toEqual([
+      "CDL Driver — Atlanta",
+      "CDL Driver — Dallas",
+    ]);
+  });
+
+  it("dedupes duplicate JSON-LD across detail pages by sourceId", async () => {
+    const indexHtml = `
+      <a href="/jobs/100/x">x</a>
+      <a href="/jobs/100/x-copy">x copy</a>
+      <a href="/jobs/200/y">y</a>`;
+    const detail100 = `<script type="application/ld+json">
+      {"@type":"JobPosting","title":"X","identifier":{"value":"X-100"},"url":"https://carrier.example/jobs/100/x"}
+    </script>`;
+    const detail200 = `<script type="application/ld+json">
+      {"@type":"JobPosting","title":"Y","identifier":{"value":"Y-200"},"url":"https://carrier.example/jobs/200/y"}
+    </script>`;
+    const fakeFetch: typeof fetch = async (input) => {
+      const url =
+        typeof input === "string" ? input : (input as URL).toString();
+      if (url === "https://carrier.example/jobs") {
+        return new Response(indexHtml, { status: 200 });
+      }
+      if (url.includes("/jobs/100/")) {
+        return new Response(detail100, { status: 200 });
+      }
+      if (url.includes("/jobs/200/")) {
+        return new Response(detail200, { status: 200 });
+      }
+      return new Response("", { status: 404 });
+    };
+    const report = await discoverCarrierJobs({
+      name: "Test",
+      homepageUrl: "https://carrier.example",
+      careersUrl: "https://carrier.example/jobs",
+      fetchImpl: fakeFetch,
+    });
+    // Two distinct identifiers — even though one was linked twice.
+    expect(report.jobs.length).toBe(2);
+  });
+
   it("returns empty jobs and explains in attempts when everything fails", async () => {
     const fakeFetch: typeof fetch = async () =>
       new Response("nope", { status: 404 });

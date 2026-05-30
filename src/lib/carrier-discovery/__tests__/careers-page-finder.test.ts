@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   findCareersLinkInHtml,
   findCareersPage,
+  findJobBoardSubdomainLinks,
+  findJobDetailLinks,
 } from "@/lib/carrier-discovery/careers-page-finder";
 
 describe("findCareersLinkInHtml", () => {
@@ -107,6 +109,95 @@ describe("findCareersPage — conventional-path probes", () => {
   it("returns null on garbage URL input", async () => {
     const out = await findCareersPage("not a url");
     expect(out).toBeNull();
+  });
+
+  it("findJobDetailLinks matches numeric /jobs/12345 pattern", () => {
+    const html = `
+      <a href="/jobs/558933/cdl-a-driver-grand-forks">View</a>
+      <a href="/jobs/558935/cdl-a-driver-chicago">View</a>
+      <a href="/jobs">Index</a>
+      <a href="/about">About</a>`;
+    const links = findJobDetailLinks(html, new URL("https://example.com/jobs"));
+    expect(links.length).toBe(2);
+    expect(links[0]).toContain("/jobs/558933/");
+    expect(links[1]).toContain("/jobs/558935/");
+  });
+
+  it("findJobDetailLinks rejects the index page itself", () => {
+    const html = `<a href="/jobs">jobs</a><a href="/jobs/">jobs slash</a>`;
+    expect(findJobDetailLinks(html, new URL("https://example.com/jobs"))).toEqual([]);
+  });
+
+  it("findJobDetailLinks dedupes the same link", () => {
+    const html = `
+      <a href="/jobs/100/x">a</a>
+      <a href="/jobs/100/x">b</a>`;
+    expect(
+      findJobDetailLinks(html, new URL("https://example.com/jobs")),
+    ).toEqual(["https://example.com/jobs/100/x"]);
+  });
+
+  it("findJobDetailLinks rejects category / filter URLs", () => {
+    const html = `
+      <a href="/jobs/category/dedicated">Dedicated</a>
+      <a href="/jobs/sort/recent">Recent</a>
+      <a href="/jobs/100/real">Real one</a>`;
+    const links = findJobDetailLinks(html, new URL("https://example.com/jobs"));
+    expect(links.length).toBe(1);
+    expect(links[0]).toContain("/jobs/100/");
+  });
+
+  it("findJobDetailLinks rejects cross-origin URLs", () => {
+    const html = `
+      <a href="https://elsewhere.example/jobs/123/x">cross</a>
+      <a href="/jobs/456/y">same</a>`;
+    const links = findJobDetailLinks(html, new URL("https://example.com/jobs"));
+    expect(links).toEqual(["https://example.com/jobs/456/y"]);
+  });
+
+  it("findJobBoardSubdomainLinks picks jobs.foo.com from foo.com page", () => {
+    const html = `
+      <a href="https://jobs.foo.com">Open positions</a>
+      <a href="/about">About</a>`;
+    const out = findJobBoardSubdomainLinks(
+      html,
+      new URL("https://foo.com/careers"),
+    );
+    expect(out).toEqual(["https://jobs.foo.com/"]);
+  });
+
+  it("findJobBoardSubdomainLinks picks drivecarrier.com from carrier.com page", () => {
+    const html = `<a href="https://drivecarrier.com/jobs">apply</a>`;
+    const out = findJobBoardSubdomainLinks(
+      html,
+      new URL("https://carrier.com/"),
+    );
+    expect(out).toEqual(["https://drivecarrier.com/"]);
+  });
+
+  it("findJobBoardSubdomainLinks ignores same-origin links", () => {
+    const html = `<a href="https://carrier.com/jobs/123">job</a>`;
+    expect(
+      findJobBoardSubdomainLinks(html, new URL("https://carrier.com/")),
+    ).toEqual([]);
+  });
+
+  it("findJobBoardSubdomainLinks ignores unrelated cross-origin hosts", () => {
+    const html = `
+      <a href="https://twitter.com/share">twitter</a>
+      <a href="https://google.com/maps">map</a>`;
+    expect(
+      findJobBoardSubdomainLinks(html, new URL("https://carrier.com/")),
+    ).toEqual([]);
+  });
+
+  it("findJobDetailLinks matches /positions/12345 and /apply/12345", () => {
+    const html = `
+      <a href="/positions/9001">a</a>
+      <a href="/apply/9002">b</a>
+      <a href="/openings/9003">c</a>`;
+    const links = findJobDetailLinks(html, new URL("https://example.com/"));
+    expect(links.length).toBe(3);
   });
 
   it("retries with GET when probe returns 405 Method Not Allowed", async () => {

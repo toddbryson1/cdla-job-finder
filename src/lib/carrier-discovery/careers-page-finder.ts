@@ -44,6 +44,18 @@ const HREF_HINTS = [
   /\/employment(\/|$|\?)/i,
 ];
 
+// Cross-origin host patterns that look like dedicated job boards.
+// Used as a last-ditch fallback when the careers page is empty —
+// e.g. heartlandexpress.com → driveheartland.com,
+//      werner.com → jobs.werner.com.
+const JOB_BOARD_HOST_PATTERNS = [
+  /^jobs?\./i,
+  /^careers?\./i,
+  /^drive[-a-z]*\./i,
+  /^drivers?\./i,
+  /^apply\./i,
+];
+
 export interface CareersPageCandidate {
   url: string;
   source: "conventional_path" | "homepage_link";
@@ -160,6 +172,133 @@ function stripTags(s: string): string {
     .replace(/<[^>]+>/g, " ")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+// Patterns that identify a URL as a per-job detail page (vs. the
+// index, vs. unrelated nav). Ordered roughly by specificity — the
+// match is hint-only, but more-specific patterns get fewer false
+// positives.
+const JOB_DETAIL_PATTERNS = [
+  // /jobs/12345/some-slug — Heartland, many ATS systems
+  /\/jobs?\/\d+\b/i,
+  // /position/12345 — Lever, some homerolled systems
+  /\/positions?\/\d+\b/i,
+  // /apply/12345 — common
+  /\/apply\/\d+\b/i,
+  // /career/12345/, /careers/12345/
+  /\/careers?\/\d+\b/i,
+  // /jobs/{long-slug-with-state-or-equipment}
+  /\/jobs?\/[a-z][a-z0-9-]{20,}/i,
+  // /job-detail?id=12345, /openings/12345
+  /\/openings?\/\d+\b/i,
+];
+
+// Anti-patterns: URLs that LOOK job-ish but are categories/filters.
+const JOB_DETAIL_ANTIPATTERNS = [
+  /\/category\//i,
+  /\/jobs?\/?$/i, // bare /jobs page itself
+  /\/jobs?\/(page|sort|filter|search|location|equipment)\b/i,
+];
+
+/**
+ * Find URLs that look like individual job postings on a jobs-index
+ * page. Returns a deduplicated array (preserves order). Excludes
+ * external domains unless they share a recognizable carrier-portal
+ * host (e.g. carrierjobs.com when the careers page is on
+ * carrier.com).
+ */
+/**
+ * Find cross-origin anchor URLs that look like dedicated job-board
+ * subdomains (jobs.foo.com, drivefoo.com, careers.foo.com). Use as
+ * a fallback when the careers page on the main domain is empty —
+ * many carriers split their marketing site and their actual job
+ * board across separate hosts.
+ *
+ * Returns at most 3 candidates so we don't follow too many false
+ * positives.
+ */
+export function findJobBoardSubdomainLinks(
+  html: string,
+  baseUrl: URL,
+): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  const anchorRe = /<a\b([^>]*?)>/gi;
+  let m: RegExpExecArray | null;
+  while ((m = anchorRe.exec(html))) {
+    const hrefMatch = m[1].match(/\bhref=["']([^"']+)["']/i);
+    if (!hrefMatch) continue;
+    const href = hrefMatch[1].trim();
+    if (!href || href.startsWith("#") || href.startsWith("javascript:")) {
+      continue;
+    }
+
+    let abs: URL;
+    try {
+      abs = new URL(href, baseUrl);
+    } catch {
+      continue;
+    }
+    if (abs.protocol !== "http:" && abs.protocol !== "https:") continue;
+    if (abs.host === baseUrl.host) continue; // not interested in same-host
+
+    const host = abs.host.toLowerCase();
+    if (!JOB_BOARD_HOST_PATTERNS.some((re) => re.test(host))) continue;
+
+    const key = `${abs.protocol}//${abs.host}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(`${key}/`);
+    if (out.length >= 3) break;
+  }
+  return out;
+}
+
+export function findJobDetailLinks(
+  html: string,
+  baseUrl: URL,
+): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  const anchorRe = /<a\b([^>]*?)>/gi;
+  let m: RegExpExecArray | null;
+  while ((m = anchorRe.exec(html))) {
+    const hrefMatch = m[1].match(/\bhref=["']([^"']+)["']/i);
+    if (!hrefMatch) continue;
+    const href = hrefMatch[1].trim();
+    if (!href || href.startsWith("#") || href.startsWith("javascript:")) {
+      continue;
+    }
+
+    let abs: URL;
+    try {
+      abs = new URL(href, baseUrl);
+    } catch {
+      continue;
+    }
+    if (abs.protocol !== "http:" && abs.protocol !== "https:") continue;
+
+    // Same-site test: keep same registrable domain OR the base host
+    // ends/starts with the candidate host (to handle e.g.
+    // heartlandexpress.com → driveheartland.com — different
+    // registrable domains, but we already followed an explicit link
+    // to the second one, so this function is called with that as the
+    // base. Different-host links here we reject).
+    if (abs.host !== baseUrl.host) continue;
+
+    if (JOB_DETAIL_ANTIPATTERNS.some((re) => re.test(abs.pathname))) {
+      continue;
+    }
+    if (!JOB_DETAIL_PATTERNS.some((re) => re.test(abs.pathname))) {
+      continue;
+    }
+
+    const normalized = abs.toString();
+    if (seen.has(normalized)) continue;
+    seen.add(normalized);
+    out.push(normalized);
+  }
+  return out;
 }
 
 async function probe(
