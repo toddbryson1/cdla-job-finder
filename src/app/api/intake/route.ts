@@ -88,6 +88,8 @@ export async function POST(request: Request) {
       equipmentRun: d.equipmentRun,
       endorsements: d.endorsements,
       otrYears: String(d.otrYears),
+      totalCareerExperienceMonths: d.totalCareerExperienceMonths,
+      monthsSinceLastDrove: d.monthsSinceLastDrove,
       desiredEquipment: d.desiredEquipment,
       desiredRegions: d.desiredRegions,
       homeTime: d.homeTime,

@@ -87,6 +87,24 @@ export const intakeSchema = z.object({
   endorsements: z.array(z.string()).default([]),
   otrYears: z.coerce.number().min(0).max(60).default(0),
 
+  // Lifetime-experience qualifying path. yearsHeld captures
+  // "experience right now / last 36 months." These two additional
+  // fields let carriers like USX accept drivers via Path B (e.g.
+  // 12 months total in the last 120 months — drivers who took
+  // years off). Required at intake for new submissions so every
+  // new driver has Path B coverage. The DB columns are nullable
+  // because existing pre-Path-B driver rows stay valid.
+  totalCareerExperienceMonths: z.coerce
+    .number()
+    .int()
+    .min(0, "Use a number of months (0 if none)")
+    .max(720, "Use 720 or less"),
+  monthsSinceLastDrove: z.coerce
+    .number()
+    .int()
+    .min(0, "Use a number of months (0 if currently driving)")
+    .max(720, "Use 720 or less"),
+
   // Step 3: Preferences
   desiredEquipment: z
     .array(z.string())

@@ -25,6 +25,9 @@ type FormState = {
   endorsements: string[];
   otrYears: string;
   otrYearsUnit: "months" | "years";
+  totalCareerExperienceMonths: string;
+  /** Stored as bucket value ("0","6","12","24","60","120","180"). */
+  monthsSinceLastDrove: string;
   desiredEquipment: string[];
   desiredRegions: string[];
   homeTime: Array<"daily" | "weekly" | "biweekly" | "otr">;
@@ -60,6 +63,8 @@ const initialState: FormState = {
   endorsements: [],
   otrYears: "",
   otrYearsUnit: "years",
+  totalCareerExperienceMonths: "",
+  monthsSinceLastDrove: "",
   desiredEquipment: [],
   desiredRegions: [],
   homeTime: [],
@@ -143,6 +148,10 @@ export function IntakeForm() {
     }
     if (currentStep === 1) {
       if (state.equipmentRun.length === 0) next.equipmentRun = "Pick at least one";
+      if (!state.totalCareerExperienceMonths.trim())
+        next.totalCareerExperienceMonths = "Enter a number";
+      if (!state.monthsSinceLastDrove)
+        next.monthsSinceLastDrove = "Pick one";
     }
     if (currentStep === 2) {
       if (state.desiredEquipment.length === 0) next.desiredEquipment = "Pick at least one";
@@ -180,6 +189,9 @@ export function IntakeForm() {
       yearsHeld:
         state.experienceUnit === "months" ? expAmount / 12 : expAmount,
       otrYears: state.otrYearsUnit === "months" ? otrAmount / 12 : otrAmount,
+      totalCareerExperienceMonths:
+        Number(state.totalCareerExperienceMonths) || 0,
+      monthsSinceLastDrove: Number(state.monthsSinceLastDrove) || 0,
       minWeeklyPay: Number(state.minWeeklyPay) || 0,
       accidents3yrCount: Number(state.accidents3yrCount) || 0,
       tickets3yrCount: Number(state.tickets3yrCount) || 0,
@@ -522,9 +534,57 @@ function StepExperience({
           allowZero
         />
       </Field>
+
+      <Field
+        label="Total CDL-A tractor-trailer experience over your whole career"
+        hint="In months. A 5-year driver = 60. We use this so carriers who hire by 'experience-ever' (not just last 36 months) can match you."
+        error={errors.totalCareerExperienceMonths}
+      >
+        <input
+          type="number"
+          inputMode="numeric"
+          min={0}
+          max={720}
+          value={state.totalCareerExperienceMonths}
+          onChange={(e) => set("totalCareerExperienceMonths", e.target.value)}
+          placeholder="months"
+          className="h-11 w-32 rounded-md border border-brand-rule bg-white px-3 text-sm text-brand-ink focus:border-brand-medium focus:outline-none"
+        />
+      </Field>
+
+      <Field
+        label="How long since you last drove a commercial truck?"
+        hint="If you're driving right now, pick the first option."
+        error={errors.monthsSinceLastDrove}
+      >
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+          {MONTHS_SINCE_LAST_DROVE_OPTIONS.map((opt) => (
+            <RadioCard
+              key={opt.value}
+              name="monthsSinceLastDrove"
+              value={opt.value}
+              label={opt.label}
+              checked={state.monthsSinceLastDrove === opt.value}
+              onChange={(v) => set("monthsSinceLastDrove", v)}
+            />
+          ))}
+        </div>
+      </Field>
     </div>
   );
 }
+
+// Buckets per spec; each value is the integer months stored on save.
+// "0" = currently driving (not missing data).
+const MONTHS_SINCE_LAST_DROVE_OPTIONS = [
+  { value: "0", label: "Currently driving" },
+  { value: "6", label: "1–6 months" },
+  { value: "12", label: "7–12 months" },
+  { value: "24", label: "1–2 years" },
+  { value: "60", label: "2–5 years" },
+  { value: "120", label: "5–10 years" },
+  { value: "180", label: "10+ years" },
+] as const;
 
 function StepPreferences({
   state,
