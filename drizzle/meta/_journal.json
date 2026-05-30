@@ -148,6 +148,13 @@
       "when": 1781700000000,
       "tag": "0020_pending_carrier_apply_override",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1781800000000,
+      "tag": "0021_lifetime_experience_and_polygon_hiring_areas",
+      "breakpoints": true
     }
   ]
 }

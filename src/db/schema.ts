@@ -13,8 +13,29 @@ import {
   index,
   uniqueIndex,
   check,
+  customType,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
+
+/**
+ * PostGIS GEOGRAPHY(Polygon, 4326) column.
+ *
+ * Values round-trip as WKT strings:
+ *   `SRID=4326;POLYGON((lng1 lat1, lng2 lat2, ..., lng1 lat1))`
+ *
+ * The column type is `geography(Polygon, 4326)` on prod (Neon has
+ * PostGIS) and absent locally without PostGIS — see migration 0021's
+ * DO block. The matcher detects PostGIS at runtime and only emits
+ * ST_Contains / ST_Centroid when it's available.
+ */
+const polygonGeography = customType<{
+  data: string;
+  driverData: string;
+}>({
+  dataType() {
+    return "geography(Polygon, 4326)";
+  },
+});
 
 export const carrierKindEnum = pgEnum("carrier_kind", [
   "partner",
@@ -131,6 +152,13 @@ export const carrierJobs = pgTable(
     domicileLat: numeric("domicile_lat", { precision: 9, scale: 6 }).notNull(),
     domicileLng: numeric("domicile_lng", { precision: 9, scale: 6 }).notNull(),
     hiringRadiusMiles: integer("hiring_radius_miles"),
+    // Polygon hiring area (PostGIS GEOGRAPHY(Polygon, 4326)). When
+    // non-null, the matcher uses ST_Contains(hiring_polygon, driver
+    // home) instead of the circular hiring_radius_miles filter.
+    // domicile_lat/lng remain populated (the centroid or terminal
+    // location) so the match card can still render a map.
+    // Created on prod only — see migration 0021 DO block.
+    hiringPolygon: polygonGeography("hiring_polygon"),
 
     // Equipment
     equipment: text("equipment").notNull(),
@@ -138,6 +166,18 @@ export const carrierJobs = pgTable(
     // Hard-filter rule fields
     minExperienceMonths: integer("min_experience_months").notNull().default(0),
     minOtrExperienceMonths: integer("min_otr_experience_months"),
+    // Lifetime-experience qualifying path (Path B). USX and similar
+    // carriers accept drivers via EITHER:
+    //   - min_experience_months in the last 36 months (existing field)
+    //   - OR min_experience_months_lifetime in the last
+    //     min_experience_months_lifetime_window_months months
+    // When the window column is NULL, the check is over the driver's
+    // entire career. The matcher OR-combines the two paths so a
+    // driver who took years off can still qualify via Path B.
+    minExperienceMonthsLifetime: integer("min_experience_months_lifetime"),
+    minExperienceMonthsLifetimeWindowMonths: integer(
+      "min_experience_months_lifetime_window_months",
+    ),
     acceptedCdlStates: text("accepted_cdl_states").array().notNull().default([]),
     requiredEndorsements: text("required_endorsements").array().notNull().default([]),
     acceptedHomeTimeTypes: homeTimeEnum("accepted_home_time_types")
@@ -254,6 +294,18 @@ export const drivers = pgTable(
     otrYears: numeric("otr_years", { precision: 5, scale: 2 })
       .notNull()
       .default("0"),
+
+    // Lifetime-experience qualifying path. yearsHeld + otrYears
+    // capture experience "right now / last 36 months." These two
+    // additional fields let the matcher compute the lifetime path:
+    //   - total_career_experience_months: total verified months ever
+    //   - months_since_last_drove: 0 = currently driving, N = N months
+    //     since the driver last drove commercially
+    // Nullable on the column so existing pre-Path-B intake rows stay
+    // valid. Required at the Zod intake layer so all NEW submissions
+    // include them.
+    totalCareerExperienceMonths: integer("total_career_experience_months"),
+    monthsSinceLastDrove: integer("months_since_last_drove"),
 
     equipmentRun: text("equipment_run").array().notNull(),
     endorsements: text("endorsements").array().notNull().default([]),
