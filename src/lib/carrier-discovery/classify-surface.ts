@@ -52,8 +52,20 @@ const ATS_HOST_SUFFIXES = [
 
 export interface ClassifySurfaceInput {
   applyUrl: string;
-  /** Optional carrier homepage host for self-hosted-form detection. */
+  /**
+   * Optional carrier homepage host for self-hosted-form detection.
+   * @deprecated prefer `carrierHosts` to handle carriers whose
+   * job board lives on a sibling domain (heartlandexpress.com →
+   * driveheartland.com).
+   */
   carrierHost?: string;
+  /**
+   * All hosts that should count as "the carrier itself" — typically
+   * the homepage host plus any cross-origin job-board subdomain the
+   * crawler walked to. When the apply URL's host matches any of
+   * these, we classify as a self-hosted custom_intake_form.
+   */
+  carrierHosts?: string[];
 }
 
 export interface ClassifySurfaceResult {
@@ -112,12 +124,15 @@ export function classifyApplicationSurface(
     }
   }
 
-  // Self-hosted on carrier domain (or one we walked to via the
+  // Self-hosted on the carrier domain (or one we walked to via the
   // crawler subdomain hop, like driveheartland.com). We assume it
   // is a custom intake form; the future form-schema authoring path
   // (spec §5.4) inspects fields to confirm.
-  if (carrierHost) {
-    const carrierBase = stripWww(carrierHost.toLowerCase());
+  const hostsToCheck = new Set<string>();
+  if (input.carrierHost) hostsToCheck.add(input.carrierHost);
+  for (const h of input.carrierHosts ?? []) hostsToCheck.add(h);
+  for (const candidate of hostsToCheck) {
+    const carrierBase = stripWww(candidate.toLowerCase());
     if (hostMatches(host, carrierBase)) {
       return {
         surface: "custom_intake_form",

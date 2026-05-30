@@ -34,10 +34,18 @@ export async function commitDiscovery(
   input: CommitDiscoveryInput,
   database: typeof defaultDb = defaultDb,
 ): Promise<CommitDiscoveryResult> {
-  const carrierHost = safeHost(input.homepageUrl);
   const careersUrl =
     input.careersUrl ??
     pickCareersUrlFromAttempts(input.report.attempts);
+  // All hosts the crawler walked through. Used by the classifier so
+  // a carrier whose jobs board lives on a sibling domain (e.g.
+  // heartlandexpress.com → driveheartland.com) still classifies as
+  // a self-hosted custom_intake_form, not "unknown".
+  const carrierHosts = collectCarrierHosts(
+    input.homepageUrl,
+    careersUrl,
+    input.report.attempts,
+  );
 
   // Find or create the pending_carriers row.
   const existing = await database
@@ -95,7 +103,7 @@ export async function commitDiscovery(
     const values = input.report.jobs.map((j) => {
       const { surface } = classifyApplicationSurface({
         applyUrl: j.applyUrl,
-        carrierHost,
+        carrierHosts,
       });
       return {
         pendingCarrierId,
@@ -133,6 +141,32 @@ function safeHost(u: string): string | undefined {
   } catch {
     return undefined;
   }
+}
+
+/**
+ * Collect every URL the crawler touched and return their host set.
+ * That gives the surface classifier enough context to treat a
+ * cross-origin job-board subdomain as "the carrier itself."
+ */
+function collectCarrierHosts(
+  homepageUrl: string,
+  careersUrl: string | undefined,
+  attempts: DiscoveryReport["attempts"],
+): string[] {
+  const hosts = new Set<string>();
+  const add = (u: string | undefined) => {
+    if (!u) return;
+    const h = safeHost(u);
+    if (h) hosts.add(h);
+  };
+  add(homepageUrl);
+  add(careersUrl);
+  for (const a of attempts) {
+    const matches = a.note.match(/https?:\/\/[^\s)]+/g);
+    if (!matches) continue;
+    for (const m of matches) add(m);
+  }
+  return Array.from(hosts);
 }
 
 function pickCareersUrlFromAttempts(

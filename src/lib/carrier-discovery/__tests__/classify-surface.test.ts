@@ -117,6 +117,26 @@ describe("classifyApplicationSurface — same-domain self-hosted form", () => {
       }).surface,
     ).toBe("unknown");
   });
+
+  it("carrierHosts (plural) — second-domain match counts as same-carrier", () => {
+    // Heartland's case: homepage on heartlandexpress.com, job board
+    // on driveheartland.com. Both should classify as same-carrier.
+    expect(
+      classifyApplicationSurface({
+        applyUrl: "https://driveheartland.com/jobs/558933",
+        carrierHosts: ["heartlandexpress.com", "driveheartland.com"],
+      }).surface,
+    ).toBe("custom_intake_form");
+  });
+
+  it("carrierHosts: still rejects unrelated cross-origin", () => {
+    expect(
+      classifyApplicationSurface({
+        applyUrl: "https://random.example/x",
+        carrierHosts: ["foo.com", "bar.com"],
+      }).surface,
+    ).toBe("unknown");
+  });
 });
 
 describe("classifyApplicationSurface — defensive cases", () => {
