@@ -393,9 +393,11 @@ describe("matchDriver — polygon hiring area", () => {
         (m) => m.jobId === jobId,
       );
       expect(match).toBeDefined();
-      // Atlanta to (lat=34, lng=-84) ≈ 73 miles.
-      expect(match!.distanceMilesFromDriverHome).toBeGreaterThan(50);
-      expect(match!.distanceMilesFromDriverHome).toBeLessThan(100);
+      // Centroid is (-84, 34); Atlanta is (33.749, -84.388).
+      // Distance is ~28 miles. Not from the domicile (Atlanta itself,
+      // which would be 0 miles) — proves the centroid path is active.
+      expect(match!.distanceMilesFromDriverHome).toBeGreaterThan(10);
+      expect(match!.distanceMilesFromDriverHome).toBeLessThan(50);
     },
   );
 
