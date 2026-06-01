@@ -267,7 +267,7 @@ export const carrierJobs = pgTable(
     // OTR-leakage bug we fixed in commit ca73e85.
     check(
       "carrier_jobs_otr_invariant",
-      sql`${t.hiringRadiusMiles} IS NOT NULL OR 'otr' = ANY(${t.acceptedHomeTimeTypes})`,
+      sql`${t.hiringRadiusMiles} IS NOT NULL OR ${t.hiringPolygon} IS NOT NULL OR 'otr' = ANY(${t.acceptedHomeTimeTypes})`,
     ),
   ],
 );

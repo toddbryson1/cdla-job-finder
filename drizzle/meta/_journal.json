@@ -155,6 +155,13 @@
       "when": 1781800000000,
       "tag": "0021_lifetime_experience_and_polygon_hiring_areas",
       "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1781900000000,
+      "tag": "0022_otr_invariant_polygon_aware",
+      "breakpoints": true
     }
   ]
 }
