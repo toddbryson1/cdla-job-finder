@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import { cookies } from "next/headers";
 import { eq } from "drizzle-orm";
 import { db } from "@/db/client";
 import { driverCarrierApplications, drivers, zipCodes } from "@/db/schema";
@@ -37,16 +38,41 @@ interface PageProps {
 export default async function MatchesPage({ params }: PageProps) {
   const { driverId } = await params;
 
-  // Server-side session verification. The proxy already does an optimistic
-  // cookie-presence check; this is the real Stytch validation. If the cookie
-  // is missing or invalid, send back to /login.
-  const session = await getSessionState();
-  if (session.kind !== "ok") {
-    redirect(`/login?redirect=${encodeURIComponent(`/matches/${driverId}`)}`);
-  }
-
   if (!UUID_RE.test(driverId)) {
     return <ProfileNotFound />;
+  }
+
+  // Two valid auth paths now:
+  //
+  // 1. Anonymous-intake driver: their `cdla_driver_id` cookie was set
+  //    when they completed the intake. If the cookie matches the URL
+  //    driverId, that's enough — they haven't claimed an email yet.
+  // 2. Email-claimed driver (Stytch magic link): same as before — the
+  //    session email must match drivers.email.
+  //
+  // A driver with no cookie AND no Stytch session gets redirected to
+  // /login (existing email-keyed path).
+  const cookieStore = await cookies();
+  const driverCookie = cookieStore.get("cdla_driver_id")?.value;
+  const hasMatchingCookie = driverCookie === driverId;
+
+  if (!hasMatchingCookie) {
+    const session = await getSessionState();
+    if (session.kind !== "ok") {
+      redirect(
+        `/login?redirect=${encodeURIComponent(`/matches/${driverId}`)}`,
+      );
+    }
+
+    const driver = await db.query.drivers.findFirst({
+      where: eq(drivers.id, driverId),
+    });
+    if (!driver) {
+      return <ProfileNotFound />;
+    }
+    if (!driver.email || driver.email.toLowerCase() !== session.email) {
+      return <WrongDriverForSession />;
+    }
   }
 
   const driver = await db.query.drivers.findFirst({
@@ -55,13 +81,6 @@ export default async function MatchesPage({ params }: PageProps) {
 
   if (!driver) {
     return <ProfileNotFound />;
-  }
-
-  // Driver identity check (attorney addendum Q10): a magic-link session can
-  // only view matches for the email it authenticated as. A leaked or guessed
-  // driver UUID is useless without the matching email.
-  if (!driver.email || driver.email.toLowerCase() !== session.email) {
-    return <WrongDriverForSession />;
   }
 
   if (!driver.homeZip) {

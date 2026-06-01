@@ -86,7 +86,11 @@ const initialState: FormState = {
   smsOptIn: false,
 };
 
-const STEPS = ["Contact + CDL", "Experience", "What you want", "Safety + consent"] as const;
+// "About your CDL" replaces the original "Contact + CDL" — we now
+// collect name/email/phone at /apply, not at intake. Drivers can
+// browse matches anonymously and only identify themselves when
+// they pick a specific carrier they want to share info with.
+const STEPS = ["About your CDL", "Experience", "What you want", "Safety + consent"] as const;
 
 export function IntakeForm() {
   const router = useRouter();
@@ -133,11 +137,9 @@ export function IntakeForm() {
   function validateStep(currentStep: number): boolean {
     const next: Record<string, string> = {};
     if (currentStep === 0) {
-      if (!state.firstName.trim()) next.firstName = "Required";
-      if (!state.lastName.trim()) next.lastName = "Required";
-      if (!state.email.trim()) next.email = "Required";
-      else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(state.email)) next.email = "That doesn't look like an email";
-      if (!state.phone.trim()) next.phone = "Required";
+      // Contact fields are no longer collected at intake — they
+      // get gathered later at /apply when the driver picks a
+      // carrier. No validation here.
       if (!state.hasClassA) next.hasClassA = "CDLA.jobs is for Class A drivers only";
       if (!state.cdlState.trim() || state.cdlState.trim().length !== 2)
         next.cdlState = "2-letter state code";
@@ -230,10 +232,21 @@ export function IntakeForm() {
           setSubmitError(body.error ?? "Something went wrong. Try again in a minute.");
           return;
         }
-        const params = new URLSearchParams();
-        if (body.email) params.set("email", body.email);
-        if (body.magicLinkSent) params.set("link", "1");
-        router.push(`/intake/done${params.size > 0 ? `?${params.toString()}` : ""}`);
+        // Anonymous intake (no email collected): go straight to
+        // /matches/[id]. The httpOnly cookie is already set by the
+        // intake API so the matches page authenticates them.
+        // Email-keyed intake (legacy/voluntary): keep the magic-link
+        // "check your email" interstitial.
+        if (body.driverId && !body.email) {
+          router.push(`/matches/${body.driverId}`);
+        } else {
+          const params = new URLSearchParams();
+          if (body.email) params.set("email", body.email);
+          if (body.magicLinkSent) params.set("link", "1");
+          router.push(
+            `/intake/done${params.size > 0 ? `?${params.toString()}` : ""}`,
+          );
+        }
       } catch {
         setSubmitError("Network error. Try again.");
       }
@@ -396,45 +409,12 @@ function StepContact({
 }) {
   return (
     <div className="space-y-5">
-      <h2 className="text-lg font-semibold text-brand-ink">Who are you?</h2>
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        <Field label="First name" error={errors.firstName}>
-          <input
-            className={inputClass}
-            value={state.firstName}
-            onChange={(e) => set("firstName", e.target.value)}
-            autoComplete="given-name"
-          />
-        </Field>
-        <Field label="Last name" error={errors.lastName}>
-          <input
-            className={inputClass}
-            value={state.lastName}
-            onChange={(e) => set("lastName", e.target.value)}
-            autoComplete="family-name"
-          />
-        </Field>
-      </div>
-      <Field label="Email" error={errors.email}>
-        <input
-          type="email"
-          className={inputClass}
-          value={state.email}
-          onChange={(e) => set("email", e.target.value)}
-          autoComplete="email"
-          inputMode="email"
-        />
-      </Field>
-      <Field label="Phone" error={errors.phone}>
-        <input
-          type="tel"
-          className={inputClass}
-          value={state.phone}
-          onChange={(e) => set("phone", e.target.value)}
-          autoComplete="tel"
-          inputMode="tel"
-        />
-      </Field>
+      <h2 className="text-lg font-semibold text-brand-ink">About your CDL</h2>
+      <p className="text-sm text-brand-muted">
+        Browse your matches first — we ask for your name, email, and
+        phone later, only when you decide to share your info with a
+        specific carrier.
+      </p>
 
       <div className="rounded-lg bg-brand-surface p-4 space-y-3">
         <Field
