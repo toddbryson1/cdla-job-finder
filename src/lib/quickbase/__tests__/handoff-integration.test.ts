@@ -250,18 +250,15 @@ describe("recordAndersonHandoff — integration", () => {
     expect(row!.quickbasePushSucceededAt).toBeNull();
   });
 
-  it("re-runs in place — upsert keeps a single row per (driver, job)", async () => {
+  it("re-render after success is a no-op — does not re-push, keeps single row", async () => {
+    // Spec §B6.3 idempotency: once a handoff lands at
+    // submitted_to_sterling, the driver may refresh / navigate back to
+    // the result page repeatedly. Each subsequent render must NOT call
+    // QuickBase again — that would create duplicate Sterling records.
     process.env.QUICKBASE_STERLING_API_TOKEN = "secret-abc";
     process.env.QUICKBASE_PUSH_ENABLED = "true";
-    // First call: 2xx. Second call: shouldn't downgrade the stage.
     const fetchMock = vi
       .spyOn(global, "fetch")
-      .mockResolvedValueOnce(
-        new Response(
-          JSON.stringify({ metadata: { createdRecordIds: [4242] } }),
-          { status: 200, headers: { "content-type": "application/json" } },
-        ),
-      )
       .mockResolvedValueOnce(
         new Response(
           JSON.stringify({ metadata: { createdRecordIds: [4242] } }),
@@ -274,19 +271,42 @@ describe("recordAndersonHandoff — integration", () => {
 
     await recordAndersonHandoff(driverId, jobId);
     await recordAndersonHandoff(driverId, jobId);
+    await recordAndersonHandoff(driverId, jobId);
 
-    // Two attempts means two pushes. The single-row guarantee is the
-    // unique constraint on (driver_id, carrier_job_id).
     const all = await db.query.partnerApplicationStages.findMany({
       where: and(
         eq(partnerApplicationStages.driverId, driverId),
         eq(partnerApplicationStages.carrierJobId, jobId),
       ),
     });
+    // Unique constraint enforces single row per (driver, job).
     expect(all.length).toBe(1);
     expect(all[0]!.stage).toBe("submitted_to_sterling");
-    expect(all[0]!.quickbasePushAttempts).toBe(2);
-    expect(fetchMock).toHaveBeenCalledTimes(2);
+    // Only the first invocation pushes. The next two short-circuit on
+    // the terminal-stage guard before touching the network.
+    expect(all[0]!.quickbasePushAttempts).toBe(1);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("re-render after 4xx is a no-op — spec §B6.3 forbids auto-retry on validation errors", async () => {
+    process.env.QUICKBASE_STERLING_API_TOKEN = "secret-abc";
+    process.env.QUICKBASE_PUSH_ENABLED = "true";
+    const fetchMock = vi
+      .spyOn(global, "fetch")
+      .mockResolvedValueOnce(
+        new Response("bad field shape", { status: 400 }),
+      );
+
+    const { jobId } = await seedCarrierAndJob();
+    const driverId = await seedDriver("noretry");
+
+    await recordAndersonHandoff(driverId, jobId);
+    await recordAndersonHandoff(driverId, jobId);
+
+    const row = await findStageRow(driverId, jobId);
+    expect(row?.stage).toBe("submit_failed_validation");
+    expect(row?.quickbasePushAttempts).toBe(1);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
   it("is a no-op when carrier.partner_handoff_config is null", async () => {

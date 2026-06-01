@@ -428,6 +428,24 @@ export async function recordAndersonHandoff(
 
     if (!stageRow) return;
 
+    // Spec §B6.3 idempotency:
+    //   - submitted_to_sterling   → terminal success; re-pushing would
+    //                               create a duplicate Sterling record.
+    //   - submit_failed_validation → terminal failure (4xx/auth); spec
+    //                                explicitly forbids auto-retry.
+    //   - stalled                 → operator-terminal abandonment.
+    // Page-render re-fires for any of those should be a no-op so the
+    // driver can revisit the result page (refresh, back-button) without
+    // re-triggering the handoff. Only intelliapp_link_sent and
+    // submit_queued_for_retry should attempt a push.
+    if (
+      stageRow.stage === "submitted_to_sterling" ||
+      stageRow.stage === "submit_failed_validation" ||
+      stageRow.stage === "stalled"
+    ) {
+      return;
+    }
+
     if (!isQuickbaseConfigured()) {
       // Push is gated on attorney review (spec §B11). The stage row
       // is enough to know which drivers are waiting for the push.
