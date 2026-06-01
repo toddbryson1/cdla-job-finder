@@ -496,6 +496,82 @@ export const driverCarrierApplications = pgTable(
   ],
 );
 
+// Per-handoff state record for partner carriers whose application
+// surface routes through a downstream system that CDLA.jobs tracks
+// (e.g. Anderson via Sterling QuickBase). Thin operational state
+// machine — does NOT mirror FCRA-regulated content (no SSN, DOB,
+// MVR, criminal/drug history). One row per (driver, carrier_job).
+//
+// Stage values (CHECK in migration 0025):
+//   apply_initiated, stage2_consented, intelliapp_link_sent,
+//   submitted_to_sterling, submit_failed_validation,
+//   submit_queued_for_retry, stalled
+//
+// QuickBase fields stay NULL for handoff types that don't push to
+// QuickBase. The matching engine and Stage 2 flow do NOT read this
+// row — it's operational state for the QB-style post-application
+// handoff only. Spec: docs/SPEC_anderson-application-handoff-
+// addendum-v2.md §B7.
+export const partnerApplicationStages = pgTable(
+  "partner_application_stages",
+  {
+    id: uuid("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    driverId: uuid("driver_id")
+      .references(() => drivers.id, { onDelete: "cascade" })
+      .notNull(),
+    carrierJobId: uuid("carrier_job_id")
+      .references(() => carrierJobs.id, { onDelete: "cascade" })
+      .notNull(),
+    carrierId: uuid("carrier_id")
+      .references(() => carriers.id, { onDelete: "cascade" })
+      .notNull(),
+    // Stage values are validated by a CHECK constraint in migration
+    // 0025 rather than a Postgres enum — keeps schema evolution
+    // friction low when a future spec adds a new state.
+    stage: text("stage").notNull(),
+    quickbaseRecordId: text("quickbase_record_id"),
+    quickbasePushAttemptedAt: timestamp("quickbase_push_attempted_at", {
+      withTimezone: true,
+    }),
+    quickbasePushSucceededAt: timestamp("quickbase_push_succeeded_at", {
+      withTimezone: true,
+    }),
+    quickbasePushAttempts: integer("quickbase_push_attempts")
+      .notNull()
+      .default(0),
+    quickbaseLastError: text("quickbase_last_error"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (t) => [
+    uniqueIndex("partner_application_stages_driver_job_uniq").on(
+      t.driverId,
+      t.carrierJobId,
+    ),
+    index("partner_application_stages_driver_idx").on(t.driverId),
+    index("partner_application_stages_carrier_idx").on(t.carrierId),
+    index("partner_application_stages_stage_idx").on(t.stage),
+    check(
+      "partner_application_stages_stage_chk",
+      sql`${t.stage} IN (
+        'apply_initiated',
+        'stage2_consented',
+        'intelliapp_link_sent',
+        'submitted_to_sterling',
+        'submit_failed_validation',
+        'submit_queued_for_retry',
+        'stalled'
+      )`,
+    ),
+  ],
+);
+
 // One row per "posting cycle" for a (carrier_job, city) pair. Each cycle
 // is a 20-day public-facing instance of the job at a specific city. The
 // /job/[slug] URL is keyed by THIS row's id (not the carrier_job id) so
