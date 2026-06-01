@@ -17,6 +17,10 @@ import { submitConsent, submitSwiftConfirmation } from "./actions";
 import { STAGE_2_CONSENT_TEXT_VERSION } from "./constants";
 import { QuestionsForm } from "./QuestionsForm";
 import { IdentityCaptureForm } from "./IdentityCaptureForm";
+import {
+  parseResultPageCopyOverrides,
+  type ResultPageCopyOverrides,
+} from "./resultCopyOverrides";
 
 // TODO: add step-up verification before Stage 2 consent
 // (attorney addendum Q10 — magic-link session is "limited"; a step-up SMS
@@ -162,6 +166,7 @@ export default async function ApplyPage({ params, searchParams }: PageProps) {
           jobId={jobId}
           carrierName={carrier.name}
           job={job}
+          carrier={carrier}
           driver={driver}
           swiftSubmitted={sp.swift === "submitted"}
         />
@@ -365,6 +370,7 @@ async function ResultScreen({
   jobId,
   carrierName,
   job,
+  carrier,
   driver,
   swiftSubmitted,
 }: {
@@ -372,6 +378,7 @@ async function ResultScreen({
   jobId: string;
   carrierName: string;
   job: typeof carrierJobs.$inferSelect;
+  carrier: typeof carriers.$inferSelect;
   driver: typeof drivers.$inferSelect;
   swiftSubmitted: boolean;
 }) {
@@ -418,6 +425,7 @@ async function ResultScreen({
         jobId={jobId}
         carrierName={carrierName}
         job={job}
+        carrier={carrier}
         swiftSubmitted={swiftSubmitted}
       />
     );
@@ -441,14 +449,17 @@ function Qualified({
   jobId,
   carrierName,
   job,
+  carrier,
   swiftSubmitted,
 }: {
   driverId: string;
   jobId: string;
   carrierName: string;
   job: typeof carrierJobs.$inferSelect;
+  carrier: typeof carriers.$inferSelect;
   swiftSubmitted: boolean;
 }) {
+  const overrides = parseResultPageCopyOverrides(carrier.resultPageCopyOverrides);
   return (
     <>
       <p className="text-sm font-medium text-brand-medium">CDLA.jobs</p>
@@ -473,7 +484,11 @@ function Qualified({
 
         {job.applicationSurface === "tenstreet_intelliapp" &&
         !isSwiftTwoStep(job) ? (
-          <StandardIntelliApp job={job} />
+          <StandardIntelliApp
+            job={job}
+            carrierName={carrierName}
+            overrides={overrides}
+          />
         ) : null}
 
         {job.applicationSurface === "email_only" ? (
@@ -612,9 +627,30 @@ function SwiftHandoff({
 
 function StandardIntelliApp({
   job,
+  carrierName,
+  overrides,
 }: {
   job: typeof carrierJobs.$inferSelect;
+  carrierName: string;
+  overrides: ResultPageCopyOverrides;
 }) {
+  // "Before you start" bullets — override may supply a carrier-specific
+  // list (Anderson does, per spec §B8). Fallback is the generic
+  // two-bullet IntelliApp checklist.
+  const beforeItems =
+    overrides.beforeYouStartItems && overrides.beforeYouStartItems.length > 0
+      ? overrides.beforeYouStartItems
+      : [
+          "Your full job history for the past 10 years (including non-driving jobs)",
+          "2 references",
+        ];
+
+  // Phrases for the post-apply follow-up sentence — both default to the
+  // current generic copy when the override is null.
+  const recruiterTeam =
+    overrides.recruiterTeamName ?? `${carrierName}'s recruiting team`;
+  const followup = overrides.followupPromise ?? "within 1–2 business days";
+
   return (
     <section>
       <div className="rounded-lg border border-brand-rule bg-brand-surface p-5">
@@ -622,14 +658,17 @@ function StandardIntelliApp({
           Before you start, make sure you have:
         </p>
         <ul className="mt-3 list-disc space-y-1 pl-5 text-sm leading-6 text-brand-ink">
-          <li>Your full job history for the past 10 years (including non-driving jobs)</li>
-          <li>2 references</li>
+          {beforeItems.map((item, i) => (
+            <li key={i}>{item}</li>
+          ))}
         </ul>
-        <p className="mt-4 text-sm leading-6 text-brand-ink">
-          When the application asks how you heard about this position, select{" "}
-          <span className="font-semibold">Other</span> and type the source
-          identifier provided by your recruiter.
-        </p>
+        {overrides.omitSourceIdInstruction ? null : (
+          <p className="mt-4 text-sm leading-6 text-brand-ink">
+            When the application asks how you heard about this position,
+            select <span className="font-semibold">Other</span> and type the
+            source identifier provided by your recruiter.
+          </p>
+        )}
       </div>
 
       {job.applicationUrl ? (
@@ -642,6 +681,11 @@ function StandardIntelliApp({
           Complete your application
         </a>
       ) : null}
+
+      <p className="mt-6 text-sm leading-6 text-brand-ink">
+        Once you finish the application, {recruiterTeam} will be in touch{" "}
+        {followup}.
+      </p>
     </section>
   );
 }
