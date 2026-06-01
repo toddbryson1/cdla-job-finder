@@ -555,11 +555,226 @@ Categorized by matching consequence severity.
 
 ---
 
-## 9. Change log
+## 9. Anderson Trucking Service additions (Sterling channel)
+
+The Anderson Trucking Service ingestion (4 actively-hiring products through the Sterling Recruiting Solutions channel) surfaced the gaps below. Each is appended here per the appendix convention in §8 step 5. Items that strengthen or duplicate existing C.R. England gaps are cross-referenced rather than restated.
+
+**Source:** ATS Driver Qualification Guidelines 03-23-2026, Pre-Qual Sheet, Driver Orientation Guidelines (verbatim Anderson docs); spec `docs/SPEC_anderson-application-handoff-addendum-v2.md` §B9.
+
+### 9.1 Multi-path experience requirements
+
+**Discovered in:** All 4 Anderson `carrier_jobs` rows (Lease Van OTR, Lease Van MW Regional, Company Flatbed, Lease Flatbed). Builds on a similar pattern noted during USX ingestion (2-path).
+
+**Carrier rule:** Three accepted experience paths: (a) 6 months OTR in last 24 months; (b) 12 months OTR in last 36 months; (c) 18 months OTR/regional in last 60 months with local experience counting.
+
+**Schema gap:** `min_experience_months` + `min_experience_months_window_months = 36` is a single (months, window) tuple. Cannot express three OR-ed paths, especially the third path's "local counts" relaxation.
+
+**Workaround:** Set `min_experience_months = 6` (the most permissive Anderson-side floor). Drivers with 6mo OTR in 24mo match; drivers who qualify only via paths (b) or (c) also match — Sterling filters at qualification call.
+
+**Matching consequence:** Drivers with 18mo OTR + local mix in 60mo are over-matched (good — Anderson does accept them, just via the third path). Drivers with 7mo OTR but the prior 18 months mostly local are over-matched (Sterling will filter).
+
+**Proposed schema change:** Convert `min_experience_months` from scalar to `experience_paths` jsonb array, each element `{months, window_months, equipment_filter?, lane_filter?}`. Engine ORs paths; if any matches, driver passes.
+
+### 9.2 Equipment-specific prior experience as a hard filter
+
+**Discovered in:** Job #3 (Company Flatbed — Anderson).
+
+**Carrier rule:** "Minimum 6 months FB experience (preferably with one company) within the last 2 years."
+
+**Schema gap:** `min_otr_experience_months` is a single number, equipment-agnostic. Anderson's Company Flatbed requires *flatbed-specific* prior experience, not just OTR months.
+
+**Workaround:** Set `min_otr_experience_months = 6` as a proxy and capture the flatbed-specific requirement in `notes` + `description`.
+
+**Matching consequence:** Drivers with 6+ months OTR dry-van experience match Company Flatbed even though Anderson requires flatbed-specific months. Sterling filters.
+
+**Proposed schema change:** Add `min_equipment_experience_months` jsonb (mapping `equipment_slug → months`). Engine reads the matching slug for the job's `equipment`.
+
+### 9.3 Tiered tolerance by experience tenure
+
+**Discovered in:** All 4 Anderson rows (Guidelines §C.6, §C.7).
+
+**Carrier rule:** Different ticket / preventable-accident counts allowed depending on whether the driver has 4+ years experience or fewer. Anderson is pervasively two-tier across all violation rules.
+
+**Schema gap:** `max_tickets_3yr` / `max_accidents_3yr` are single scalars. Cannot express "max 2 if <4yr; max 3 if 4+yr."
+
+**Workaround:** Use the more permissive tier as the field value (`max_tickets_3yr = 3`, `max_accidents_3yr = 3`). Less-experienced drivers with 3 tickets are over-matched; Sterling filters.
+
+**Matching consequence:** Newer drivers (<4yr) with 2–3 tickets over-match. Strengthens existing gap 2.5 (C.R. England's under-23 tier) — same shape, different threshold.
+
+**Proposed schema change:** Convert ticket/accident maxes to `{tier1: {min_experience_months, max}, tier2: {...}}`. Engine selects tier based on driver's `years_held`.
+
+### 9.4 Absolute critical-event bars (zero in 24 months)
+
+**Discovered in:** Anderson Guidelines §C.9–§C.11.
+
+**Carrier rule:** Zero critical-crash / roll-away / bridge-strike events in the past 24 months. Stacks ON TOP of the 3-year preventable-accident count.
+
+**Schema gap:** No driver-side field captures these specific event types. The Stage 2 safety questions ask only for total accidents count + at-fault accidents count.
+
+**Workaround:** Captured in description. Drivers with any of these events match and are filtered at Sterling.
+
+**Matching consequence:** Drivers with a bridge strike inside 24 months over-match all Anderson jobs.
+
+**Proposed schema change:** Add Stage 2 booleans: `critical_crash_24mo`, `roll_away_24mo`, `bridge_strike_24mo`. Carrier rule becomes `accepts_critical_event_24mo = false`.
+
+### 9.5 PSP review reservation
+
+**Discovered in:** All 4 Anderson rows (catch-all in Guidelines).
+
+**Carrier rule:** "Anderson reserves the right to review based on PSP findings, prior terminations, job changes, and unemployment history."
+
+**Schema gap:** No structured way to express "carrier reserves manual-review discretion beyond automated rules."
+
+**Workaround:** Captured in description. Drivers see "Anderson reserves the right to review…" in the visible job copy.
+
+**Matching consequence:** None on matching — PSP review only fires at Sterling's qualification call.
+
+**Proposed schema change:** None recommended — this is inherent to recruiter-mediated handoffs. Display-layer disclosure is sufficient.
+
+### 9.6 Termination rule semantic mismatch (Anderson variant)
+
+**Discovered in:** All 4 Anderson rows (Guidelines §A.9).
+
+**Carrier rule:** "Zero safety-related terminations within the past 12 months; No more than two terminations (safety or non-safety) within the past five years."
+
+**Schema gap:** Same root gap as 2.10 (C.R. England). `accepts_terminated` is a single boolean — cannot express the conditional shape (zero safety in 12mo AND ≤2 total in 5yr).
+
+**Workaround:** `accepts_terminated = true` and the conditional is captured in description.
+
+**Matching consequence:** Cross-references 2.10. Anderson's variant adds the overlapping-windows + safety-vs-non-safety categorization. Strengthens the proposed change in 2.10.
+
+**Proposed schema change:** Builds on 2.10. The refined `accepts_terminated` should be a jsonb `{recent_safety_months, recent_safety_max, total_window_years, total_max}`.
+
+### 9.7 Job-change frequency limits
+
+**Discovered in:** All 4 Anderson rows.
+
+**Carrier rule:** ≤3 driving-job changes in the past 12 months, ≤5–6 in the past 36 months.
+
+**Schema gap:** Driver intake does not capture job-history detail; matching engine has no equivalent rule.
+
+**Workaround:** Captured in description.
+
+**Matching consequence:** Job-hoppers match Anderson jobs they will be rejected for.
+
+**Proposed schema change:** Add Stage 2 fields `driving_jobs_in_last_12mo`, `driving_jobs_in_last_36mo` (integer). Add `max_driving_jobs_12mo`, `max_driving_jobs_36mo` to `carrier_jobs`.
+
+### 9.8 Unemployment gap limits
+
+**Discovered in:** All 4 Anderson rows.
+
+**Carrier rule:** ≤6 months unemployment in the past 12 months, ≤12 months in the past 36 months.
+
+**Schema gap:** Driver intake does not capture employment-gap detail.
+
+**Workaround:** Captured in description.
+
+**Matching consequence:** Drivers returning from longer gaps over-match.
+
+**Proposed schema change:** Add Stage 2 fields `unemployment_months_in_last_12mo`, `unemployment_months_in_last_36mo`. Add corresponding `max_*` fields to `carrier_jobs`.
+
+### 9.9 Truck abandonment history
+
+**Discovered in:** All 4 Anderson rows.
+
+**Carrier rule:** Zero truck abandonments in last 36 months; ≤1 in last 7 years.
+
+**Schema gap:** Driver intake has no abandonment field.
+
+**Workaround:** Captured in description. Drivers self-select.
+
+**Matching consequence:** Drivers with any abandonment match and are filtered at Sterling.
+
+**Proposed schema change:** Add Stage 2 booleans `truck_abandoned_in_last_36mo`, `truck_abandonments_in_last_7yr` (integer). Add `max_abandonments_*` to carrier rules.
+
+### 9.10 DUI / felony manual-review beyond 7 years
+
+**Discovered in:** Anderson Guidelines §D.2 (DUI) and §D.8 (felony).
+
+**Carrier rule:** Anderson generally requires zero DUI/felony in past 7 years; a single conviction *beyond* 7 years may be accepted with safety-review approval.
+
+**Schema gap:** `accepts_dui` / `accepts_felony` are booleans. Cannot express "no within window, manual review beyond window." Strengthens existing 2.7 (DUI tier) and 2.11 (felony recency tier).
+
+**Workaround:** `accepts_dui = false` and `accepts_felony = false` (matching-safe choice). Drivers with conviction >7yr ago are under-matched; spec calls this out explicitly as a manual-review path the schema can't express.
+
+**Matching consequence:** Drivers with 8-year-old DUI under-match — Anderson might accept them but they don't see the job.
+
+**Proposed schema change:** Convert `accepts_dui` / `accepts_felony` to enums: `auto_accept | manual_review | auto_reject`. Add `dui_manual_review_recency_months` / `felony_manual_review_recency_months`.
+
+### 9.11 Absolute felony bars by category
+
+**Discovered in:** Anderson Guidelines §D.5, §D.6.
+
+**Carrier rule:** Lifetime bar on sex offenses; recent homicide (within 20 years) is an absolute bar regardless of other felony rules.
+
+**Schema gap:** `accepts_felony` is a single boolean; no category-aware bars.
+
+**Workaround:** None feasible in current schema — Anderson's policy treats sex offense as a strict lifetime exclusion that overrides all other felony tolerance.
+
+**Matching consequence:** Drivers with lifetime-barred felony categories may match if `accepts_felony = true` and they self-attest "no felony in last 7 years." Display-layer disclosure helps but is not enforcement.
+
+**Proposed schema change:** Add Stage 2 enum `felony_category_self_disclosed` (`none, violent_non_lifetime, sexual_offense, recent_homicide, other`). Add carrier-level `bars_felony_categories` array.
+
+### 9.12 Irregular hiring polygons (vs. radius)
+
+**Discovered in:** All 4 Anderson rows; Anderson publishes two PNG map images on drive4ats.com (National OTR + MW Regional). Builds on the gap already partially addressed by migration 0021 (PostGIS polygons).
+
+**Carrier rule:** Anderson hires from inside two distinct irregular geographic shapes (one national-ish, one Upper-Midwest-ish), not from circles.
+
+**Schema gap:** The schema added `hiring_polygon GEOGRAPHY(Polygon, 4326)` in 0021, but Anderson supplied no machine-readable polygons — only image maps. So the gap shifted from "schema cannot represent polygons" to "carrier-supplied polygon data is not available." Captured here because it is the same operational problem from the matching side.
+
+**Workaround:** Single point + 1500mi (national products) or 500mi (MW Regional) radius. Generates known false positives on the periphery.
+
+**Matching consequence:** Drivers in geographic corners that Anderson's actual maps exclude (PNW corner, Far Northeast) are over-matched. Sterling filters at qualification call.
+
+**Proposed schema change:** Workflow — when ingesting partner carriers, capture polygons in KML / GeoJSON when available; ask carrier to provide a structured representation as part of partner onboarding. Schema is already polygon-ready.
+
+### 9.13 Lease vs. company pay structure semantics
+
+**Discovered in:** Anderson rows 1, 2, 4 (lease products) vs. row 3 (company driver).
+
+**Carrier rule:** Lease products quote pay as **take-home after expenses**; company products quote **gross**. These are not directly comparable for driver shopping.
+
+**Schema gap:** `pay_range_*_weekly_usd` is a single scalar with no distinction between gross and net.
+
+**Workaround:** Captured per-row in `display_benefits_summary` ("take home $1,500–$2,200/wk after expenses"). Drivers self-interpret.
+
+**Matching consequence:** None on matching; affects driver shopping experience when comparing lease vs. company carriers.
+
+**Proposed schema change:** Add `pay_structure_type` enum (`gross_weekly`, `take_home_after_expenses`, `cpm`, `percentage`, `hourly`). Display layer renders accordingly.
+
+### 9.14 Minimum age decoupled from minimum experience
+
+**Discovered in:** Anderson Pre-Qual Sheet ("Minimum 21 years of age"). Same root gap as 2.1 (C.R. England Job #88 — minimum age 25 for mentor), now confirmed as pervasive across carriers.
+
+**Carrier rule:** Anderson requires age 21 regardless of CDL tenure. (Most under-21 CDL holders are intrastate-only; this is industry-standard but still not enforced by the matching engine.)
+
+**Schema gap:** Same as 2.1.
+
+**Workaround:** Captured in description.
+
+**Proposed schema change:** Same as 2.1. Promotion to required-fields tier — every carrier surfaces this.
+
+### 9.15 Pay-range source conflicts requiring versioning
+
+**Discovered in:** Anderson row 4 (Lease Flatbed) — Sterling's openings notes list $1,800–$3,000/wk; Sterling's 3/2026 pay update lists $1,500–$2,500/wk. Same product, two different sources.
+
+**Schema gap:** No source-versioning on pay fields. Whichever value lands at last write wins.
+
+**Workaround:** Used the conservative-display range ($1,500–$3,000 as the union envelope); flagged the conflict in `notes`; open question §B10 Q10 in the Anderson spec to resolve with Sterling.
+
+**Matching consequence:** None on matching; affects driver expectations.
+
+**Proposed schema change:** Add a `pay_source_history` jsonb to track date-stamped pay updates per row. Display layer surfaces the most recent.
+
+---
+
+## 10. Change log
 
 | Date | Change | By |
 |------|--------|-----|
 | 2026-05-27 | v1.0 created from C.R. England manual ingestion (41 jobs, 185 rows) | Todd + Claude |
+| 2026-06-01 | Anderson Trucking Service additions appended as §9 (15 new gaps + cross-refs to 2.1/2.5/2.7/2.10/2.11). Did not bump version — the doc is a living reference. | Todd + Claude |
 
 ---
 
