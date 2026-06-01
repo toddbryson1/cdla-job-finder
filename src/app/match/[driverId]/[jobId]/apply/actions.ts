@@ -2,14 +2,20 @@
 
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db/client";
 import {
   carrierJobs,
+  carriers,
   driverCarrierApplications,
   drivers,
+  partnerApplicationStages,
 } from "@/db/schema";
+import {
+  isQuickbaseConfigured,
+  pushAndersonHandoff,
+} from "@/lib/quickbase/client";
 import {
   appUrl,
   getStytchClient,
@@ -327,4 +333,161 @@ export async function claimIdentity(input: {
   }
 
   return { ok: true };
+}
+
+// ----------------------------------------------------------------
+// Anderson Trucking Service handoff (Sterling Recruiting QuickBase
+// push). Invoked from the Stage 2 result step when the carrier's
+// partner_handoff_config.handoff_type === 'anderson_quickbase'.
+//
+// Pattern 1 (spec §B6.2): push to QuickBase immediately when the
+// IntelliApp link is delivered (i.e. when the result page renders
+// for a qualified driver). Sterling sees the driver up front and
+// can reach out proactively, whether or not the driver finishes the
+// IntelliApp.
+//
+// Best-effort: never throws back to the caller. The IntelliApp link
+// still renders regardless of whether this succeeds. Stage
+// transitions follow spec §B6.3:
+//   2xx → submitted_to_sterling
+//   4xx → submit_failed_validation
+//   5xx / network → submit_queued_for_retry
+//   not configured → stays at intelliapp_link_sent (push deferred)
+// ----------------------------------------------------------------
+
+export async function recordAndersonHandoff(
+  driverId: string,
+  jobId: string,
+): Promise<void> {
+  try {
+    if (!UUID_RE.test(driverId) || !UUID_RE.test(jobId)) return;
+
+    const driver = await db.query.drivers.findFirst({
+      where: eq(drivers.id, driverId),
+    });
+    if (!driver) return;
+
+    const job = await db.query.carrierJobs.findFirst({
+      where: eq(carrierJobs.id, jobId),
+    });
+    if (!job) return;
+
+    const carrier = await db.query.carriers.findFirst({
+      where: eq(carriers.id, job.carrierId),
+    });
+    if (!carrier) return;
+
+    // Only proceed for carriers whose handoff config opts in.
+    const cfg = (carrier.partnerHandoffConfig ?? null) as Record<
+      string,
+      unknown
+    > | null;
+    if (!cfg || cfg.handoff_type !== "anderson_quickbase") return;
+
+    const qbCfg = cfg.quickbase as
+      | {
+          realm_hostname: string;
+          app_id: string;
+          table_id: string;
+          default_recruiter_name: string;
+        }
+      | undefined;
+    if (
+      !qbCfg ||
+      typeof qbCfg.realm_hostname !== "string" ||
+      typeof qbCfg.app_id !== "string" ||
+      typeof qbCfg.table_id !== "string"
+    ) {
+      return;
+    }
+
+    // Upsert the partner_application_stages row at
+    // intelliapp_link_sent (Pattern 1 — link has just been rendered).
+    const now = new Date();
+    const [stageRow] = await db
+      .insert(partnerApplicationStages)
+      .values({
+        driverId,
+        carrierJobId: jobId,
+        carrierId: job.carrierId,
+        stage: "intelliapp_link_sent",
+      })
+      .onConflictDoUpdate({
+        target: [
+          partnerApplicationStages.driverId,
+          partnerApplicationStages.carrierJobId,
+        ],
+        set: {
+          // Don't downgrade a terminal stage on re-renders — but do
+          // refresh updated_at so we can tell from the row when the
+          // driver last hit the result page.
+          updatedAt: now,
+        },
+      })
+      .returning();
+
+    if (!stageRow) return;
+
+    if (!isQuickbaseConfigured()) {
+      // Push is gated on attorney review (spec §B11). The stage row
+      // is enough to know which drivers are waiting for the push.
+      return;
+    }
+
+    // Best-effort push. Errors are folded into the tagged result;
+    // pushAndersonHandoff never throws.
+    const attemptedAt = new Date();
+    const result = await pushAndersonHandoff({
+      driver,
+      carrierJob: job,
+      stage: stageRow,
+      quickbaseConfig: {
+        realm_hostname: qbCfg.realm_hostname,
+        app_id: qbCfg.app_id,
+        table_id: qbCfg.table_id,
+        default_recruiter_name:
+          typeof qbCfg.default_recruiter_name === "string"
+            ? qbCfg.default_recruiter_name
+            : "Todd Bryson",
+      },
+    });
+
+    if (result.ok) {
+      await db
+        .update(partnerApplicationStages)
+        .set({
+          stage: "submitted_to_sterling",
+          quickbaseRecordId: result.recordId,
+          quickbasePushAttemptedAt: attemptedAt,
+          quickbasePushSucceededAt: new Date(),
+          quickbasePushAttempts: sql`${partnerApplicationStages.quickbasePushAttempts} + 1`,
+          quickbaseLastError: null,
+          updatedAt: new Date(),
+        })
+        .where(eq(partnerApplicationStages.id, stageRow.id));
+      return;
+    }
+
+    if (result.code === "not_configured") return; // shouldn't reach here
+
+    const nextStage: "submit_failed_validation" | "submit_queued_for_retry" =
+      result.code === "no_retry" || result.code === "auth"
+        ? "submit_failed_validation"
+        : "submit_queued_for_retry";
+
+    await db
+      .update(partnerApplicationStages)
+      .set({
+        stage: nextStage,
+        quickbasePushAttemptedAt: attemptedAt,
+        quickbasePushAttempts: sql`${partnerApplicationStages.quickbasePushAttempts} + 1`,
+        quickbaseLastError: result.error,
+        updatedAt: new Date(),
+      })
+      .where(eq(partnerApplicationStages.id, stageRow.id));
+  } catch (err) {
+    // Best-effort — never throws to the user. The IntelliApp link
+    // still renders even if we couldn't track the handoff.
+    console.error("[recordAndersonHandoff] failed:", err);
+  }
 }

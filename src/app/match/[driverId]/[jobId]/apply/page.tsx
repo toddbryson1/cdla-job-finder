@@ -13,7 +13,11 @@ import {
 } from "@/db/schema";
 import { getSessionState } from "@/lib/stytch/session";
 import { qualifyDriverForCarrier } from "@/lib/matching";
-import { submitConsent, submitSwiftConfirmation } from "./actions";
+import {
+  recordAndersonHandoff,
+  submitConsent,
+  submitSwiftConfirmation,
+} from "./actions";
 import { STAGE_2_CONSENT_TEXT_VERSION } from "./constants";
 import { QuestionsForm } from "./QuestionsForm";
 import { IdentityCaptureForm } from "./IdentityCaptureForm";
@@ -419,6 +423,18 @@ async function ResultScreen({
   }
 
   if (result.qualifies) {
+    // Anderson-style carriers route to Sterling QuickBase as a
+    // post-application handoff. Fire once when the result page
+    // renders for a qualified driver (Pattern 1 per spec §B6.2).
+    // Best-effort: the call swallows its own errors so the
+    // IntelliApp link still renders regardless.
+    const handoffCfg = (carrier.partnerHandoffConfig ?? null) as {
+      handoff_type?: unknown;
+    } | null;
+    if (handoffCfg?.handoff_type === "anderson_quickbase") {
+      await recordAndersonHandoff(driverId, jobId);
+    }
+
     return (
       <Qualified
         driverId={driverId}
