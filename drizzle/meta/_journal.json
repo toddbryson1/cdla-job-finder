@@ -162,6 +162,13 @@
       "when": 1781900000000,
       "tag": "0022_otr_invariant_polygon_aware",
       "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1782000000000,
+      "tag": "0023_carrier_handoff_config",
+      "breakpoints": true
     }
   ]
 }

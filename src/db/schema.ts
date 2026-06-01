@@ -116,6 +116,23 @@ export const carriers = pgTable("carriers", {
   businessAddressLat: numeric("business_address_lat", { precision: 9, scale: 6 }),
   businessAddressLng: numeric("business_address_lng", { precision: 9, scale: 6 }),
 
+  // Per-carrier handoff config. Holds the IntelliApp URL, recruiter
+  // param values, source identifiers, and any partner-specific
+  // tracking-system targets (e.g. Anderson's Sterling Recruiting
+  // Solutions QuickBase config). API tokens / secrets DO NOT live
+  // here — they live in env vars; this stores the `*_secret_ref`
+  // (env var name) so each carrier can name their own. Per spec
+  // docs/SPEC_anderson-application-handoff-addendum-v2.md §B4.5.
+  partnerHandoffConfig: jsonb("partner_handoff_config"),
+
+  // Per-carrier overrides for the Stage 2 result page copy. Most
+  // carriers get the generic template; a few partners (Anderson,
+  // future Tier 1) get small per-carrier wording adjustments. The
+  // Stage 2 result page checks named keys (e.g. recruiter_team_name,
+  // omit_source_id_instruction) and falls through to the generic
+  // copy when null/missing.
+  resultPageCopyOverrides: jsonb("result_page_copy_overrides"),
+
   tier1StartedAt: timestamp("tier_1_started_at", { withTimezone: true }),
   tier1RenewedAt: timestamp("tier_1_renewed_at", { withTimezone: true }),
   tier1BillingStatus: tier1BillingStatusEnum("tier_1_billing_status"),
