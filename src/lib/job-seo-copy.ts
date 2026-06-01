@@ -181,7 +181,18 @@ export function buildPublicJobTitle(input: {
 }
 
 export function deriveLaneNoun(job: Job): string {
-  // Position title is what the carrier called this job — most authoritative.
+  // Home-daily is the strongest signal a driver searches for: someone
+  // looking for "local CDL-A driver jobs" cares about getting home every
+  // night, not whether the carrier internally calls it "Dedicated".
+  // Many home-daily jobs ALSO carry "dedicated" or other marketing tags
+  // in their position_title (e.g. Walmart Harrisonville's "Local Position
+  // Only Dedicated Walmart Grocery Driver"). For SEO we want all of
+  // those to read as Local. So home_time = daily wins outright.
+  const ht = job.acceptedHomeTimeTypes;
+  if (ht?.includes("daily")) return "Local";
+
+  // Position title is what the carrier called this job — most authoritative
+  // among the non-home-daily cases.
   const title = job.positionTitle.toLowerCase();
   if (/\bdedicated\b/.test(title)) return "Dedicated";
   if (/\bdrayage\b|\bport\b/.test(title)) return "Drayage";
@@ -189,9 +200,7 @@ export function deriveLaneNoun(job: Job): string {
   if (/\botr\b|over[- ]the[- ]road/.test(title)) return "OTR";
   if (/\bregional\b/.test(title)) return "Regional";
 
-  // Explicit home-time array fallback.
-  const ht = job.acceptedHomeTimeTypes;
-  if (ht?.includes("daily")) return "Local";
+  // Explicit home-time array fallback for the non-daily cases.
   if (ht?.includes("otr")) return "OTR";
   if (ht?.includes("weekly")) return "Regional";
   if (ht?.includes("biweekly")) return "Regional";

@@ -1,5 +1,19 @@
 import { describe, expect, it } from "vitest";
-import { buildPublicJobTitle } from "@/lib/job-seo-copy";
+import { buildPublicJobTitle, deriveLaneNoun } from "@/lib/job-seo-copy";
+import type { carrierJobs } from "@/db/schema";
+
+type Job = typeof carrierJobs.$inferSelect;
+
+function mkJob(over: Partial<Job>): Job {
+  // deriveLaneNoun only reads positionTitle, acceptedHomeTimeTypes, and
+  // hiringRadiusMiles — the rest of the row shape doesn't matter here.
+  return {
+    positionTitle: "",
+    acceptedHomeTimeTypes: null,
+    hiringRadiusMiles: null,
+    ...over,
+  } as Job;
+}
 
 describe("buildPublicJobTitle", () => {
   it("user's spec: Regional + Kansas City", () => {
@@ -96,5 +110,67 @@ describe("buildPublicJobTitle", () => {
         state: "UT",
       }),
     ).toBe("Regional Class A Driver in Salt Lake City, UT");
+  });
+});
+
+describe("deriveLaneNoun", () => {
+  // The rule: home-daily wins outright. Drivers search "local CDL-A
+  // driver jobs" — they don't search for "dedicated CDL-A driver jobs",
+  // even when a Walmart dedicated account happens to be home-daily.
+  it("home-daily beats 'Dedicated' in the position title", () => {
+    expect(
+      deriveLaneNoun(
+        mkJob({
+          positionTitle:
+            "Local Position Only Dedicated Walmart Grocery Driver — Harrisonville, MO",
+          acceptedHomeTimeTypes: ["daily"],
+        }),
+      ),
+    ).toBe("Local");
+  });
+
+  it("home-daily beats 'OTR' in the position title", () => {
+    expect(
+      deriveLaneNoun(
+        mkJob({
+          positionTitle: "OTR Dry Van Driver",
+          acceptedHomeTimeTypes: ["daily"],
+        }),
+      ),
+    ).toBe("Local");
+  });
+
+  it("daily as part of a multi-value array still wins", () => {
+    expect(
+      deriveLaneNoun(
+        mkJob({
+          positionTitle: "Dedicated Account",
+          acceptedHomeTimeTypes: ["daily", "weekly"],
+        }),
+      ),
+    ).toBe("Local");
+  });
+
+  it("without home-daily, position title still drives lane", () => {
+    expect(
+      deriveLaneNoun(
+        mkJob({
+          positionTitle: "Dedicated Reefer — Memphis",
+          acceptedHomeTimeTypes: ["weekly"],
+        }),
+      ),
+    ).toBe("Dedicated");
+  });
+
+  it("falls through to OTR when nothing else matches", () => {
+    expect(
+      deriveLaneNoun(
+        mkJob({
+          positionTitle: "Class A Driver",
+          acceptedHomeTimeTypes: null,
+          hiringRadiusMiles: null,
+        }),
+      ),
+    ).toBe("OTR");
   });
 });
