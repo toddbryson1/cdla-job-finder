@@ -2,14 +2,25 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { SiteShell } from "@/components/SiteShell";
 
-// Copy is locked verbatim per SPEC_homepage-copy-v1.md. Do not paraphrase
-// headlines or microcopy. Sections render top-to-bottom per spec §3:
-// hero → how it works → why different → for carriers → footer (in shell).
+// Copy is locked verbatim per SPEC_homepage-copy-v1.md and the design
+// reference at cdlajobs-homepage-design.html. Do NOT paraphrase
+// headlines or microcopy — they're attorney-reviewed and brand-locked.
+// Sections render top-to-bottom: hero → how it works → why different
+// → for carriers → footer (in shell).
 //
-// Debbie (the chatbox AI per SPEC_conversational-ai-intake-v1.md) is not
-// built yet. The hero renders her opening message as static content and
-// routes the visitor to /intake (the form fallback). When Debbie ships,
-// the chatbox visual scaffold becomes the real chat surface.
+// Debbie (the conversational intake AI per
+// SPEC_conversational-ai-intake-v1.md) is not yet wired to a backend.
+// The hero renders a visual chat shell — Debbie's opening three
+// messages, an input field, send button — and routes the visitor to
+// /intake (the form fallback) on send. When the Debbie backend ships
+// the shell becomes the real chat surface with no layout changes.
+//
+// Visual evolution per the design ref:
+//   - Warm paper palette (--brand-paper / --brand-surface), fading
+//     gold "matchline" between sections, concentric circles in hero
+//   - Fraunces italic accents on key phrases ("five minutes",
+//     "No applying to 40 places", "And we don't sell your number")
+//   - Numbered step circles with the first one gold-ringed
 
 export const metadata: Metadata = {
   title: "CDLA.jobs — Class A driver matching. Built for drivers.",
@@ -39,70 +50,165 @@ export default function HomePage() {
 
 function Hero() {
   return (
-    <section className="bg-brand-surface">
-      <div className="mx-auto grid max-w-6xl gap-10 px-5 pb-14 pt-12 sm:pb-20 sm:pt-20 lg:grid-cols-2 lg:items-center lg:gap-16">
-        <div>
-          <h1 className="text-3xl font-semibold leading-tight tracking-tight text-brand-ink sm:text-5xl">
-            Find your next driving job in five minutes.
+    <section className="relative overflow-hidden bg-brand-paper" id="hero">
+      <div className="relative mx-auto grid max-w-6xl gap-12 px-5 pb-16 pt-14 sm:gap-16 sm:pb-24 sm:pt-20 lg:grid-cols-[1fr_1.05fr] lg:items-center">
+        {/* Concentric outline circles on the right side — quiet
+            geometric mark, brand-spare per the design ref. Hidden on
+            mobile because they crowd the chat shell. */}
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute right-[-120px] top-10 hidden h-[320px] w-[320px] rounded-full border border-brand-rule opacity-60 lg:block"
+        />
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute right-[-40px] top-[200px] hidden h-[160px] w-[160px] rounded-full border border-brand-gold opacity-25 lg:block"
+        />
+
+        <div className="relative">
+          <p className="mb-5 inline-flex items-center gap-2.5 text-[13px] font-semibold uppercase tracking-[0.12em] text-brand-medium">
+            <span
+              aria-hidden="true"
+              className="inline-block h-px w-6 bg-brand-gold"
+            />
+            Class A driver matching
+          </p>
+          <h1 className="text-4xl font-bold leading-[1.04] tracking-[-0.03em] text-brand-ink sm:text-5xl lg:text-6xl">
+            Find your next driving job in{" "}
+            <span className="font-display font-medium italic text-brand-deep">
+              five minutes.
+            </span>
           </h1>
-          <p className="mt-5 text-base leading-7 text-brand-ink sm:text-lg">
-            Talk to Debbie. Tell her what you want. She matches you to
-            carriers hiring right now &mdash; without the 20-page applications
-            or the recruiter spam.
+          <p className="mt-6 text-lg leading-[1.5] text-brand-ink sm:text-xl">
+            Talk to{" "}
+            <span className="font-semibold text-brand-deep">Debbie</span>. Tell
+            her what you want.
           </p>
-          <p className="mt-5 text-sm text-brand-muted">
-            Free for drivers. We don&rsquo;t sell your information. Match in
-            five minutes.
-          </p>
+          <ul className="mt-8 flex flex-wrap gap-x-6 gap-y-3 text-sm text-brand-muted">
+            <TrustItem>Free for drivers</TrustItem>
+            <TrustItem>We don&rsquo;t sell your data</TrustItem>
+            <TrustItem>Real carriers, hiring now</TrustItem>
+          </ul>
         </div>
+
         <DebbieChatScaffold />
       </div>
     </section>
   );
 }
 
-// Visual scaffold for Debbie's chatbox per spec §4.5. Rendered as static
-// content until the real chat surface ships
-// (SPEC_conversational-ai-intake-v1.md). The CTA routes the driver to
-// /intake so the homepage works without the AI.
+function TrustItem({ children }: { children: React.ReactNode }) {
+  return (
+    <li className="flex items-center gap-2">
+      <span
+        aria-hidden="true"
+        className="h-1.5 w-1.5 flex-shrink-0 rounded-full bg-brand-gold"
+      />
+      {children}
+    </li>
+  );
+}
+
+// Visual scaffold for Debbie's chatbox per
+// SPEC_conversational-ai-intake-v1.md §4.1. Renders the avatar,
+// status pulse, Debbie's opening three messages, an input field, and
+// a gold send button. Until the real backend ships the form submits
+// to /intake (the structured 6-step fallback) so the homepage works
+// without the AI.
 function DebbieChatScaffold() {
   return (
-    <div className="rounded-2xl border border-brand-rule bg-white shadow-sm">
-      <div className="flex items-center gap-3 border-b border-brand-rule px-4 py-3">
+    <div className="relative z-10 overflow-hidden rounded-2xl border border-brand-rule bg-brand-paper shadow-[0_8px_24px_rgba(14,30,51,0.08),_0_24px_64px_rgba(14,30,51,0.10)]">
+      <header className="flex items-center gap-3 border-b border-brand-rule bg-brand-surface px-5 py-4">
         <div
           aria-hidden="true"
-          className="flex h-8 w-8 items-center justify-center rounded-full bg-brand-deep text-xs font-semibold text-white"
+          className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-brand-deep font-display text-lg font-semibold text-brand-paper"
         >
           D
         </div>
-        <div>
+        <div className="min-w-0">
           <p className="text-sm font-semibold text-brand-ink">Debbie</p>
-          <p className="text-xs text-brand-muted">
-            AI driver matcher at CDLA.jobs
+          <p className="mt-0.5 flex items-center gap-1.5 text-xs text-brand-muted">
+            <span
+              aria-hidden="true"
+              className="h-[7px] w-[7px] animate-brand-pulse rounded-full bg-brand-ok"
+            />
+            AI driver matcher · online
           </p>
         </div>
+      </header>
+
+      <div className="flex min-h-[280px] flex-col gap-3.5 px-5 py-6">
+        <BotMessage delay={0}>
+          Hey &mdash; I&rsquo;m Debbie. I match Class A drivers to carriers
+          based on what you actually want.
+        </BotMessage>
+        <BotMessage delay={0.4}>
+          I&rsquo;m AI, not a recruiter. Five questions, then I&rsquo;ll show
+          you who&rsquo;s hiring drivers like you.
+        </BotMessage>
+        <BotMessage delay={1.0}>What&rsquo;s your home zip?</BotMessage>
       </div>
-      <div className="space-y-3 px-4 py-4">
-        <div className="max-w-[85%] rounded-2xl rounded-tl-md bg-brand-surface px-4 py-3 text-sm leading-6 text-brand-ink">
-          Hey &mdash; I&rsquo;m Debbie, the AI driver matcher at CDLA.jobs.
-          I&rsquo;ll ask a few quick questions, then show you carriers that
-          fit what you want. Five minutes, max. You can talk or type, or
-          upload your resume if that&rsquo;s easier.
-        </div>
-      </div>
-      <div className="border-t border-brand-rule px-4 py-3">
-        {/* TODO: replace with the real chatbox once Debbie ships
-            (SPEC_conversational-ai-intake-v1.md). Static CTA for now. */}
-        <Link
-          href="/intake"
-          className="block w-full rounded-md bg-brand-deep px-4 py-3 text-center text-sm font-semibold text-white shadow-sm hover:bg-brand-medium"
+
+      {/* TODO: replace with the real chat surface once the Debbie
+          backend ships (SPEC_conversational-ai-intake-v1.md). For now
+          the input field is decorative; the send button + Enter key
+          submit to /intake. */}
+      <form
+        action="/intake"
+        method="get"
+        className="flex items-center gap-2.5 border-t border-brand-rule bg-brand-paper px-4 py-3.5"
+      >
+        <input
+          type="text"
+          name="z"
+          inputMode="text"
+          placeholder="Type your zip, or tap to start the form…"
+          aria-label="Message Debbie"
+          className="flex-1 border-none bg-transparent px-1 py-2 text-[15.5px] text-brand-ink outline-none placeholder:text-brand-muted"
+        />
+        <button
+          type="submit"
+          aria-label="Send"
+          className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-md bg-brand-gold text-brand-ink transition-colors hover:bg-brand-gold-soft active:scale-95"
         >
-          Start your intake
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2.2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            className="h-4 w-4"
+            aria-hidden="true"
+          >
+            <path d="M5 12h14M13 6l6 6-6 6" />
+          </svg>
+        </button>
+      </form>
+      <p className="px-5 pb-4 text-xs leading-5 text-brand-muted">
+        By chatting, you agree to our{" "}
+        <Link href="/terms" className="underline hover:text-brand-ink">
+          terms
         </Link>
-        <p className="mt-2 text-center text-xs text-brand-muted">
-          Voice chat coming soon. For now it&rsquo;s a 6-minute form.
-        </p>
-      </div>
+        . Reply STOP any time to opt out. Voice chat coming soon &mdash; for
+        now it&rsquo;s a 6-minute form.
+      </p>
+    </div>
+  );
+}
+
+function BotMessage({
+  children,
+  delay,
+}: {
+  children: React.ReactNode;
+  delay: number;
+}) {
+  return (
+    <div
+      className="max-w-[88%] animate-msg-in self-start rounded-2xl rounded-bl-md bg-brand-surface px-4 py-3 text-[15.5px] leading-6 text-brand-ink"
+      style={{ animationDelay: `${delay}s` }}
+    >
+      {children}
     </div>
   );
 }
@@ -110,43 +216,70 @@ function DebbieChatScaffold() {
 function HowItWorks() {
   const steps: Array<{ n: string; title: string; body: string }> = [
     {
-      n: "Step 1",
+      n: "1",
       title: "Tell Debbie what you want.",
       body: "Five minutes. Talk, type, or upload your resume.",
     },
     {
-      n: "Step 2",
+      n: "2",
       title: "See your matches.",
       body: "Carriers hiring drivers like you, ranked by fit. No applying to 40 places.",
     },
     {
-      n: "Step 3",
+      n: "3",
       title: "Pick the carriers you want.",
       body: "They contact you. You decide who gets your info. Nobody gets sold your number.",
     },
   ];
   return (
-    <section id="how-it-works" className="border-t border-brand-rule">
-      <div className="mx-auto max-w-6xl px-5 py-14 sm:py-20">
-        <h2 className="text-2xl font-semibold tracking-tight text-brand-ink sm:text-3xl">
+    <section
+      id="how-it-works"
+      className="relative border-t border-brand-rule bg-brand-paper"
+    >
+      <div className="relative mx-auto max-w-6xl px-5 py-16 sm:py-24">
+        <p className="mb-4 inline-flex items-center gap-2.5 text-[13px] font-semibold uppercase tracking-[0.12em] text-brand-medium">
+          <span
+            aria-hidden="true"
+            className="inline-block h-px w-6 bg-brand-gold"
+          />
           How it works
+        </p>
+        <h2 className="max-w-3xl text-3xl font-bold leading-[1.1] tracking-[-0.025em] text-brand-ink sm:text-4xl lg:text-[44px]">
+          Three steps.{" "}
+          <span className="font-display font-medium italic text-brand-deep">
+            No applying to 40 places.
+          </span>
         </h2>
-        <ol className="mt-8 grid gap-5 sm:grid-cols-3">
-          {steps.map((s) => (
-            <li
-              key={s.n}
-              className="rounded-lg border border-brand-rule bg-white p-5"
-            >
-              <p className="text-xs font-semibold uppercase tracking-wider text-brand-medium">
+
+        <div className="relative mt-16 grid gap-12 sm:grid-cols-3 sm:gap-6">
+          {/* The matchline that runs across the step numbers — purely
+              decorative, brand-mark of "matching" connecting the three
+              steps visually. Suppressed on mobile (stacked layout). */}
+          <div
+            aria-hidden="true"
+            className="matchline left-[60px] right-[60px] top-8 hidden sm:block"
+            style={{ opacity: 0.35 }}
+          />
+          {steps.map((s, i) => (
+            <div key={s.n} className="relative z-10">
+              <div
+                className={`mb-6 flex h-16 w-16 items-center justify-center rounded-full border bg-brand-paper font-display text-[26px] font-semibold shadow-[0_1px_2px_rgba(14,30,51,0.04),_0_1px_3px_rgba(14,30,51,0.06)] ${
+                  i === 0
+                    ? "border-brand-gold text-brand-gold"
+                    : "border-brand-rule text-brand-deep"
+                }`}
+              >
                 {s.n}
-              </p>
-              <p className="mt-1 text-base font-semibold text-brand-ink">
+              </div>
+              <h3 className="text-lg font-bold tracking-[-0.01em] text-brand-ink">
                 {s.title}
+              </h3>
+              <p className="mt-2.5 text-[15.5px] leading-[1.6] text-brand-muted">
+                {s.body}
               </p>
-              <p className="mt-2 text-sm leading-6 text-brand-ink">{s.body}</p>
-            </li>
+            </div>
           ))}
-        </ol>
+        </div>
       </div>
     </section>
   );
@@ -172,21 +305,41 @@ function WhyDifferent() {
     },
   ];
   return (
-    <section className="border-t border-brand-rule bg-brand-surface">
-      <div className="mx-auto max-w-6xl px-5 py-14 sm:py-20">
-        <h2 className="text-2xl font-semibold tracking-tight text-brand-ink sm:text-3xl">
+    <section
+      id="why"
+      className="border-y border-brand-rule bg-brand-surface"
+    >
+      <div className="mx-auto max-w-6xl px-5 py-16 sm:py-24">
+        <p className="mb-4 inline-flex items-center gap-2.5 text-[13px] font-semibold uppercase tracking-[0.12em] text-brand-medium">
+          <span
+            aria-hidden="true"
+            className="inline-block h-px w-6 bg-brand-gold"
+          />
           Why CDLA.jobs is different
+        </p>
+        <h2 className="max-w-3xl text-3xl font-bold leading-[1.1] tracking-[-0.025em] text-brand-ink sm:text-4xl lg:text-[44px]">
+          We don&rsquo;t pad the results.{" "}
+          <span className="font-display font-medium italic text-brand-deep">
+            And we don&rsquo;t sell your number.
+          </span>
         </h2>
-        <div className="mt-8 grid gap-4 sm:grid-cols-2">
+
+        <div className="mt-16 grid gap-px overflow-hidden rounded-xl border border-brand-rule bg-brand-rule sm:grid-cols-2">
           {claims.map((c) => (
             <div
               key={c.title}
-              className="rounded-lg border border-brand-rule bg-white p-5"
+              className="bg-brand-paper p-8 transition-colors hover:bg-[#FDFCF8]"
             >
-              <p className="text-base font-semibold text-brand-ink">
+              <h3 className="flex items-baseline gap-2.5 text-xl font-bold tracking-[-0.015em] text-brand-ink">
+                <span
+                  aria-hidden="true"
+                  className="inline-block h-2 w-2 flex-shrink-0 -translate-y-0.5 bg-brand-gold"
+                />
                 {c.title}
+              </h3>
+              <p className="mt-3 text-[15.5px] leading-[1.6] text-brand-muted">
+                {c.body}
               </p>
-              <p className="mt-2 text-sm leading-6 text-brand-ink">{c.body}</p>
             </div>
           ))}
         </div>
@@ -197,30 +350,29 @@ function WhyDifferent() {
 
 function ForCarriers() {
   return (
-    <section className="border-t border-brand-rule bg-brand-deep text-white">
-      <div className="mx-auto max-w-6xl px-5 py-12 sm:py-16">
-        <p className="text-xs font-semibold uppercase tracking-wider text-brand-gold">
-          For carriers
-        </p>
-        <h2 className="mt-2 text-2xl font-semibold tracking-tight text-white sm:text-3xl">
-          Hiring CDL-A drivers?
-        </h2>
-        <p className="mt-4 max-w-3xl text-sm leading-7 text-white/85 sm:text-base">
-          We send matched driver prequalifications to your ATS. Drivers choose
-          to share their info with you &mdash; not a lead panel. Free at
-          Tier 2; $2,500/month for 24-hour exclusivity. No per-hire fees, no
-          setup fees.
-        </p>
-        <div className="mt-6 flex flex-wrap gap-3">
+    <section id="carriers" className="bg-brand-deep text-brand-paper">
+      <div className="mx-auto grid max-w-6xl gap-10 px-5 py-16 sm:py-20 lg:grid-cols-[1fr_auto] lg:items-center lg:gap-12">
+        <div>
+          <h2 className="text-2xl font-bold tracking-[-0.02em] text-brand-paper sm:text-[26px]">
+            Hiring CDL-A drivers?
+          </h2>
+          <p className="mt-3 max-w-2xl text-[15.5px] leading-[1.6] text-brand-paper/[0.78]">
+            We send matched driver prequalifications to your ATS. Drivers
+            choose to share their info with you &mdash; not a lead panel.
+            Free at Tier 2; $2,500/month for 24-hour exclusivity. No per-hire
+            fees, no setup fees.
+          </p>
+        </div>
+        <div className="flex flex-shrink-0 flex-wrap gap-3">
           <Link
             href="/partners/integration"
-            className="inline-flex h-11 items-center justify-center rounded-md bg-white px-5 text-sm font-semibold text-brand-deep hover:bg-brand-surface"
+            className="inline-flex h-11 items-center justify-center rounded-md border border-brand-paper/30 px-6 text-sm font-semibold text-brand-paper transition-colors hover:border-brand-gold hover:bg-brand-paper/[0.08]"
           >
             Integration
           </Link>
           <Link
             href="/partners/exclusivity"
-            className="inline-flex h-11 items-center justify-center rounded-md border border-white/40 px-5 text-sm font-semibold text-white hover:bg-white/10"
+            className="inline-flex h-11 items-center justify-center rounded-md bg-brand-gold px-6 text-sm font-semibold text-brand-ink transition-colors hover:bg-brand-gold-soft"
           >
             Exclusivity
           </Link>
@@ -229,4 +381,3 @@ function ForCarriers() {
     </section>
   );
 }
-
