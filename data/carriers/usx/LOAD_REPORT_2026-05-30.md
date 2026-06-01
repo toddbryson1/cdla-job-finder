@@ -1,6 +1,6 @@
 # U.S. Xpress Load Report — 2026-05-30
 
-Generated 2026-05-31T22:49:23.320Z (COMMIT mode).
+Generated 2026-06-01T03:03:58.618Z (COMMIT mode).
 
 ## 1. Carriers row
 

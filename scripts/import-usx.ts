@@ -314,11 +314,16 @@ function deriveEquipment(row: CsvRow): {
 //   "Family Dollar Front Royal" → FD, Front Royal     (no state)
 //   "Walmart Henderson NC -"    → trailing dash junk
 const CUSTOMER_PREFIXES = [
-  "Family Dollar",
-  "Tractor Supply",
-  "FD", // alias for Family Dollar
-  "DT", // Dollar Tree
-  "TSC", // Tractor Supply Company
+  // Multi-word prefixes first so they match before their single-token
+  // aliases (e.g. "Dollar Tree" before "DT" stripping would catch
+  // "Dollar Tree Savannah" cleanly).
+  "Dollar Tree", // alias DT
+  "Dollar General", // some sources use this
+  "Family Dollar", // alias FD
+  "Tractor Supply", // alias TSC
+  "FD",
+  "DT",
+  "TSC",
   "Kroger",
   "Walmart",
   "Target",
