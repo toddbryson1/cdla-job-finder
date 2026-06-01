@@ -1,16 +1,32 @@
 @import "tailwindcss";
 
+/* Brand palette per the locked homepage design (cdlajobs-homepage-design.html).
+ * Warm-paper tones replace the prior cool grays so the brand reads editorial
+ * rather than utilitarian. Deep blue + gold remain the anchors.
+ *
+ *  --brand-deep / --brand-medium     core blues, unchanged
+ *  --brand-gold / --brand-gold-soft  primary + hover/lighter gold
+ *  --brand-ink                       body text — slightly bluer than before
+ *  --brand-muted                     secondary text
+ *  --brand-rule                      borders — warm taupe replaces cool gray
+ *  --brand-surface                   subtle warm fill for sections + cards
+ *  --brand-paper                     page background — warmer than pure white
+ *  --brand-ok                        success accent for status pulses
+ */
 :root {
-  --background: #ffffff;
-  --foreground: #0f1419;
+  --background: #FBFAF7;
+  --foreground: #0E1E33;
 
   --brand-deep: #1F3A5F;
   --brand-medium: #2E5C8A;
   --brand-gold: #D4A017;
-  --brand-ink: #0f1419;
-  --brand-muted: #5b6573;
-  --brand-rule: #e5e9ef;
-  --brand-surface: #f7f8fa;
+  --brand-gold-soft: #E8C158;
+  --brand-ink: #0E1E33;
+  --brand-muted: #5A6B82;
+  --brand-rule: #E5DFD3;
+  --brand-surface: #F5F2EB;
+  --brand-paper: #FBFAF7;
+  --brand-ok: #2F7A4C;
 }
 
 @theme inline {
@@ -19,15 +35,66 @@
   --color-brand-deep: var(--brand-deep);
   --color-brand-medium: var(--brand-medium);
   --color-brand-gold: var(--brand-gold);
+  --color-brand-gold-soft: var(--brand-gold-soft);
   --color-brand-ink: var(--brand-ink);
   --color-brand-muted: var(--brand-muted);
   --color-brand-rule: var(--brand-rule);
   --color-brand-surface: var(--brand-surface);
+  --color-brand-paper: var(--brand-paper);
+  --color-brand-ok: var(--brand-ok);
   --font-sans: var(--font-inter), ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font-display: var(--font-fraunces), ui-serif, Georgia, "Times New Roman", serif;
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
   font-family: var(--font-sans);
+}
+
+/* "Matchline" — the brand mark of matching. A thin, fading gold rule that
+ * visually connects sections. Used as an absolute-positioned divider. */
+.matchline {
+  position: absolute;
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    var(--brand-gold) 20%,
+    var(--brand-gold) 80%,
+    transparent 100%
+  );
+  opacity: 0.5;
+}
+
+/* Status pulse — green dot at "Debbie online" header on the homepage chat. */
+@keyframes brand-pulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(47, 122, 76, 0.4);
+  }
+  70% {
+    box-shadow: 0 0 0 6px rgba(47, 122, 76, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(47, 122, 76, 0);
+  }
+}
+.animate-brand-pulse {
+  animation: brand-pulse 2s infinite;
+}
+
+/* Subtle bot-message fade-in for Debbie's opening transcript. The three
+ * messages stagger via :nth-child delays in the component. */
+@keyframes msg-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.animate-msg-in {
+  animation: msg-in 0.5s ease-out both;
 }

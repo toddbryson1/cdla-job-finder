@@ -1,10 +1,21 @@
 import type { Metadata } from "next";
-import { Inter } from "next/font/google";
+import { Inter, Fraunces } from "next/font/google";
 import "./globals.css";
 
 const inter = Inter({
   variable: "--font-inter",
   subsets: ["latin"],
+});
+
+// Fraunces is the editorial accent face — used for italic phrases in
+// headlines ("five minutes", "No applying to 40 places") and the logo
+// wordmark. Loaded with the italic styles only since that's the only
+// way it appears in the design.
+const fraunces = Fraunces({
+  variable: "--font-fraunces",
+  subsets: ["latin"],
+  weight: ["500", "600"],
+  style: ["italic", "normal"],
 });
 
 export const metadata: Metadata = {
@@ -31,8 +42,11 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className={`${inter.variable} h-full antialiased`}>
-      <body className="min-h-full flex flex-col bg-white text-brand-ink">
+    <html
+      lang="en"
+      className={`${inter.variable} ${fraunces.variable} h-full antialiased`}
+    >
+      <body className="min-h-full flex flex-col bg-brand-paper text-brand-ink">
         {children}
       </body>
     </html>
