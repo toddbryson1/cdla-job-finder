@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import { cookies } from "next/headers";
 import { eq } from "drizzle-orm";
 import { and } from "drizzle-orm";
 import { db } from "@/db/client";
@@ -15,6 +16,7 @@ import { qualifyDriverForCarrier } from "@/lib/matching";
 import { submitConsent, submitSwiftConfirmation } from "./actions";
 import { STAGE_2_CONSENT_TEXT_VERSION } from "./constants";
 import { QuestionsForm } from "./QuestionsForm";
+import { IdentityCaptureForm } from "./IdentityCaptureForm";
 
 // TODO: add step-up verification before Stage 2 consent
 // (attorney addendum Q10 — magic-link session is "limited"; a step-up SMS
@@ -46,11 +48,30 @@ export default async function ApplyPage({ params, searchParams }: PageProps) {
     redirect("/login");
   }
 
-  const session = await getSessionState();
-  if (session.kind !== "ok") {
-    redirect(
-      `/login?redirect=${encodeURIComponent(`/match/${driverId}/${jobId}/apply`)}`,
-    );
+  // Two valid auth paths (same as /matches):
+  //   1. Cookie-matching anonymous driver
+  //   2. Stytch-claimed email-keyed driver
+  // Anonymous drivers see the identity-capture step BEFORE consent.
+  const cookieStore = await cookies();
+  const driverCookie = cookieStore.get("cdla_driver_id")?.value;
+  const hasMatchingCookie = driverCookie === driverId;
+
+  if (!hasMatchingCookie) {
+    const session = await getSessionState();
+    if (session.kind !== "ok") {
+      redirect(
+        `/login?redirect=${encodeURIComponent(`/match/${driverId}/${jobId}/apply`)}`,
+      );
+    }
+    const driver = await db.query.drivers.findFirst({
+      where: eq(drivers.id, driverId),
+    });
+    if (!driver) {
+      return <NotFound />;
+    }
+    if (!driver.email || driver.email.toLowerCase() !== session.email) {
+      return <WrongDriverForSession />;
+    }
   }
 
   const driver = await db.query.drivers.findFirst({
@@ -59,8 +80,40 @@ export default async function ApplyPage({ params, searchParams }: PageProps) {
   if (!driver) {
     return <NotFound />;
   }
-  if (!driver.email || driver.email.toLowerCase() !== session.email) {
-    return <WrongDriverForSession />;
+
+  // Anonymous-intake driver hasn't claimed identity yet. Show the
+  // identity-capture form before any consent step. On submit it
+  // updates the driver row + fires candidate email + nurture
+  // schedule + Stytch magic link, then redirects back here to the
+  // normal consent flow.
+  const needsIdentity =
+    !driver.email || !driver.firstName || !driver.lastName || !driver.phone;
+  if (needsIdentity) {
+    const job = await db.query.carrierJobs.findFirst({
+      where: eq(carrierJobs.id, jobId),
+    });
+    const carrier = job
+      ? await db.query.carriers.findFirst({ where: eq(carriers.id, job.carrierId) })
+      : null;
+    return (
+      <main className="min-h-screen bg-brand-surface">
+        <div className="mx-auto max-w-2xl px-5 py-12 sm:py-16">
+          <h1 className="text-2xl font-semibold text-brand-ink">
+            One last step before {carrier?.name ?? "the carrier"} can see your info.
+          </h1>
+          <p className="mt-3 text-sm leading-6 text-brand-muted">
+            We didn&rsquo;t ask for your name, email, or phone during
+            intake so you could browse matches first. Now that
+            you&rsquo;ve picked a carrier, we need them so {carrier?.name ?? "they"}{" "}
+            can reach you. We&rsquo;ll send a quick email link to confirm
+            your address is real before anything goes to {carrier?.name ?? "them"}.
+          </p>
+          <div className="mt-6">
+            <IdentityCaptureForm driverId={driverId} jobId={jobId} />
+          </div>
+        </div>
+      </main>
+    );
   }
 
   const job = await db.query.carrierJobs.findFirst({

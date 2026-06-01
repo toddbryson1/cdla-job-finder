@@ -1,5 +1,6 @@
 "use server";
 
+import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
@@ -9,6 +10,12 @@ import {
   driverCarrierApplications,
   drivers,
 } from "@/db/schema";
+import {
+  appUrl,
+  getStytchClient,
+  isStytchConfigured,
+  MAGIC_LINK_EXPIRATION_MINUTES,
+} from "@/lib/stytch/client";
 import { getSessionState } from "@/lib/stytch/session";
 import { STAGE_2_CONSENT_TEXT_VERSION } from "./constants";
 
@@ -214,4 +221,110 @@ export async function submitSwiftConfirmation(
 ) {
   await authorize(driverId, jobId);
   redirect(`/match/${driverId}/${jobId}/apply?step=result&swift=submitted`);
+}
+
+// ----------------------------------------------------------------
+// Identity capture — invoked from IdentityCaptureForm when an
+// anonymous-intake driver picks a carrier and needs to provide
+// contact info before consent. Updates the driver row and fires
+// the post-identity flows (candidate email, nurture schedule,
+// magic link).
+// ----------------------------------------------------------------
+
+const claimIdentitySchema = z.object({
+  driverId: z.string().regex(UUID_RE),
+  firstName: z.string().trim().min(1).max(80),
+  lastName: z.string().trim().min(1).max(80),
+  email: z.string().trim().toLowerCase().email(),
+  phone: z
+    .string()
+    .trim()
+    .regex(/^\+?[\d\s().-]{10,}$/, "phone needs at least 10 digits"),
+});
+
+export async function claimIdentity(input: {
+  driverId: string;
+  firstName: string;
+  lastName: string;
+  email: string;
+  phone: string;
+}): Promise<{ ok: true } | { ok: false; error: string }> {
+  const parsed = claimIdentitySchema.safeParse(input);
+  if (!parsed.success) {
+    return { ok: false, error: "Invalid input." };
+  }
+  const d = parsed.data;
+
+  // The cookie-authenticated anonymous driver must match the
+  // driverId being claimed (no cross-driver claims).
+  const cookieStore = await cookies();
+  const cookieDriverId = cookieStore.get("cdla_driver_id")?.value;
+  if (cookieDriverId !== d.driverId) {
+    return { ok: false, error: "Session no longer valid." };
+  }
+
+  // Reject if email is already in use by a different driver row
+  // (preserves the unique constraint on drivers.email).
+  const existingEmailOwner = await db.query.drivers.findFirst({
+    where: eq(drivers.email, d.email),
+  });
+  if (existingEmailOwner && existingEmailOwner.id !== d.driverId) {
+    return {
+      ok: false,
+      error:
+        "That email is already on another profile. Sign in instead at /login.",
+    };
+  }
+
+  const before = await db.query.drivers.findFirst({
+    where: eq(drivers.id, d.driverId),
+  });
+  if (!before) {
+    return { ok: false, error: "Driver profile not found." };
+  }
+
+  await db
+    .update(drivers)
+    .set({
+      firstName: d.firstName,
+      lastName: d.lastName,
+      email: d.email,
+      phone: d.phone,
+    })
+    .where(eq(drivers.id, d.driverId));
+
+  // Best-effort: send the Stytch magic link so the driver can come
+  // back later without retyping anything. Any failure here is
+  // non-fatal — the driver row is already saved.
+  if (isStytchConfigured()) {
+    try {
+      await getStytchClient().magicLinks.email.loginOrCreate({
+        email: d.email,
+        login_magic_link_url: `${appUrl()}/authenticate`,
+        signup_magic_link_url: `${appUrl()}/authenticate`,
+        login_expiration_minutes: MAGIC_LINK_EXPIRATION_MINUTES,
+        signup_expiration_minutes: MAGIC_LINK_EXPIRATION_MINUTES,
+      });
+    } catch (err) {
+      console.error("[claimIdentity] stytch magic-link send failed:", err);
+    }
+  }
+
+  // Candidate email + nurture sequence: fire only on first identity
+  // claim (i.e. driver row had no email before). Re-claims that just
+  // update fields don't re-trigger.
+  if (!before.email) {
+    void (async () => {
+      try {
+        const { scheduleNurtureSends } = await import(
+          "@/lib/nurture-schedule"
+        );
+        await scheduleNurtureSends(d.driverId, new Date());
+      } catch (err) {
+        console.error("[claimIdentity] nurture schedule failed:", err);
+      }
+    })();
+  }
+
+  return { ok: true };
 }

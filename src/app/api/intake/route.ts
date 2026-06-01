@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
-import { eq, sql } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { intakeSchema } from "@/lib/intake-schema";
 import { db } from "@/db/client";
-import { driverNurtureSends, drivers, zipCodes } from "@/db/schema";
+import { drivers, zipCodes } from "@/db/schema";
+import { scheduleNurtureSends } from "@/lib/nurture-schedule";
 import {
   appUrl,
   getStytchClient,
@@ -312,44 +313,6 @@ function uniqueCarrierNames(
   return out;
 }
 
-// Schedule (or re-schedule) the 6 nurture send rows for this driver. On
-// conflict (driver re-submits intake), pending rows shift to the new
-// schedule; sent rows are left alone so the driver doesn't get the same
-// email twice.
-const NURTURE_OFFSETS_DAYS = [30, 60, 90, 120, 150, 180];
-
-async function scheduleNurtureSends(
-  driverId: string,
-  baseDate: Date,
-): Promise<void> {
-  const values = NURTURE_OFFSETS_DAYS.map((days, i) => {
-    const scheduledFor = new Date(baseDate);
-    scheduledFor.setUTCDate(scheduledFor.getUTCDate() + days);
-    return {
-      driverId,
-      emailIndex: i + 1,
-      scheduledFor,
-      status: "pending" as const,
-    };
-  });
-
-  await db
-    .insert(driverNurtureSends)
-    .values(values)
-    .onConflictDoUpdate({
-      target: [driverNurtureSends.driverId, driverNurtureSends.emailIndex],
-      // Only touch the schedule for rows still pending. Postgres ON
-      // CONFLICT DO UPDATE doesn't support per-row WHERE in this form;
-      // we encode the conditional via excluded + CASE on the existing row.
-      set: {
-        scheduledFor: sqlPickPending(),
-      },
-    });
-}
-
-// SQL expression that updates scheduled_for only when the existing row
-// is still pending. Used inside scheduleNurtureSends' onConflictDoUpdate
-// so re-submitting intake doesn't disturb already-sent rows.
-function sqlPickPending() {
-  return sql`CASE WHEN ${driverNurtureSends.status} = 'pending' THEN EXCLUDED.scheduled_for ELSE ${driverNurtureSends.scheduledFor} END`;
-}
+// scheduleNurtureSends moved to @/lib/nurture-schedule so the /apply
+// identity-capture path can call the same scheduler when an anonymous
+// driver finally provides their email.
