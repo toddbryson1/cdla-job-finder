@@ -72,6 +72,27 @@ export async function runNurtureSends(db: DbClient): Promise<NurtureRunResult> {
       continue;
     }
 
+    // Drivers can complete intake anonymously (email/name/phone all
+    // null) — those rows shouldn't have nurture rows scheduled in
+    // the first place, but skip defensively if one slips through.
+    if (
+      !row.driverEmail ||
+      !row.driverFirstName ||
+      !row.driverLastName ||
+      !row.driverPhone
+    ) {
+      await db
+        .update(driverNurtureSends)
+        .set({
+          status: "skipped",
+          skipReason: "anonymous_driver_no_contact",
+          sentAt: new Date(),
+        })
+        .where(eq(driverNurtureSends.id, row.sendId));
+      summary.skipped += 1;
+      continue;
+    }
+
     try {
       const contact = await upsertContact({
         email: row.driverEmail,

@@ -64,7 +64,7 @@ export async function POST(request: Request) {
   const driver = await db.query.drivers.findFirst({
     where: eq(drivers.id, driverId),
   });
-  if (!driver || driver.email.toLowerCase() !== session.email) {
+  if (!driver || !driver.email || driver.email.toLowerCase() !== session.email) {
     return NextResponse.json({ error: "Not your driver" }, { status: 403 });
   }
 

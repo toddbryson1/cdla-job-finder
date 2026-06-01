@@ -169,6 +169,13 @@
       "when": 1782000000000,
       "tag": "0023_carrier_handoff_config",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1782100000000,
+      "tag": "0024_drivers_contact_nullable",
+      "breakpoints": true
     }
   ]
 }

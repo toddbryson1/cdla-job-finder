@@ -59,7 +59,7 @@ export default async function ApplyPage({ params, searchParams }: PageProps) {
   if (!driver) {
     return <NotFound />;
   }
-  if (driver.email.toLowerCase() !== session.email) {
+  if (!driver.email || driver.email.toLowerCase() !== session.email) {
     return <WrongDriverForSession />;
   }
 

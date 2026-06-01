@@ -60,14 +60,24 @@ const usStateCode = z
   .transform((s) => s.toUpperCase());
 
 export const intakeSchema = z.object({
-  // Step 1: Contact + CDL
-  firstName: z.string().trim().min(1, "First name is required"),
-  lastName: z.string().trim().min(1, "Last name is required"),
-  email: z.string().trim().toLowerCase().email("That doesn't look like an email"),
+  // Step 1: About your CDL (no contact info at intake — collected
+  // later at the /apply step so drivers can browse matches without
+  // committing).
+  firstName: z.string().trim().min(1).nullable().optional(),
+  lastName: z.string().trim().min(1).nullable().optional(),
+  email: z
+    .string()
+    .trim()
+    .toLowerCase()
+    .email("That doesn't look like an email")
+    .nullable()
+    .optional(),
   phone: z
     .string()
     .trim()
-    .regex(/^\+?[\d\s().-]{10,}$/, "Phone needs at least 10 digits"),
+    .regex(/^\+?[\d\s().-]{10,}$/, "Phone needs at least 10 digits")
+    .nullable()
+    .optional(),
   hasClassA: z.literal(true, {
     message: "Sorry — CDLA.jobs is for Class A drivers only.",
   }),
@@ -133,14 +143,17 @@ export const intakeSchema = z.object({
   failedDotTest: z.boolean(),
   sapStatus: z.enum(["not-in-sap", "in-sap", "completed-sap"]).default("not-in-sap"),
 
-  // Consent
+  // Consent — attestation only at intake time (no carrier-share
+  // consent yet; that happens per-carrier at the /apply step where
+  // contact info is also captured).
   attestAccurate: z.literal(true, {
     message: "We need you to confirm what you've told us is accurate",
   }),
-  consentToShare: z.literal(true, {
-    message:
-      "We need your consent to share your info with carriers you specifically pick",
-  }),
+  // consent_to_share at intake: optional + defaults false. The
+  // real consent moment is per-carrier in the apply flow. Keeping
+  // the field so existing rows with consent_to_share=true stay
+  // backward-compatible.
+  consentToShare: z.boolean().optional().default(false),
   smsOptIn: z.boolean().default(false),
 });
 

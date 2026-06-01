@@ -60,12 +60,12 @@ export default async function MatchesPage({ params }: PageProps) {
   // Driver identity check (attorney addendum Q10): a magic-link session can
   // only view matches for the email it authenticated as. A leaked or guessed
   // driver UUID is useless without the matching email.
-  if (driver.email.toLowerCase() !== session.email) {
+  if (!driver.email || driver.email.toLowerCase() !== session.email) {
     return <WrongDriverForSession />;
   }
 
   if (!driver.homeZip) {
-    return <NeedHomeLocation firstName={driver.firstName} />;
+    return <NeedHomeLocation firstName={driver.firstName ?? ""} />;
   }
 
   if (driver.homeLat == null || driver.homeLng == null) {
@@ -73,7 +73,7 @@ export default async function MatchesPage({ params }: PageProps) {
       where: eq(zipCodes.zip, driver.homeZip),
     });
     if (!zip) {
-      return <NeedHomeLocation firstName={driver.firstName} />;
+      return <NeedHomeLocation firstName={driver.firstName ?? ""} />;
     }
     await db
       .update(drivers)
@@ -133,13 +133,13 @@ export default async function MatchesPage({ params }: PageProps) {
   return (
     <Shell>
       <Header
-        firstName={driver.firstName}
+        firstName={driver.firstName ?? ""}
         matchCount={result.matches.length}
         externalCount={externalMatches.length}
         truncated={result.truncated}
       />
       {result.matches.length === 0 && externalMatches.length === 0 ? (
-        <EmptyMatches firstName={driver.firstName} />
+        <EmptyMatches firstName={driver.firstName ?? ""} />
       ) : (
         <>
           {result.matches.length > 0 ? (

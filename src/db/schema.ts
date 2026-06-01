@@ -295,10 +295,14 @@ export const drivers = pgTable(
     id: uuid("id")
       .primaryKey()
       .default(sql`gen_random_uuid()`),
-    firstName: text("first_name").notNull(),
-    lastName: text("last_name").notNull(),
-    email: text("email").notNull().unique(),
-    phone: text("phone").notNull(),
+    // Contact fields are nullable post-migration 0024: drivers can
+    // complete intake anonymously and provide contact info only at
+    // apply time. Email retains the unique constraint where set
+    // (Postgres ignores NULLs in unique indexes by default).
+    firstName: text("first_name"),
+    lastName: text("last_name"),
+    email: text("email").unique(),
+    phone: text("phone"),
 
     // Geographic
     homeZip: varchar("home_zip", { length: 5 }),

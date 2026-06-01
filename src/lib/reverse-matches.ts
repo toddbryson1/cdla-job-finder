@@ -133,6 +133,14 @@ export async function runReverseMatches(
       continue;
     }
 
+    // Anonymous-intake drivers have null contact fields and can't
+    // receive email alerts. Skip cleanly until they claim identity.
+    if (!driver.email || !driver.firstName || !driver.lastName || !driver.phone) {
+      summary.skipped += 1;
+      bump("anonymous_driver_no_contact");
+      continue;
+    }
+
     try {
       const contact = await upsertContact({
         email: driver.email,

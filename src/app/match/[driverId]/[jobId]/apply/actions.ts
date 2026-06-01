@@ -28,7 +28,9 @@ async function authorize(driverId: string, jobId: string) {
   const driver = await db.query.drivers.findFirst({
     where: eq(drivers.id, driverId),
   });
-  if (!driver || driver.email.toLowerCase() !== session.email) {
+  if (!driver || !driver.email || driver.email.toLowerCase() !== session.email) {
+    // Anonymous-intake drivers have email=null; they need to claim
+    // identity at /apply before this action runs.
     redirect("/login");
   }
   const job = await db.query.carrierJobs.findFirst({
