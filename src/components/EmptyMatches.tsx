@@ -5,7 +5,7 @@ interface Props {
 export function EmptyMatches({ firstName }: Props) {
   const greeting = firstName ? `Hey ${firstName} — ` : "Hey — ";
   return (
-    <div className="rounded-2xl border border-brand-rule bg-white p-6 sm:p-8 shadow-sm">
+    <div className="rounded-2xl border border-brand-rule bg-brand-paper p-6 sm:p-8 shadow-sm">
       <h2 className="text-xl sm:text-2xl font-semibold tracking-tight text-brand-ink">
         Nothing fits right now.
       </h2>

@@ -254,7 +254,7 @@ export function IntakeForm() {
   }
 
   return (
-    <div className="rounded-2xl border border-brand-rule bg-white p-6 sm:p-8 shadow-sm">
+    <div className="rounded-2xl border border-brand-rule bg-brand-paper p-6 sm:p-8 shadow-sm">
       <Stepper current={step} />
       <div className="mt-6">
         {step === 0 && <StepContact state={state} set={set} errors={errors} />}
@@ -282,7 +282,7 @@ export function IntakeForm() {
           <button
             type="button"
             onClick={onNext}
-            className="inline-flex h-11 items-center justify-center rounded-md bg-brand-deep px-6 text-sm font-semibold text-white hover:bg-brand-medium"
+            className="inline-flex h-11 items-center justify-center rounded-md bg-brand-deep px-6 text-sm font-semibold text-brand-paper hover:bg-brand-medium"
           >
             Next
           </button>
@@ -361,7 +361,7 @@ function Field({
 }
 
 const inputClass =
-  "block w-full rounded-md border border-brand-rule bg-white px-3 py-2.5 text-base text-brand-ink shadow-sm placeholder:text-brand-muted/70 focus:border-brand-medium focus:outline-none focus:ring-2 focus:ring-brand-medium/30";
+  "block w-full rounded-md border border-brand-rule bg-brand-paper px-3 py-2.5 text-base text-brand-ink shadow-sm placeholder:text-brand-muted/70 focus:border-brand-medium focus:outline-none focus:ring-2 focus:ring-brand-medium/30";
 
 function AmountWithUnit({
   amount,
@@ -388,7 +388,7 @@ function AmountWithUnit({
       <select
         value={unit}
         onChange={(e) => onUnitChange(e.target.value as "months" | "years")}
-        className="rounded-md border border-brand-rule bg-white px-3 py-2.5 text-base text-brand-ink shadow-sm focus:border-brand-medium focus:outline-none focus:ring-2 focus:ring-brand-medium/30"
+        className="rounded-md border border-brand-rule bg-brand-paper px-3 py-2.5 text-base text-brand-ink shadow-sm focus:border-brand-medium focus:outline-none focus:ring-2 focus:ring-brand-medium/30"
         aria-label="Unit"
       >
         <option value="months">months</option>
@@ -528,7 +528,7 @@ function StepExperience({
           value={state.totalCareerExperienceMonths}
           onChange={(e) => set("totalCareerExperienceMonths", e.target.value)}
           placeholder="months"
-          className="h-11 w-32 rounded-md border border-brand-rule bg-white px-3 text-sm text-brand-ink focus:border-brand-medium focus:outline-none"
+          className="h-11 w-32 rounded-md border border-brand-rule bg-brand-paper px-3 text-sm text-brand-ink focus:border-brand-medium focus:outline-none"
         />
       </Field>
 
@@ -799,7 +799,7 @@ function CheckGrid({
             className={`flex items-center gap-2.5 rounded-md border px-3 py-2.5 cursor-pointer transition-colors ${
               checked
                 ? "border-brand-medium bg-brand-medium/5"
-                : "border-brand-rule bg-white hover:bg-brand-surface"
+                : "border-brand-rule bg-brand-paper hover:bg-brand-surface"
             }`}
           >
             <input
@@ -834,7 +834,7 @@ function RadioCard({
       className={`flex items-center gap-2.5 rounded-md border px-3 py-2.5 cursor-pointer transition-colors ${
         checked
           ? "border-brand-medium bg-brand-medium/5"
-          : "border-brand-rule bg-white hover:bg-brand-surface"
+          : "border-brand-rule bg-brand-paper hover:bg-brand-surface"
       }`}
     >
       <input
@@ -865,8 +865,8 @@ function YesNo({ value, onChange }: { value: string; onChange: (v: string) => vo
             onClick={() => onChange(opt.v)}
             className={`h-10 rounded-md px-5 text-sm font-medium transition-colors ${
               active
-                ? "bg-brand-deep text-white"
-                : "border border-brand-rule bg-white text-brand-ink hover:bg-brand-surface"
+                ? "bg-brand-deep text-brand-paper"
+                : "border border-brand-rule bg-brand-paper text-brand-ink hover:bg-brand-surface"
             }`}
           >
             {opt.label}

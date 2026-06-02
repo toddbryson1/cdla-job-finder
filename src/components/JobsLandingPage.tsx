@@ -41,12 +41,12 @@ function Hero({ parsed, data }: Props) {
     : `${equipmentInfo.displayName} jobs in ${regionInfo.displayName}. We do the searching.`;
 
   return (
-    <section className="bg-brand-deep text-white">
+    <section className="bg-brand-deep text-brand-paper">
       <div className="mx-auto max-w-3xl px-5 pt-14 pb-12 sm:pt-20 sm:pb-16">
         <h1 className="text-3xl sm:text-4xl font-semibold leading-tight tracking-tight">
           {headline}
         </h1>
-        <p className="mt-5 text-lg leading-7 text-white/85">
+        <p className="mt-5 text-lg leading-7 text-brand-paper/85">
           Tell us once what you&rsquo;re looking for. We match you with carriers
           actually hiring {equipmentInfo.humanized} in {regionInfo.humanized}. No
           applying to 40 jobs. No 2 AM recruiter calls about jobs that don&rsquo;t fit.
@@ -58,7 +58,7 @@ function Hero({ parsed, data }: Props) {
           >
             Find my matches
           </a>
-          <p className="text-sm text-white/75">
+          <p className="text-sm text-brand-paper/75">
             Takes 6 minutes. Free. We don&rsquo;t sell your info.
           </p>
         </div>
@@ -115,7 +115,7 @@ function TrustSignal({ parsed, data, lowData }: Props & { lowData: boolean }) {
         {cards.map((c) => (
           <div
             key={c.label}
-            className="rounded-xl border border-brand-rule bg-white p-5"
+            className="rounded-xl border border-brand-rule bg-brand-paper p-5"
           >
             <div className="text-3xl font-semibold text-brand-deep tracking-tight">
               {c.value}
@@ -156,7 +156,7 @@ function HowItWorks({ parsed }: { parsed: ParsedSlug }) {
         {steps.map((s, i) => (
           <li
             key={s.title}
-            className="rounded-xl border border-brand-rule bg-white p-5"
+            className="rounded-xl border border-brand-rule bg-brand-paper p-5"
           >
             <div className="text-sm font-medium text-brand-medium">Step {i + 1}</div>
             <div className="mt-2 text-lg font-semibold text-brand-ink">{s.title}</div>
@@ -212,7 +212,7 @@ function FAQ({ parsed }: { parsed: ParsedSlug }) {
   return (
     <section className="mx-auto max-w-3xl px-5">
       <h2 className="text-2xl font-semibold tracking-tight text-brand-ink">FAQ</h2>
-      <div className="mt-6 divide-y divide-brand-rule rounded-xl border border-brand-rule bg-white">
+      <div className="mt-6 divide-y divide-brand-rule rounded-xl border border-brand-rule bg-brand-paper">
         {items.map((item) => (
           <details key={item.q} className="group p-5">
             <summary className="flex cursor-pointer list-none items-center justify-between text-base font-medium text-brand-ink">
@@ -231,11 +231,11 @@ function FinalCTA({ parsed, data }: Props) {
   const { regionInfo } = parsed;
   return (
     <section className="mx-auto max-w-3xl px-5">
-      <div className="rounded-xl bg-brand-deep p-7 sm:p-10 text-white">
+      <div className="rounded-xl bg-brand-deep p-7 sm:p-10 text-brand-paper">
         <h2 className="text-2xl sm:text-3xl font-semibold tracking-tight">
           Six minutes from here to seeing your matches.
         </h2>
-        <p className="mt-4 text-base leading-7 text-white/85">
+        <p className="mt-4 text-base leading-7 text-brand-paper/85">
           No commitment. No selling your info. No spam afterward. If you decide CDLA.jobs
           isn&rsquo;t for you, you delete your account and we delete your data. That&rsquo;s it.
         </p>
@@ -248,7 +248,7 @@ function FinalCTA({ parsed, data }: Props) {
           </a>
         </div>
         {data.driverCountInRegion >= 50 && (
-          <p className="mt-5 text-sm text-white/75">
+          <p className="mt-5 text-sm text-brand-paper/75">
             {data.driverCountInRegion} drivers near {regionInfo.displayName} have used CDLA.jobs.
           </p>
         )}

@@ -92,7 +92,7 @@ export function MatchCard({ driverId, match, extras, pursuit }: Props) {
   return (
     <article
       className={
-        "rounded-2xl border bg-white shadow-sm transition-shadow hover:shadow-md " +
+        "rounded-2xl border bg-brand-paper shadow-sm transition-shadow hover:shadow-md " +
         (pursuit ? "border-brand-medium/60" : "border-brand-rule")
       }
     >
@@ -242,7 +242,7 @@ export function MatchCard({ driverId, match, extras, pursuit }: Props) {
           <div className="mt-6 flex flex-wrap items-center gap-3">
             <Link
               href={applyHref}
-              className="inline-flex h-11 items-center justify-center rounded-md bg-brand-deep px-5 text-sm font-semibold text-white hover:bg-brand-medium transition-colors"
+              className="inline-flex h-11 items-center justify-center rounded-md bg-brand-deep px-5 text-sm font-semibold text-brand-paper hover:bg-brand-medium transition-colors"
             >
               {pursuit
                 ? pursuit.lastQualified === false
@@ -256,11 +256,11 @@ export function MatchCard({ driverId, match, extras, pursuit }: Props) {
                 e.stopPropagation();
                 setAskDebbieOpen(true);
               }}
-              className="inline-flex h-11 items-center justify-center gap-2 rounded-md border border-brand-rule bg-white px-4 text-sm font-medium text-brand-ink hover:border-brand-medium hover:bg-brand-surface"
+              className="inline-flex h-11 items-center justify-center gap-2 rounded-md border border-brand-rule bg-brand-paper px-4 text-sm font-medium text-brand-ink hover:border-brand-medium hover:bg-brand-surface"
             >
               <span
                 aria-hidden="true"
-                className="flex h-5 w-5 items-center justify-center rounded-full bg-brand-deep text-[10px] font-semibold text-white"
+                className="flex h-5 w-5 items-center justify-center rounded-full bg-brand-deep text-[10px] font-semibold text-brand-paper"
               >
                 D
               </span>
