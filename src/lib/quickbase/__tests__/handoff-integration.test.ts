@@ -115,6 +115,12 @@ async function seedDriver(suffix: string): Promise<string> {
       lastName: `Anderson${suffix}`,
       email: `anderson-qb-test+${suffix}@example.com`,
       phone: "555-555-1234",
+      // Address fields land in migration 0026 and IdentityCaptureForm.
+      // Seeded here so the integration tests exercise the wired QB
+      // payload that lands in commit ec7b372..62caa41..<this>.
+      addressStreet: "123 Main St",
+      addressCity: "St. Cloud",
+      addressState: "MN",
       homeZip: "56301",
       cdlState: "MN",
       yearsHeld: "3",

@@ -22,10 +22,10 @@
 //   row in either case — only the push itself is gated.
 //
 // SCHEMA GAPS WE KNOW ABOUT:
-//   - Spec §B5.4: drivers table has no street/city/state column
-//     today (only home_zip). When QB requires Street/City/State, we
-//     pass NULL for now and flag as a TODO. Per spec, Stage 2 should
-//     collect street/city; that's a downstream task.
+//   - Spec §B5.4 ✓ CLOSED: drivers now has address_street/city/state
+//     (migration 0026 + IdentityCaptureForm + claimIdentity action).
+//     Legacy rows that intake'd before that may still have NULLs;
+//     we send empty strings in that case and Sterling tolerates them.
 //   - Spec §B10 Q3: EXPERIENCE LEVEL dropdown values not yet
 //     confirmed by Sterling. The deriveExperienceLevel() function
 //     uses placeholder strings; Sterling-side confirmation will
@@ -131,15 +131,15 @@ function buildRecordPayload(input: QuickbaseHandoffInput): {
     "Last Name": { value: driver.lastName ?? "" },
     "Cell Phone": { value: driver.phone ?? "" },
     Email: { value: driver.email ?? "" },
-    // Street is a known schema gap (spec §B5.4 + B9 item: drivers
-    // table has no address_street column today). Send empty string
-    // until Stage 2 starts collecting it.
-    Street: { value: "" },
-    // City/State also not on the drivers row today — only home_zip.
-    // We could reverse-geocode zip→city/state but that's premature
-    // until Sterling confirms the field shape. Sending empty.
-    City: { value: "" },
-    State: { value: "" },
+    // Address fields land in IdentityCaptureForm at /apply time
+    // (commit 62caa41 + migration 0026). Legacy driver rows that
+    // intake'd before that ship may still have NULLs — Sterling's
+    // QuickBase tolerates empty strings here, so a missing address
+    // doesn't block the push (the handoff handler in actions.ts
+    // doesn't gate on address). Spec §B5.4 gap closed.
+    Street: { value: driver.addressStreet ?? "" },
+    City: { value: driver.addressCity ?? "" },
+    State: { value: driver.addressState ?? "" },
     Zip: { value: driver.homeZip ?? "" },
     Notes: { value: notes },
     "EXPERIENCE LEVEL": { value: deriveExperienceLevel(yearsHeld) },

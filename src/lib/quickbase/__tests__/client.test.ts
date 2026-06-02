@@ -18,6 +18,9 @@ function makeInput(
     lastName: "Sample",
     email: "pat@example.com",
     phone: "555-555-1234",
+    addressStreet: "123 Main St",
+    addressCity: "St. Cloud",
+    addressState: "MN",
     homeZip: "56301",
     yearsHeld: "3",
     ...(overrides.driver ?? {}),
@@ -155,6 +158,44 @@ describe("pushAndersonHandoff", () => {
     expect(body.data[0].Notes.value).toContain(
       "CDLA.jobs match ID: 00000000-0000-0000-0000-000000000003",
     );
+    // Address fields per spec §B5.4 — closed by migration 0026 +
+    // IdentityCaptureForm. Pin so a future regression that drops the
+    // wiring back to empty strings gets caught.
+    expect(body.data[0].Street.value).toBe("123 Main St");
+    expect(body.data[0].City.value).toBe("St. Cloud");
+    expect(body.data[0].State.value).toBe("MN");
+    expect(body.data[0].Zip.value).toBe("56301");
+  });
+
+  it("legacy driver with NULL address still sends empty strings (back-compat)", async () => {
+    // Drivers who completed intake before migration 0026 shipped don't
+    // have addressStreet/City/State on their row. The QB payload
+    // tolerates that with empty strings — Sterling's table accepts
+    // them; the handoff handler doesn't gate on address. Pinned so
+    // we don't accidentally make those fields required later.
+    process.env.QUICKBASE_STERLING_API_TOKEN = "secret-abc";
+    process.env.QUICKBASE_PUSH_ENABLED = "true";
+    const fetchMock = vi.spyOn(global, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify({ metadata: { createdRecordIds: [42] } }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      ),
+    );
+    const res = await pushAndersonHandoff(
+      makeInput({
+        driver: { addressStreet: null, addressCity: null, addressState: null },
+      }),
+    );
+    expect(res.ok).toBe(true);
+    const init = fetchMock.mock.calls[0]![1]!;
+    const body = JSON.parse(String(init.body));
+    expect(body.data[0].Street.value).toBe("");
+    expect(body.data[0].City.value).toBe("");
+    expect(body.data[0].State.value).toBe("");
+    // Zip still flows from home_zip — that one's been on the row
+    // since the original schema and isn't part of the migration 0026
+    // back-compat surface.
+    expect(body.data[0].Zip.value).toBe("56301");
   });
 
   it("returns no-retry on 4xx", async () => {
