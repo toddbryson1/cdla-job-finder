@@ -1,4 +1,4 @@
-// GET /api/cron/qb-retry — Vercel-cron-triggered sweeper for the
+// GET /api/cron/qb-retry — manual / external-trigger sweeper for the
 // QuickBase retry queue. Picks up partner_application_stages rows
 // where stage='submit_queued_for_retry' and the spec §B6.3 backoff
 // window has elapsed, pushes them to Sterling's QuickBase, and
@@ -6,14 +6,15 @@
 //
 // Auth: same Bearer CRON_SECRET pattern as /api/cron/daily.
 //
-// Cadence: 15 minutes (see vercel.json). The retry schedule starts
-// at 5 minutes, so the first retry happens between 5-20min after
-// the initial failure (worst case: cron just ran when the row
-// became due). That's close enough to spec for v1.
-//
-// The same runQbRetrySweeper() is also called from /api/cron/daily
-// as a safety net — if Vercel's cron tier blocks the new entry, the
-// daily cron still drains the queue once per day.
+// SCHEDULING NOTE: this route is NOT registered in vercel.json
+// because Vercel Hobby tier limits crons to daily cadence — the
+// 15-min schedule needed to honor the spec §B6.3 backoff window
+// (first retry at +5min) requires Pro. For now the daily cron at
+// /api/cron/daily includes a runQbRetrySweeper() call as step 0.5,
+// so retries drain once per day. This route stays available for
+// manual operator nudges (e.g. after a Sterling QuickBase outage)
+// or external schedulers (Upstash cron, GitHub Actions) that can
+// run more often than the Vercel tier allows.
 
 import { NextResponse } from "next/server";
 import { runQbRetrySweeper } from "@/lib/quickbase/retry-sweeper";
