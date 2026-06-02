@@ -36,18 +36,23 @@ const MODEL = "claude-haiku-4-5";
 export const MAX_RESUME_BYTES = 5 * 1024 * 1024; // 5 MiB
 export const MIN_RESUME_BYTES = 200;
 
-// Spec §7.1 lists PDF + DOCX + TXT + common image formats. v1
-// supports PDF + TXT + the common photo mimes (JPEG/PNG/WebP).
-// DOCX is deferred — requires a transcoding step (mammoth or
-// equivalent) since Anthropic doesn't read DOCX natively. HEIC is
-// also deferred (iOS-only; users can switch camera setting or take
-// a screenshot to convert).
+// Spec §7.1 lists PDF + DOCX + TXT + common image formats.
+// Supported in v1:
+//   - PDF, TXT, image formats — sent directly to Anthropic
+//   - DOCX — transcoded to plain text via mammoth and sent as text
+//
+// Still deferred: HEIC (iOS-only; users can take a screenshot or
+// change camera settings to JPEG to work around).
+const DOCX_MIME =
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+
 const ACCEPTED_MIMES = [
   "application/pdf",
   "text/plain",
   "image/jpeg",
   "image/png",
   "image/webp",
+  DOCX_MIME,
 ] as const;
 
 type ImageMime = "image/jpeg" | "image/png" | "image/webp";
@@ -191,11 +196,16 @@ export async function parseResume(
 
   const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! });
 
-  // Three input branches:
+  // Four input branches:
   //   - PDF → base64 `document` content block (Anthropic reads
   //     natively, no upstream OCR step)
   //   - Image → base64 `image` content block (vision input). Common
   //     for drivers who photograph a paper resume per spec §7.1.
+  //   - DOCX → transcoded to plain text via mammoth, then sent as a
+  //     text block. Anthropic doesn't read DOCX natively. Mammoth
+  //     extracts the prose and drops formatting — which is exactly
+  //     what we want for field extraction (the LLM doesn't care
+  //     about heading styles).
   //   - Text → plain `text` block.
   const mimeLower = mimeType.toLowerCase();
   let payloadBlock: Anthropic.ContentBlockParam;
@@ -217,6 +227,10 @@ export async function parseResume(
         data: buf.toString("base64"),
       },
     };
+  } else if (mimeLower === DOCX_MIME) {
+    const transcoded = await transcodeDocxToText(buf);
+    if (!transcoded.ok) return transcoded;
+    payloadBlock = { type: "text", text: transcoded.text };
   } else {
     payloadBlock = {
       type: "text",
@@ -313,4 +327,50 @@ export function normalizeExtracted(raw: unknown): DebbieResumeExtracted {
   }
 
   return out;
+}
+
+/**
+ * DOCX → plain text via mammoth.extractRawText. Drops all styling,
+ * which is exactly what we want for field extraction — the LLM only
+ * cares about the prose. Returns a tagged success/failure rather
+ * than throwing so the parseResume caller can route the failure
+ * code into the same shape as other unsupported-file responses.
+ *
+ * Mammoth is reasonably tolerant of weird .docx output (Google Docs
+ * export, LibreOffice, older Word versions). The most common failure
+ * is a non-.docx file masquerading as one (e.g. a renamed .doc); we
+ * surface that as file_unsupported with a hint.
+ *
+ * Dynamic import keeps mammoth off the cold-start critical path for
+ * every other resume type. Drivers uploading PDFs / photos shouldn't
+ * pay the ~600KB module load.
+ */
+async function transcodeDocxToText(
+  buf: Buffer,
+): Promise<
+  | { ok: true; text: string }
+  | { ok: false; code: "file_unsupported"; error: string }
+> {
+  try {
+    // Dynamic import so mammoth only loads when a driver actually
+    // submits a .docx.
+    const mammoth = await import("mammoth");
+    const { value } = await mammoth.extractRawText({ buffer: buf });
+    const text = value.trim();
+    if (text.length < 20) {
+      return {
+        ok: false,
+        code: "file_unsupported",
+        error:
+          "DOCX appears empty or unreadable. Try saving as PDF and uploading that instead.",
+      };
+    }
+    return { ok: true, text };
+  } catch (err) {
+    return {
+      ok: false,
+      code: "file_unsupported",
+      error: `DOCX could not be read (${err instanceof Error ? err.message : String(err)}). Try saving as PDF instead.`,
+    };
+  }
 }

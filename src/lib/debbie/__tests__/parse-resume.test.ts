@@ -26,14 +26,15 @@ describe("isMimeAccepted", () => {
     expect(isMimeAccepted("Image/JPEG")).toBe(true);
   });
 
-  it("rejects formats deferred to a later session", () => {
-    // DOCX needs a transcoding step (mammoth or equivalent) — Anthropic
-    // doesn't read DOCX natively. Deferred for now.
+  it("accepts DOCX (transcoded via mammoth to plain text)", () => {
     expect(
       isMimeAccepted(
         "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
       ),
-    ).toBe(false);
+    ).toBe(true);
+  });
+
+  it("still rejects formats deferred to a later session", () => {
     // HEIC is iOS-only and adds complexity (Anthropic doesn't accept it
     // directly — would need to convert to JPEG first). Drivers can take
     // a screenshot to convert.
@@ -172,7 +173,10 @@ describe("parseResume — feature flag + size gates", () => {
     if (!r.ok) expect(r.code).toBe("not_configured");
   });
 
-  it("returns file_unsupported for DOCX (deferred to a later commit)", async () => {
+  it("returns file_unsupported when DOCX bytes aren't a real .docx (zero-filled buffer)", async () => {
+    // Mammoth fails to open a buffer that isn't a zip. We surface
+    // that as file_unsupported with a "save as PDF" hint rather than
+    // letting a cryptic mammoth error bubble up to the driver.
     process.env.ANTHROPIC_API_KEY = "sk-fake";
     process.env.DEBBIE_RESUME_ENABLED = "true";
     const r = await parseResume(
@@ -180,7 +184,11 @@ describe("parseResume — feature flag + size gates", () => {
       "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     );
     expect(r.ok).toBe(false);
-    if (!r.ok) expect(r.code).toBe("file_unsupported");
+    if (!r.ok) {
+      expect(r.code).toBe("file_unsupported");
+      // Driver-visible hint should point them at PDF as the fallback.
+      expect(r.error.toLowerCase()).toContain("pdf");
+    }
   });
 
   it("returns file_too_large when buffer exceeds 5MB", async () => {

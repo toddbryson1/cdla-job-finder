@@ -748,12 +748,13 @@ export function DebbieIntakeChat({
               <input
                 ref={resumeInputRef}
                 type="file"
-                // Accept PDF / TXT / common image formats so drivers
-                // who photograph a paper resume on their phone can
-                // upload directly per spec §7.1. capture="environment"
-                // hint lets the picker offer the camera as an option
-                // on mobile.
-                accept="application/pdf,text/plain,image/jpeg,image/png,image/webp,.pdf,.txt,.jpg,.jpeg,.png,.webp"
+                // Accept PDF / DOCX / TXT / common image formats so
+                // drivers who photograph a paper resume on their phone
+                // can upload directly per spec §7.1. DOCX is transcoded
+                // server-side via mammoth before going to Anthropic.
+                // capture="environment" hint lets the picker offer the
+                // camera as an option on mobile.
+                accept="application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain,image/jpeg,image/png,image/webp,.pdf,.docx,.txt,.jpg,.jpeg,.png,.webp"
                 capture="environment"
                 onChange={(e) => {
                   const f = e.target.files?.[0];
