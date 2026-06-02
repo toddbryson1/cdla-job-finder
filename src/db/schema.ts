@@ -552,6 +552,13 @@ export const partnerApplicationStages = pgTable(
       .notNull()
       .default(0),
     quickbaseLastError: text("quickbase_last_error"),
+    // When this row's next retry is due, NULL when not queued.
+    // The retry sweeper (src/lib/quickbase/retry-sweeper.ts) reads
+    // `WHERE stage = 'submit_queued_for_retry' AND quickbase_next_retry_at
+    //  <= now()` to pick up due rows. Backoff schedule per spec §B6.3.
+    quickbaseNextRetryAt: timestamp("quickbase_next_retry_at", {
+      withTimezone: true,
+    }),
     createdAt: timestamp("created_at", { withTimezone: true })
       .defaultNow()
       .notNull(),
