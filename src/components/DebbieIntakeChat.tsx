@@ -109,7 +109,26 @@ type MatchPhase =
   | "shown" // matches arrived (any count); render in chat
   | "error"; // matching engine failed; fall back to /matches link
 
-export function DebbieIntakeChat() {
+// Audio recording state for the mic button. "denied" sticks once the
+// browser blocks getUserMedia so we hide the mic for the rest of the
+// session — re-prompting after a deny is annoying and rarely useful.
+type AudioState =
+  | "idle"
+  | "starting" // getUserMedia in flight
+  | "recording" // MediaRecorder active
+  | "transcribing" // POSTing blob to /api/debbie/transcribe
+  | "denied"; // user blocked mic; hide button for the session
+
+interface DebbieIntakeChatProps {
+  /**
+   * Whether the audio mic button should render. Set by the server
+   * component based on DEBBIE_AUDIO_ENABLED. When false, the input
+   * row is text-only — same as before audio shipped.
+   */
+  audioEnabled: boolean;
+}
+
+export function DebbieIntakeChat({ audioEnabled }: DebbieIntakeChatProps) {
   const [messages, setMessages] = useState<DebbieIntakeMessage[]>([]);
   const [state, setState] = useState<DebbieIntakeState>("Q1_zip");
   const [fields, setFields] = useState<DebbieIntakeFields>(EMPTY_FIELDS);
@@ -126,6 +145,10 @@ export function DebbieIntakeChat() {
     city: string | null;
     state: string | null;
   }>({ city: null, state: null });
+  const [audioState, setAudioState] = useState<AudioState>("idle");
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<BlobPart[]>([]);
+  const mediaStreamRef = useRef<MediaStream | null>(null);
   const scrollerRef = useRef<HTMLDivElement | null>(null);
 
   // Hydrate from sessionStorage on mount.
@@ -204,6 +227,82 @@ export function DebbieIntakeChat() {
     },
     [fields, messages, state],
   );
+
+  // Mic-button push-to-talk. First click starts recording (asks for
+  // mic permission on the first use of the session). Second click
+  // stops, posts the blob to /api/debbie/transcribe, and dumps the
+  // transcript into the input field for the driver to review + send.
+  //
+  // We deliberately DON'T auto-send the transcript — spec §6.1 + §6.3
+  // require driver review before send so transcription errors don't
+  // poison matching.
+  const onMicClick = useCallback(async () => {
+    if (audioState === "recording") {
+      // Stop path. The MediaRecorder.onstop handler does the rest
+      // (POSTing the blob, populating the input). Tearing the stream
+      // tracks down keeps the browser tab indicator from glowing red.
+      mediaRecorderRef.current?.stop();
+      mediaStreamRef.current?.getTracks().forEach((t) => t.stop());
+      mediaRecorderRef.current = null;
+      mediaStreamRef.current = null;
+      return;
+    }
+    if (audioState !== "idle") return;
+    setError(null);
+    setAudioState("starting");
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      mediaStreamRef.current = stream;
+      // webm/opus is the default browser MediaRecorder mime — Whisper
+      // accepts it natively, no transcoding step.
+      const mimeType = MediaRecorder.isTypeSupported("audio/webm")
+        ? "audio/webm"
+        : "audio/mp4";
+      const mr = new MediaRecorder(stream, { mimeType });
+      audioChunksRef.current = [];
+      mr.ondataavailable = (e) => {
+        if (e.data.size > 0) audioChunksRef.current.push(e.data);
+      };
+      mr.onstop = async () => {
+        const blob = new Blob(audioChunksRef.current, { type: mimeType });
+        audioChunksRef.current = [];
+        setAudioState("transcribing");
+        try {
+          const res = await fetch("/api/debbie/transcribe", {
+            method: "POST",
+            headers: { "content-type": mimeType },
+            body: blob,
+          });
+          const body = (await res.json()) as {
+            ok?: boolean;
+            text?: string;
+            error?: string;
+          };
+          if (body.ok && typeof body.text === "string" && body.text.length > 0) {
+            setInput((prev) => (prev ? `${prev} ${body.text}` : body.text!));
+          } else {
+            setError(body.error ?? "Couldn't transcribe that. Try typing.");
+          }
+        } catch {
+          setError("Couldn't reach the transcription server. Try typing.");
+        } finally {
+          setAudioState("idle");
+        }
+      };
+      mr.start();
+      mediaRecorderRef.current = mr;
+      setAudioState("recording");
+    } catch (err) {
+      // Most common case: user clicked "Block" on the browser prompt.
+      // Stick to "denied" so we hide the mic for the rest of the
+      // session rather than re-prompting on every click.
+      console.warn("[debbie] mic getUserMedia failed:", err);
+      setAudioState("denied");
+      setError(
+        "Mic access blocked. You can still type your answer — or change site permissions in your browser settings.",
+      );
+    }
+  }, [audioState]);
 
   const onSubmitConsent = useCallback(async () => {
     if (!consentChecked || submitting) return;
@@ -460,22 +559,31 @@ export function DebbieIntakeChat() {
           }}
           className="flex items-center gap-2.5 border-t border-brand-rule bg-brand-paper px-4 py-3.5"
         >
+          {audioEnabled && audioState !== "denied" ? (
+            <MicButton state={audioState} onClick={onMicClick} />
+          ) : null}
           <input
             type="text"
             value={input}
             onChange={(e) => setInput(e.target.value)}
             inputMode="text"
             placeholder={
-              showOpening ? "Type your zip…" : "Type your answer…"
+              audioState === "recording"
+                ? "Listening…"
+                : audioState === "transcribing"
+                  ? "Transcribing…"
+                  : showOpening
+                    ? "Type your zip…"
+                    : "Type your answer…"
             }
             aria-label="Message Debbie"
-            disabled={busy}
+            disabled={busy || audioState === "transcribing"}
             className="flex-1 border-none bg-transparent px-1 py-2 text-[15.5px] text-brand-ink outline-none placeholder:text-brand-muted disabled:opacity-50"
           />
           <button
             type="submit"
             aria-label="Send"
-            disabled={busy || !input.trim()}
+            disabled={busy || !input.trim() || audioState === "transcribing"}
             className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-md bg-brand-gold text-brand-ink transition-colors hover:bg-brand-gold-soft active:scale-95 disabled:opacity-50"
           >
             <svg
@@ -501,6 +609,83 @@ export function DebbieIntakeChat() {
         if you'd rather type than chat.
       </p>
     </div>
+  );
+}
+
+// Mic button — push-to-talk for the spec §6 audio input. Three visible
+// states beyond hidden: idle (mic icon), recording (red pulsing stop
+// square), transcribing (small spinner). Click toggles between idle
+// and recording; transcribing is a transient post-stop state.
+//
+// We deliberately don't render this button when audioEnabled prop is
+// false (counsel hasn't cleared the BIPA/CUBI/WA disclosure language)
+// or when the browser blocked mic access ("denied" state). The button
+// component itself never has to know about that — the parent decides
+// whether to render it at all.
+function MicButton({
+  state,
+  onClick,
+}: {
+  state: AudioState;
+  onClick: () => void;
+}) {
+  const isRecording = state === "recording";
+  const isBusy = state === "starting" || state === "transcribing";
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label={isRecording ? "Stop recording" : "Start voice input"}
+      title={isRecording ? "Tap to stop recording" : "Tap to talk"}
+      disabled={isBusy}
+      className={
+        "flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-md transition-colors disabled:opacity-50 " +
+        (isRecording
+          ? "bg-red-600 text-white hover:bg-red-700 animate-brand-pulse"
+          : "bg-brand-surface text-brand-muted hover:bg-brand-rule hover:text-brand-deep")
+      }
+    >
+      {isRecording ? (
+        // Stop square
+        <svg
+          viewBox="0 0 24 24"
+          fill="currentColor"
+          aria-hidden="true"
+          className="h-3.5 w-3.5"
+        >
+          <rect x="6" y="6" width="12" height="12" rx="1.5" />
+        </svg>
+      ) : isBusy ? (
+        // Spinner (CSS animate-spin from tailwind defaults)
+        <svg
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          aria-hidden="true"
+          className="h-4 w-4 animate-spin"
+        >
+          <path d="M12 3a9 9 0 1 0 9 9" />
+        </svg>
+      ) : (
+        // Mic icon
+        <svg
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.8"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          aria-hidden="true"
+          className="h-4 w-4"
+        >
+          <rect x="9" y="3" width="6" height="12" rx="3" />
+          <path d="M5 11a7 7 0 0 0 14 0" />
+          <path d="M12 18v3" />
+        </svg>
+      )}
+    </button>
   );
 }
 

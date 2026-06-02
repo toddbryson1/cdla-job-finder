@@ -90,10 +90,25 @@ function Hero() {
           </ul>
         </div>
 
-        <DebbieIntakeChat />
+        <DebbieIntakeChat audioEnabled={debbieAudioEnabled()} />
       </div>
     </section>
   );
+}
+
+// Server-side feature-flag read for the audio mic button. Mirrors
+// src/lib/debbie/transcribe.ts isAudioEnabled() — kept here as a
+// separate read so the client component never imports anything from
+// src/lib/debbie/transcribe.ts (which has Node-only deps like Buffer
+// and would bloat the client bundle).
+//
+// We DON'T require OPENAI_API_KEY here because that env var is only
+// readable server-side; the page render only needs to know whether
+// the mic UI should appear. If the key is missing the POST route
+// itself will 503 with a graceful error, so a flag-on key-off setup
+// fails closed rather than open.
+function debbieAudioEnabled(): boolean {
+  return process.env.DEBBIE_AUDIO_ENABLED === "true";
 }
 
 function TrustItem({ children }: { children: React.ReactNode }) {
