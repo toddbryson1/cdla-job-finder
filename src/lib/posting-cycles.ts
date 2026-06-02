@@ -29,6 +29,7 @@
 import { and, eq, inArray, lte, sql } from "drizzle-orm";
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
+import { revalidatePath } from "next/cache";
 import {
   carrierJobs,
   carriers,
@@ -42,6 +43,30 @@ import {
   publishIndexingNotifications,
   type IndexingNotificationType,
 } from "@/lib/google-indexing";
+
+// When cycles change, ISR's max-age=900 on /sitemap.xml will
+// eventually catch up, BUT Vercel's edge CDN cache layer holds the
+// stale snapshot well past that — we hit a ~4-hour stale window in
+// prod on 2026-06-01 when Anderson's 12 new cycles weren't visible
+// in the sitemap. revalidatePath() invalidates both the ISR cache
+// and the edge cache for the path, so the next /sitemap.xml request
+// regenerates fresh against current DB state.
+//
+// Idempotent + cheap; the only failure mode is being called outside
+// a request lifecycle where Next.js's cache APIs don't apply. The
+// try/catch keeps the cycle spawner from crashing in that edge case
+// (e.g. the smoke test script that runs spawnPostingCycles outside
+// of an HTTP request).
+function safeRevalidateSitemap(): void {
+  try {
+    revalidatePath("/sitemap.xml");
+  } catch (err) {
+    console.warn(
+      "[posting-cycles] revalidatePath('/sitemap.xml') skipped:",
+      err instanceof Error ? err.message : String(err),
+    );
+  }
+}
 
 const SITE_ORIGIN = "https://www.cdla.jobs";
 
@@ -177,8 +202,19 @@ export async function spawnPostingCycles(
   // (no service-account key), record that we skipped — operators see
   // it in the cron output and know to wire it up.
   if (notifications.length === 0) {
+    // Nothing changed — neither sitemap state nor Indexing API
+    // submissions. Skip revalidation (saves a Vercel edge cache
+    // invalidation no driver will benefit from).
     return out;
   }
+
+  // Notifications exist → cycles changed → sitemap WILL differ from
+  // the cached snapshot. Revalidate before the Indexing API call so
+  // even if that call fails, the sitemap correction is in flight.
+  if (out.spawned > 0 || out.expired > 0) {
+    safeRevalidateSitemap();
+  }
+
   if (!isIndexingApiConfigured()) {
     out.indexingSkipped = true;
     return out;
