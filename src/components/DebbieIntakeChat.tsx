@@ -19,7 +19,6 @@
 //     prompt, but the rendering is just the same chat surface
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
 import Link from "next/link";
 import {
   EMPTY_FIELDS,
@@ -28,6 +27,13 @@ import {
   type DebbieIntakeMessage,
   type DebbieIntakeState,
 } from "@/lib/debbie/intake-types";
+import {
+  ASYNC_FALLBACK_TIMEOUT_MS,
+  buildMatchesPreamble,
+  buildZeroMatchesMessage,
+  buildAsyncFallbackMessage,
+  type DebbieMatchView,
+} from "@/lib/debbie/match-render";
 
 const STORAGE_KEY = "cdla:debbie:intake:v1";
 
@@ -93,8 +99,17 @@ function clearStored() {
   }
 }
 
+// Local-only state for the post-consent match phase. Distinct from
+// the LLM conversation state so the LLM doesn't think it can extract
+// fields once we've moved past consent.
+type MatchPhase =
+  | "idle" // pre-consent or consent in flight
+  | "pending" // matching engine running, within the 5s window
+  | "async" // 5s elapsed; will still render matches if they arrive
+  | "shown" // matches arrived (any count); render in chat
+  | "error"; // matching engine failed; fall back to /matches link
+
 export function DebbieIntakeChat() {
-  const router = useRouter();
   const [messages, setMessages] = useState<DebbieIntakeMessage[]>([]);
   const [state, setState] = useState<DebbieIntakeState>("Q1_zip");
   const [fields, setFields] = useState<DebbieIntakeFields>(EMPTY_FIELDS);
@@ -104,6 +119,13 @@ export function DebbieIntakeChat() {
   const [consentChecked, setConsentChecked] = useState(false);
   const [smsOptIn, setSmsOptIn] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [matchPhase, setMatchPhase] = useState<MatchPhase>("idle");
+  const [matches, setMatches] = useState<DebbieMatchView[]>([]);
+  const [driverId, setDriverId] = useState<string | null>(null);
+  const [homeLocation, setHomeLocation] = useState<{
+    city: string | null;
+    state: string | null;
+  }>({ city: null, state: null });
   const scrollerRef = useRef<HTMLDivElement | null>(null);
 
   // Hydrate from sessionStorage on mount.
@@ -258,12 +280,104 @@ export function DebbieIntakeChat() {
         return;
       }
       clearStored();
-      router.push(`/matches/${body.driverId}`);
+      setDriverId(body.driverId);
+
+      // Look up the driver's home city/state for the matches preamble.
+      // Best-effort — the preamble works without it (just drops the
+      // "near X, Y" suffix).
+      const cityState = await lookupCityStateFromZip(fields.homeZip);
+      setHomeLocation(cityState);
+
+      // Race the match engine against the 5-second async-fallback
+      // timeout per spec §4.5. The fetch keeps running in the
+      // background; if it lands after the timeout, we still surface
+      // the cards inline so a driver still on the page gets the
+      // payoff. If matching errors we fall back to /matches.
+      void runMatchInline(body.driverId, cityState);
+      setSubmitting(false);
     } catch {
       setError("Couldn't reach the matching server. Try again in a moment.");
       setSubmitting(false);
     }
-  }, [consentChecked, fields, router, smsOptIn, submitting]);
+  }, [consentChecked, fields, smsOptIn, submitting]);
+
+  // Fetch /api/match with a 5-second timer for the async fallback
+  // message. The fetch promise stays in flight even after the timer
+  // wins — if matches come back during the same session, we still
+  // render them inline so the driver doesn't have to refresh.
+  const runMatchInline = useCallback(
+    async (
+      forDriverId: string,
+      where: { city: string | null; state: string | null },
+    ) => {
+      setMatchPhase("pending");
+      setMatches([]);
+
+      const matchPromise = fetch("/api/match", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ driverId: forDriverId }),
+      })
+        .then(async (res) => {
+          if (!res.ok) throw new Error(`match ${res.status}`);
+          return (await res.json()) as { matches?: Array<Record<string, unknown>> };
+        })
+        .then((body) => normalizeMatches(body.matches ?? []));
+
+      const timeoutPromise = new Promise<"timeout">((resolve) =>
+        setTimeout(() => resolve("timeout"), ASYNC_FALLBACK_TIMEOUT_MS),
+      );
+
+      const first = await Promise.race([matchPromise, timeoutPromise]);
+
+      if (first === "timeout") {
+        // Show the async fallback; keep awaiting the fetch.
+        const asyncMsg = buildAsyncFallbackMessage(false); // anonymous intake — no email
+        setMessages((prev) => [
+          ...prev,
+          { role: "assistant", content: asyncMsg },
+        ]);
+        setMatchPhase("async");
+
+        try {
+          const arrived = await matchPromise;
+          // Engine eventually came through. Append the matches.
+          const preamble = buildMatchesPreamble(
+            arrived.length,
+            where.city,
+            where.state,
+          );
+          setMessages((prev) => [
+            ...prev,
+            { role: "assistant", content: preamble },
+          ]);
+          setMatches(arrived);
+          setMatchPhase("shown");
+        } catch {
+          // Async + fetch error. The driver still has the async copy;
+          // just give them a manual link to /matches in case the
+          // engine catches up later.
+          setMatchPhase("error");
+        }
+        return;
+      }
+
+      // Fast path — match resolved before the timer.
+      const arrived = first;
+      const preamble = buildMatchesPreamble(
+        arrived.length,
+        where.city,
+        where.state,
+      );
+      setMessages((prev) => [
+        ...prev,
+        { role: "assistant", content: preamble },
+      ]);
+      setMatches(arrived);
+      setMatchPhase("shown");
+    },
+    [],
+  );
 
   const showConsent = state === "consent_ready";
   const showOpening = messages.length === 0;
@@ -317,6 +431,19 @@ export function DebbieIntakeChat() {
             onSubmit={onSubmitConsent}
           />
         ) : null}
+        {matchPhase === "pending" ? <TypingIndicator /> : null}
+        {matches.length > 0 && driverId ? (
+          <MatchesStack matches={matches} driverId={driverId} />
+        ) : null}
+        {matchPhase === "shown" && matches.length === 0 ? (
+          <ZeroMatchesCallout
+            homeCity={homeLocation.city}
+            homeState={homeLocation.state}
+          />
+        ) : null}
+        {matchPhase === "error" && driverId ? (
+          <MatchErrorCallout driverId={driverId} />
+        ) : null}
       </div>
 
       {error ? (
@@ -325,7 +452,7 @@ export function DebbieIntakeChat() {
         </div>
       ) : null}
 
-      {showConsent ? null : (
+      {showConsent || matchPhase !== "idle" ? null : (
         <form
           onSubmit={(e) => {
             e.preventDefault();
@@ -485,6 +612,128 @@ function ConsentCard({
   );
 }
 
+// Stack of compact carrier cards rendered after the matches preamble
+// bubble. Sized to fit inside the chat bubble layout (max ~88% width)
+// while still being scannable. Each card links to /match/[driverId]/
+// [jobId]/apply — the same Stage 2 entry point as the form-fallback
+// /matches page uses.
+function MatchesStack({
+  matches,
+  driverId,
+}: {
+  matches: DebbieMatchView[];
+  driverId: string;
+}) {
+  return (
+    <div className="self-stretch animate-msg-in space-y-2.5">
+      {matches.map((m) => (
+        <MatchCard key={m.jobId} match={m} driverId={driverId} />
+      ))}
+      <Link
+        href={`/matches/${driverId}`}
+        className="block text-center text-xs font-medium text-brand-medium hover:text-brand-deep"
+      >
+        See all matches in detail →
+      </Link>
+    </div>
+  );
+}
+
+function MatchCard({
+  match,
+  driverId,
+}: {
+  match: DebbieMatchView;
+  driverId: string;
+}) {
+  const cityState =
+    match.domicileCity && match.domicileState
+      ? `${match.domicileCity}, ${match.domicileState}`
+      : match.domicileState || match.domicileCity || null;
+  return (
+    <div className="rounded-xl border border-brand-rule bg-brand-surface p-3.5 shadow-sm">
+      <p className="text-sm font-semibold text-brand-ink">
+        {match.carrierName}
+      </p>
+      <p className="mt-0.5 text-[13px] leading-5 text-brand-muted">
+        {match.positionTitle}
+      </p>
+      <dl className="mt-2 flex flex-wrap items-baseline gap-x-3 gap-y-1 text-[12.5px] leading-5 text-brand-ink">
+        {match.equipmentLabel ? (
+          <span>
+            <span className="text-brand-muted">Equipment</span>{" "}
+            {match.equipmentLabel}
+          </span>
+        ) : null}
+        {cityState ? (
+          <span>
+            <span className="text-brand-muted">Out of</span> {cityState}
+          </span>
+        ) : null}
+        {match.payRangeLabel ? (
+          <span>
+            <span className="text-brand-muted">Pay</span>{" "}
+            {match.payRangeLabel}
+          </span>
+        ) : null}
+      </dl>
+      <Link
+        href={`/match/${driverId}/${match.jobId}/apply`}
+        className="mt-3 inline-flex h-9 items-center justify-center rounded-md bg-brand-deep px-4 text-xs font-semibold text-brand-paper transition-colors hover:bg-brand-medium"
+      >
+        Apply with {match.carrierName}
+      </Link>
+    </div>
+  );
+}
+
+// Spec §4.5: Zero matches is honest, not pivoting to false hope. The
+// driver is in nurture (Stage 1 consent covered it) so we lead with
+// the email-when-something-fits promise. For anonymous drivers we
+// don't have an email yet, so the language is gentler — "I'll let you
+// know" rather than "I'll email you."
+function ZeroMatchesCallout({
+  homeCity,
+  homeState,
+}: {
+  homeCity: string | null;
+  homeState: string | null;
+}) {
+  const where =
+    homeCity && homeState
+      ? `near ${homeCity}, ${homeState}`
+      : homeState
+        ? `in ${homeState}`
+        : null;
+  return (
+    <div className="self-stretch animate-msg-in rounded-xl border border-brand-rule bg-brand-surface p-4">
+      <p className="text-sm leading-6 text-brand-ink">
+        Nothing matches that exactly right now{where ? ` ${where}` : ""}. New
+        carriers are joining and posting positions all the time — could be a
+        day, could be a couple weeks.
+      </p>
+    </div>
+  );
+}
+
+function MatchErrorCallout({ driverId }: { driverId: string }) {
+  return (
+    <div className="self-stretch animate-msg-in rounded-xl border border-brand-rule bg-brand-surface p-4">
+      <p className="text-sm leading-6 text-brand-ink">
+        The matching engine got stuck on my end. Your intake saved fine —
+        head to{" "}
+        <Link
+          href={`/matches/${driverId}`}
+          className="font-semibold text-brand-deep underline hover:text-brand-medium"
+        >
+          your matches page
+        </Link>{" "}
+        and try again in a minute.
+      </p>
+    </div>
+  );
+}
+
 // Best-effort zip→state lookup. /api/intake's server-side check uses
 // the zip_codes table too — this just gets us a passable cdlState
 // upfront so the POST validates. If lookup fails the server still
@@ -500,4 +749,114 @@ async function lookupStateFromZip(zip: string): Promise<string | null> {
   } catch {
     return null;
   }
+}
+
+// Same endpoint as lookupStateFromZip, but returns both city + state
+// for the matches preamble ("near Atlanta, GA"). Defensive nulls when
+// the zip isn't in our table.
+async function lookupCityStateFromZip(
+  zip: string,
+): Promise<{ city: string | null; state: string | null }> {
+  try {
+    const res = await fetch(`/api/debbie/zip-state?zip=${encodeURIComponent(zip)}`);
+    if (!res.ok) return { city: null, state: null };
+    const body = (await res.json()) as { state?: string; city?: string };
+    return {
+      city: typeof body.city === "string" ? body.city : null,
+      state:
+        typeof body.state === "string" && body.state.length === 2
+          ? body.state.toUpperCase()
+          : null,
+    };
+  } catch {
+    return { city: null, state: null };
+  }
+}
+
+// Convert the matching-engine's Match objects (lots of fields, types
+// imported from the matching module) into the slim DebbieMatchView
+// the chat renders. Defensive — bad-shape rows are dropped silently.
+function normalizeMatches(rows: Array<Record<string, unknown>>): DebbieMatchView[] {
+  const out: DebbieMatchView[] = [];
+  for (const r of rows) {
+    const jobId = typeof r.jobId === "string" ? r.jobId : null;
+    const carrierName =
+      typeof r.carrierName === "string" ? r.carrierName : null;
+    if (!jobId || !carrierName) continue;
+    out.push({
+      jobId,
+      carrierName,
+      positionTitle:
+        typeof r.positionTitle === "string" ? r.positionTitle : "Driver",
+      equipmentLabel: equipmentLabelFromUnknown(r.equipment),
+      domicileCity:
+        typeof r.domicileCity === "string" ? r.domicileCity : "",
+      domicileState:
+        typeof r.domicileState === "string" ? r.domicileState : "",
+      distanceMiles:
+        typeof r.distanceMilesFromDriverHome === "number"
+          ? r.distanceMilesFromDriverHome
+          : null,
+      payRangeLabel: payRangeLabelFromUnknown(
+        r.payRangeMinWeekly,
+        r.payRangeMaxWeekly,
+      ),
+      carrierKind:
+        r.carrierKind === "partner" ||
+        r.carrierKind === "prospect" ||
+        r.carrierKind === "subscription"
+          ? r.carrierKind
+          : "prospect",
+      carrierTier:
+        r.carrierTier === "tier_1" ||
+        r.carrierTier === "tier_2" ||
+        r.carrierTier === "none"
+          ? r.carrierTier
+          : "none",
+      label: typeof r.label === "string" ? r.label : "",
+    });
+  }
+  return out;
+}
+
+function equipmentLabelFromUnknown(v: unknown): string {
+  if (typeof v !== "string") return "";
+  // Reuse the same pretty-label dictionary as match-render.ts
+  // through a local copy — the helper isn't exported there to keep
+  // intake-types.ts dependency-free.
+  const map: Record<string, string> = {
+    "dry-van": "Dry Van",
+    reefer: "Reefer",
+    flatbed: "Flatbed",
+    tanker: "Tanker",
+    hazmat: "Hazmat",
+    "auto-hauler": "Auto Hauler",
+    doubles: "Doubles",
+    triples: "Triples",
+    oversized: "Heavy Haul",
+    dump: "Dump",
+    mixer: "Mixer",
+    intermodal: "Intermodal",
+  };
+  const k = v.toLowerCase().trim();
+  return (
+    map[k] ??
+    k
+      .split("-")
+      .map((p) => p.charAt(0).toUpperCase() + p.slice(1))
+      .join(" ")
+  );
+}
+
+function payRangeLabelFromUnknown(
+  min: unknown,
+  max: unknown,
+): string | null {
+  const mn = typeof min === "number" ? min : null;
+  const mx = typeof max === "number" ? max : null;
+  if (mn != null && mx != null)
+    return `$${mn.toLocaleString()}–$${mx.toLocaleString()}/wk`;
+  if (mx != null) return `Up to $${mx.toLocaleString()}/wk`;
+  if (mn != null) return `From $${mn.toLocaleString()}/wk`;
+  return null;
 }
