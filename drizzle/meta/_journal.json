@@ -183,6 +183,13 @@
       "when": 1782200000000,
       "tag": "0025_partner_application_stages",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1782300000000,
+      "tag": "0026_drivers_address",
+      "breakpoints": true
     }
   ]
 }

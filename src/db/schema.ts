@@ -304,6 +304,16 @@ export const drivers = pgTable(
     email: text("email").unique(),
     phone: text("phone"),
 
+    // Mailing address — captured at /apply (IdentityCaptureForm)
+    // alongside name/email/phone so partner-carrier ATSes like
+    // Anderson's QuickBase have a real address to push, instead of
+    // the empty-string TODO from spec §B5.4. All three nullable so
+    // legacy driver rows (intake'd before migration 0026) stay
+    // valid; the Anderson handoff handler tolerates missing values.
+    addressStreet: text("address_street"),
+    addressCity: text("address_city"),
+    addressState: varchar("address_state", { length: 2 }),
+
     // Geographic
     homeZip: varchar("home_zip", { length: 5 }),
     homeLat: numeric("home_lat", { precision: 9, scale: 6 }),
