@@ -68,6 +68,20 @@ interface StoredState {
   fields: DebbieIntakeFields;
 }
 
+// Pre-confirmation gate: only render the structured card when every
+// Stage 1 field has actually been gathered. Otherwise an LLM bug
+// that prematurely advances state would freeze the chat in a card
+// with nulls in it.
+function allFieldsSet(f: DebbieIntakeFields): boolean {
+  return (
+    f.homeZip != null &&
+    f.experienceYears != null &&
+    f.schedule != null &&
+    f.terminatedLastJob != null &&
+    f.sapStatus != null
+  );
+}
+
 function loadStored(): StoredState | null {
   if (typeof window === "undefined") return null;
   try {
@@ -576,7 +590,71 @@ export function DebbieIntakeChat({
   );
 
   const showConsent = state === "consent_ready";
+  const showConfirmation = state === "confirmation" && allFieldsSet(fields);
   const showOpening = messages.length === 0;
+
+  // Confirmation card click — advance directly to consent_ready
+  // without another LLM round-trip. The driver has visually verified
+  // every field; no need to spend tokens re-extracting from "yes".
+  const onConfirmAll = useCallback(() => {
+    setMessages((prev) => [
+      ...prev,
+      { role: "user", content: "Looks right." },
+      {
+        role: "assistant",
+        content:
+          "Great — one more thing before matching. You'll see a quick consent screen next.",
+      },
+    ]);
+    setState("consent_ready");
+  }, []);
+
+  // Edit-a-field click. Rewind state to the relevant Q and clear the
+  // field so the LLM's next turn asks again. Appends a contextual
+  // assistant message ("Sure — what's your zip?") so the chat scroll
+  // shows the rewind clearly.
+  const onEditField = useCallback(
+    (field: keyof DebbieIntakeFields) => {
+      const transitions: Record<
+        keyof DebbieIntakeFields,
+        { state: DebbieIntakeState; prompt: string }
+      > = {
+        homeZip: { state: "Q1_zip", prompt: "Sure — what zip should I use?" },
+        experienceYears: {
+          state: "Q2_experience",
+          prompt: "OK — how many years on tractor-trailer, then?",
+        },
+        schedule: {
+          state: "Q3_schedule",
+          prompt:
+            "Got it — what kind of schedule are you actually looking for?",
+        },
+        terminatedLastJob: {
+          state: "Q4_termination",
+          prompt:
+            "Let's redo that one — were you let go from your last trucking job, or did you leave on your own?",
+        },
+        terminationReason: {
+          state: "Q4_termination_probe",
+          prompt:
+            "OK — what happened with that last job, in your own words?",
+        },
+        sapStatus: {
+          state: "Q5_sap",
+          prompt: "Got it — are you a SAP driver?",
+        },
+      };
+      const t = transitions[field];
+      if (!t) return;
+      setFields((prev) => ({ ...prev, [field]: null }));
+      setMessages((prev) => [
+        ...prev,
+        { role: "assistant", content: t.prompt },
+      ]);
+      setState(t.state);
+    },
+    [],
+  );
 
   return (
     <div className="relative z-10 overflow-hidden rounded-2xl border border-brand-rule bg-brand-paper shadow-[0_8px_24px_rgba(14,30,51,0.08),_0_24px_64px_rgba(14,30,51,0.10)]">
@@ -617,6 +695,13 @@ export function DebbieIntakeChat({
               ),
             )}
         {busy ? <TypingIndicator /> : null}
+        {showConfirmation ? (
+          <ConfirmationCard
+            fields={fields}
+            onConfirm={onConfirmAll}
+            onEditField={onEditField}
+          />
+        ) : null}
         {showConsent ? (
           <ConsentCard
             checked={consentChecked}
@@ -650,7 +735,7 @@ export function DebbieIntakeChat({
         </div>
       ) : null}
 
-      {showConsent || matchPhase !== "idle" ? null : (
+      {showConsent || showConfirmation || matchPhase !== "idle" ? null : (
         <form
           onSubmit={(e) => {
             e.preventDefault();
@@ -771,6 +856,142 @@ function VoiceProcessingDisclosure() {
       </p>
     </div>
   );
+}
+
+// Spec §4.3 confirmation step. Renders when state="confirmation" and
+// all 5 Stage 1 fields are gathered. Replaces the free-text "yes /
+// no" round-trip with a structured field-by-field card the driver
+// can correct without typing "actually it's 30309, not 30303" and
+// hoping the LLM extracts the right field.
+//
+// On confirm: state advances to "consent_ready" WITHOUT another LLM
+// turn — the visual verification IS the confirmation, no token spend
+// needed.
+// On edit: state rewinds to the relevant Q + clears the field + an
+// assistant message asks the question fresh.
+//
+// Spec §4.3 cited the cost of skipping the confirmation as "a
+// measurable percentage of bad matches" from transcription / extract
+// errors that flow into matching unchecked. This UI catches those
+// before consent.
+function ConfirmationCard({
+  fields,
+  onConfirm,
+  onEditField,
+}: {
+  fields: DebbieIntakeFields;
+  onConfirm: () => void;
+  onEditField: (field: keyof DebbieIntakeFields) => void;
+}) {
+  const rows: Array<{
+    field: keyof DebbieIntakeFields;
+    label: string;
+    value: string;
+  }> = [
+    { field: "homeZip", label: "Home zip", value: fields.homeZip ?? "—" },
+    {
+      field: "experienceYears",
+      label: "Experience",
+      value:
+        fields.experienceYears != null
+          ? `${fields.experienceYears} ${fields.experienceYears === 1 ? "year" : "years"}`
+          : "—",
+    },
+    {
+      field: "schedule",
+      label: "Schedule",
+      value: scheduleDisplay(fields.schedule),
+    },
+    {
+      field: "terminatedLastJob",
+      label: "Last job",
+      value:
+        fields.terminatedLastJob === true
+          ? fields.terminationReason
+            ? `Let go (${fields.terminationReason})`
+            : "Let go"
+          : fields.terminatedLastJob === false
+            ? "Left on own terms"
+            : "—",
+    },
+    {
+      field: "sapStatus",
+      label: "SAP status",
+      value: sapDisplay(fields.sapStatus),
+    },
+  ];
+
+  return (
+    <div className="self-stretch animate-msg-in rounded-2xl border border-brand-rule bg-brand-paper p-5 shadow-sm">
+      <h3 className="text-sm font-semibold text-brand-ink">
+        Quick check before I run your match.
+      </h3>
+      <p className="mt-1 text-[13px] leading-5 text-brand-muted">
+        Tap a row if anything looks off &mdash; I&rsquo;ll ask that one
+        fresh.
+      </p>
+      <ul className="mt-4 divide-y divide-brand-rule rounded-md border border-brand-rule bg-brand-surface">
+        {rows.map((r) => (
+          <li
+            key={r.field}
+            className="flex items-center justify-between gap-3 px-3 py-2.5"
+          >
+            <div className="min-w-0 flex-1">
+              <p className="text-xs font-medium uppercase tracking-wide text-brand-muted">
+                {r.label}
+              </p>
+              <p className="mt-0.5 text-[14.5px] leading-5 text-brand-ink">
+                {r.value}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => onEditField(r.field)}
+              aria-label={`Edit ${r.label.toLowerCase()}`}
+              className="flex-shrink-0 rounded-md px-2 py-1 text-[12px] font-semibold text-brand-medium transition-colors hover:bg-brand-paper hover:text-brand-deep"
+            >
+              Edit
+            </button>
+          </li>
+        ))}
+      </ul>
+      <button
+        type="button"
+        onClick={onConfirm}
+        className="mt-4 inline-flex h-11 w-full items-center justify-center rounded-md bg-brand-deep px-5 text-sm font-semibold text-brand-paper transition-colors hover:bg-brand-medium"
+      >
+        Looks right &mdash; continue
+      </button>
+    </div>
+  );
+}
+
+function scheduleDisplay(s: DebbieIntakeFields["schedule"]): string {
+  switch (s) {
+    case "local":
+      return "Local (home daily)";
+    case "regional":
+      return "Regional (home weekly)";
+    case "otr":
+      return "OTR (out a few weeks at a time)";
+    case "any":
+      return "Flexible";
+    default:
+      return "—";
+  }
+}
+
+function sapDisplay(s: DebbieIntakeFields["sapStatus"]): string {
+  switch (s) {
+    case "not-in-sap":
+      return "Not a SAP driver";
+    case "in-sap":
+      return "Currently in SAP";
+    case "completed-sap":
+      return "Completed SAP";
+    default:
+      return "—";
+  }
 }
 
 // Resume-processing disclosure — renders in the Stage 1 consent card
