@@ -71,7 +71,7 @@ export function IdentityCaptureForm({ driverId, jobId }: Props) {
             value={firstName}
             onChange={(e) => setFirstName(e.target.value)}
             autoComplete="given-name"
-            className="mt-1 block w-full rounded-md border border-brand-rule bg-white px-3 py-2 text-sm text-brand-ink focus:border-brand-medium focus:outline-none"
+            className="mt-1 block w-full rounded-md border border-brand-rule bg-brand-paper px-3 py-2 text-sm text-brand-ink focus:border-brand-medium focus:outline-none"
             disabled={isPending}
           />
         </label>
@@ -81,7 +81,7 @@ export function IdentityCaptureForm({ driverId, jobId }: Props) {
             value={lastName}
             onChange={(e) => setLastName(e.target.value)}
             autoComplete="family-name"
-            className="mt-1 block w-full rounded-md border border-brand-rule bg-white px-3 py-2 text-sm text-brand-ink focus:border-brand-medium focus:outline-none"
+            className="mt-1 block w-full rounded-md border border-brand-rule bg-brand-paper px-3 py-2 text-sm text-brand-ink focus:border-brand-medium focus:outline-none"
             disabled={isPending}
           />
         </label>
@@ -94,7 +94,7 @@ export function IdentityCaptureForm({ driverId, jobId }: Props) {
           onChange={(e) => setEmail(e.target.value)}
           autoComplete="email"
           inputMode="email"
-          className="mt-1 block w-full rounded-md border border-brand-rule bg-white px-3 py-2 text-sm text-brand-ink focus:border-brand-medium focus:outline-none"
+          className="mt-1 block w-full rounded-md border border-brand-rule bg-brand-paper px-3 py-2 text-sm text-brand-ink focus:border-brand-medium focus:outline-none"
           disabled={isPending}
         />
       </label>
@@ -106,7 +106,7 @@ export function IdentityCaptureForm({ driverId, jobId }: Props) {
           onChange={(e) => setPhone(e.target.value)}
           autoComplete="tel"
           inputMode="tel"
-          className="mt-1 block w-full rounded-md border border-brand-rule bg-white px-3 py-2 text-sm text-brand-ink focus:border-brand-medium focus:outline-none"
+          className="mt-1 block w-full rounded-md border border-brand-rule bg-brand-paper px-3 py-2 text-sm text-brand-ink focus:border-brand-medium focus:outline-none"
           disabled={isPending}
         />
       </label>
@@ -118,7 +118,7 @@ export function IdentityCaptureForm({ driverId, jobId }: Props) {
       <button
         type="submit"
         disabled={isPending}
-        className="h-11 w-full rounded-md bg-brand-deep px-5 text-sm font-semibold text-white hover:bg-brand-medium disabled:opacity-50"
+        className="h-11 w-full rounded-md bg-brand-deep px-5 text-sm font-semibold text-brand-paper hover:bg-brand-medium disabled:opacity-50"
       >
         {isPending ? "Saving..." : "Continue"}
       </button>

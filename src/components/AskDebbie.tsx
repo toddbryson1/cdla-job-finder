@@ -122,14 +122,14 @@ export function AskDebbie({
       aria-labelledby="ask-debbie-title"
     >
       <div
-        className="flex h-[90vh] w-full max-w-xl flex-col rounded-t-2xl bg-white shadow-xl sm:h-[600px] sm:rounded-2xl"
+        className="flex h-[90vh] w-full max-w-xl flex-col rounded-t-2xl bg-brand-paper shadow-xl sm:h-[600px] sm:rounded-2xl"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
         <div className="flex items-center gap-3 border-b border-brand-rule px-4 py-3">
           <div
             aria-hidden="true"
-            className="flex h-9 w-9 items-center justify-center rounded-full bg-brand-deep text-sm font-semibold text-white"
+            className="flex h-9 w-9 items-center justify-center rounded-full bg-brand-deep text-sm font-semibold text-brand-paper"
           >
             D
           </div>
@@ -195,13 +195,13 @@ export function AskDebbie({
               placeholder={`Ask about ${carrierName}...`}
               rows={1}
               maxLength={800}
-              className="flex-1 resize-none rounded-md border border-brand-rule bg-white px-3 py-2 text-sm leading-6 text-brand-ink shadow-sm focus:border-brand-medium focus:outline-none focus:ring-2 focus:ring-brand-medium/30"
+              className="flex-1 resize-none rounded-md border border-brand-rule bg-brand-paper px-3 py-2 text-sm leading-6 text-brand-ink shadow-sm focus:border-brand-medium focus:outline-none focus:ring-2 focus:ring-brand-medium/30"
             />
             <button
               type="button"
               onClick={() => void send()}
               disabled={pending || draft.trim().length === 0}
-              className="inline-flex h-10 items-center justify-center rounded-md bg-brand-deep px-4 text-sm font-semibold text-white shadow-sm hover:bg-brand-medium disabled:cursor-not-allowed disabled:opacity-50"
+              className="inline-flex h-10 items-center justify-center rounded-md bg-brand-deep px-4 text-sm font-semibold text-brand-paper shadow-sm hover:bg-brand-medium disabled:cursor-not-allowed disabled:opacity-50"
             >
               Send
             </button>
@@ -230,7 +230,7 @@ function MessageBubble({
         className={
           "max-w-[85%] whitespace-pre-line rounded-2xl px-4 py-2.5 text-sm leading-6 " +
           (isUser
-            ? "rounded-tr-md bg-brand-deep text-white"
+            ? "rounded-tr-md bg-brand-deep text-brand-paper"
             : "rounded-tl-md bg-brand-surface text-brand-ink")
         }
       >

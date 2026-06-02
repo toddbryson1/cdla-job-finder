@@ -67,7 +67,7 @@ export function ExternalJobCard({ match }: Props) {
     <article className="rounded-xl border border-brand-rule bg-brand-surface p-5 sm:p-6">
       {/* Badge row — distinct from MatchCard's "Sponsored Match" etc. */}
       <div className="flex items-center gap-2">
-        <span className="inline-flex items-center rounded-full border border-brand-rule bg-white px-2.5 py-0.5 text-xs font-medium text-brand-muted">
+        <span className="inline-flex items-center rounded-full border border-brand-rule bg-brand-paper px-2.5 py-0.5 text-xs font-medium text-brand-muted">
           Open web listing
         </span>
         {posted ? (
@@ -110,7 +110,7 @@ export function ExternalJobCard({ match }: Props) {
           href={match.redirectUrl}
           target="_blank"
           rel="noopener noreferrer nofollow"
-          className="inline-flex h-11 items-center justify-center rounded-md border border-brand-rule bg-white px-5 text-sm font-medium text-brand-ink hover:bg-brand-surface"
+          className="inline-flex h-11 items-center justify-center rounded-md border border-brand-rule bg-brand-paper px-5 text-sm font-medium text-brand-ink hover:bg-brand-surface"
         >
           View on {sourceLabel(match.source)} &rarr;
         </a>
