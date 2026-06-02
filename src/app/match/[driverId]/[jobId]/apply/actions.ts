@@ -246,6 +246,17 @@ const claimIdentitySchema = z.object({
     .string()
     .trim()
     .regex(/^\+?[\d\s().-]{10,}$/, "phone needs at least 10 digits"),
+  addressStreet: z
+    .string()
+    .trim()
+    .min(2, "Street address needs at least 2 characters")
+    .max(120),
+  addressCity: z.string().trim().min(1).max(80),
+  addressState: z
+    .string()
+    .trim()
+    .toUpperCase()
+    .length(2, "Use the 2-letter state code"),
 });
 
 export async function claimIdentity(input: {
@@ -254,10 +265,17 @@ export async function claimIdentity(input: {
   lastName: string;
   email: string;
   phone: string;
+  addressStreet: string;
+  addressCity: string;
+  addressState: string;
 }): Promise<{ ok: true } | { ok: false; error: string }> {
   const parsed = claimIdentitySchema.safeParse(input);
   if (!parsed.success) {
-    return { ok: false, error: "Invalid input." };
+    const first = parsed.error.issues[0];
+    return {
+      ok: false,
+      error: first?.message ?? "Invalid input.",
+    };
   }
   const d = parsed.data;
 
@@ -296,6 +314,9 @@ export async function claimIdentity(input: {
       lastName: d.lastName,
       email: d.email,
       phone: d.phone,
+      addressStreet: d.addressStreet,
+      addressCity: d.addressCity,
+      addressState: d.addressState,
     })
     .where(eq(drivers.id, d.driverId));
 
