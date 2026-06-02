@@ -72,9 +72,12 @@ export function IdentityCaptureForm({ driverId, jobId }: Props) {
         setError(result.error ?? "Something went wrong. Try again in a moment.");
         return;
       }
-      // Refresh the apply page; the server-side check will now see
-      // contact info on the driver row and render the consent step.
-      router.push(`/match/${driverId}/${jobId}/apply`);
+      // We're already on /match/[driverId]/[jobId]/apply — pushing
+      // the same path was a no-op AND held useTransition's pending
+      // state open until React decided the navigation had "settled,"
+      // which in Next 16 + React 19 can hang. Just refresh; the
+      // server-side check will now see contact info on the driver
+      // row and render the consent step in place.
       router.refresh();
     });
   }

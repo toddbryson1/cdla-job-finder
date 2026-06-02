@@ -324,18 +324,28 @@ export async function claimIdentity(input: {
   // Best-effort: send the Stytch magic link so the driver can come
   // back later without retyping anything. Any failure here is
   // non-fatal — the driver row is already saved.
+  //
+  // Fire-and-forget intentionally. We were awaiting this on the
+  // request path which, when Stytch was slow / unreachable, made
+  // the server action hang for the full upstream timeout — the
+  // client sat on "Saving..." because useTransition's pending state
+  // didn't clear until the action returned. Magic-link delivery is
+  // best-effort copy in the consent paragraph; failing to send it
+  // shouldn't block navigation to the consent step.
   if (isStytchConfigured()) {
-    try {
-      await getStytchClient().magicLinks.email.loginOrCreate({
-        email: d.email,
-        login_magic_link_url: `${appUrl()}/authenticate`,
-        signup_magic_link_url: `${appUrl()}/authenticate`,
-        login_expiration_minutes: MAGIC_LINK_EXPIRATION_MINUTES,
-        signup_expiration_minutes: MAGIC_LINK_EXPIRATION_MINUTES,
-      });
-    } catch (err) {
-      console.error("[claimIdentity] stytch magic-link send failed:", err);
-    }
+    void (async () => {
+      try {
+        await getStytchClient().magicLinks.email.loginOrCreate({
+          email: d.email,
+          login_magic_link_url: `${appUrl()}/authenticate`,
+          signup_magic_link_url: `${appUrl()}/authenticate`,
+          login_expiration_minutes: MAGIC_LINK_EXPIRATION_MINUTES,
+          signup_expiration_minutes: MAGIC_LINK_EXPIRATION_MINUTES,
+        });
+      } catch (err) {
+        console.error("[claimIdentity] stytch magic-link send failed:", err);
+      }
+    })();
   }
 
   // Candidate email + nurture sequence: fire only on first identity
