@@ -1,4 +1,8 @@
 import Link from "next/link";
+import { cookies } from "next/headers";
+
+const HEADER_UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 // Driver-facing site chrome (header + footer). Used by the homepage, the
 // About page, and any future driver-facing pages that aren't /partners
@@ -11,10 +15,20 @@ import Link from "next/link";
 // locked design (cdlajobs-homepage-design.html). The dot is structural,
 // not punctuation — it's the visual mark of matching.
 
-export function SiteShell({ children }: { children: React.ReactNode }) {
+export async function SiteShell({ children }: { children: React.ReactNode }) {
+  // Read the anonymous-intake cookie once at the shell level so the
+  // header CTA can swap from "Talk to Debbie" → "My matches" for any
+  // driver who's already in the system. No DB query — we trust the
+  // cookie value as a URL parameter; /matches re-validates it.
+  const cookieStore = await cookies();
+  const cookieDriverId = cookieStore.get("cdla_driver_id")?.value ?? null;
+  const driverIdForNav =
+    cookieDriverId && HEADER_UUID_RE.test(cookieDriverId)
+      ? cookieDriverId
+      : null;
   return (
     <div className="flex min-h-screen flex-col bg-brand-paper text-brand-ink">
-      <SiteHeader />
+      <SiteHeader driverIdForNav={driverIdForNav} />
       <main className="flex-1">{children}</main>
       <SiteFooter />
     </div>
@@ -39,7 +53,16 @@ function Wordmark({ size = "header" }: { size?: "header" | "footer" }) {
   );
 }
 
-function SiteHeader() {
+function SiteHeader({ driverIdForNav }: { driverIdForNav: string | null }) {
+  // Two nav postures:
+  //   - Returning driver (cookie present): primary CTA = "My matches",
+  //     so every page on the site has a one-click path back to their
+  //     personalized matches list.
+  //   - New visitor: primary CTA = "Talk to Debbie", which scrolls
+  //     to the homepage hero / chat shell.
+  const primaryCta = driverIdForNav
+    ? { href: `/matches/${driverIdForNav}`, label: "My matches" }
+    : { href: "/#hero", label: "Talk to Debbie" };
   return (
     <header className="sticky top-0 z-50 border-b border-brand-rule bg-brand-paper/85 backdrop-blur">
       <div className="mx-auto flex max-w-[1200px] items-center justify-between px-5 py-[18px] sm:px-8">
@@ -70,10 +93,10 @@ function SiteHeader() {
             For carriers
           </Link>
           <Link
-            href="/#hero"
+            href={primaryCta.href}
             className="inline-flex items-center rounded-md bg-brand-deep px-[18px] py-2.5 text-sm font-semibold text-brand-paper transition-colors hover:bg-brand-medium"
           >
-            Talk to Debbie
+            {primaryCta.label}
           </Link>
         </nav>
       </div>
