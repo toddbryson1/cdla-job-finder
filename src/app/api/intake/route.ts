@@ -146,18 +146,40 @@ export async function POST(request: Request) {
       // against the dashboard allow-list. /authenticate looks the driver
       // up by their verified email and routes to /matches/[id] from there.
       const callback = `${appUrl()}/authenticate`;
-      try {
-        await getStytchClient().magicLinks.email.loginOrCreate({
-          email: d.email,
+      // Race the Stytch send against a 3s timer so a slow Stytch
+      // upstream can't hang the entire intake POST. We previously
+      // awaited unconditionally and hit the same stuck-on-submit bug
+      // that the claimIdentity server action had (see commit 7dd8a5e).
+      //
+      // Outcomes:
+      //   - Stytch resolves in <3s   → magicLinkSent = true (real outcome)
+      //   - Stytch throws in <3s     → magicLinkSent = false, logged
+      //   - 3s timer wins            → magicLinkSent = true (we attempted;
+      //                                 the call continues in the background
+      //                                 — Node keeps it alive past the
+      //                                 response). User sees "check your
+      //                                 email" — if nothing arrives they can
+      //                                 retry from /login.
+      const email = d.email;
+      const sendPromise = getStytchClient()
+        .magicLinks.email.loginOrCreate({
+          email,
           login_magic_link_url: callback,
           signup_magic_link_url: callback,
           login_expiration_minutes: MAGIC_LINK_EXPIRATION_MINUTES,
           signup_expiration_minutes: MAGIC_LINK_EXPIRATION_MINUTES,
+        })
+        .then(() => "ok" as const)
+        .catch((err: unknown) => {
+          console.error("[intake] stytch magic-link send failed:", err);
+          return "err" as const;
         });
-        magicLinkSent = true;
-      } catch (err) {
-        console.error("[intake] stytch magic-link send failed:", err);
-      }
+      const TIMEOUT_MS = 3000;
+      const timeoutPromise = new Promise<"timeout">((resolve) =>
+        setTimeout(() => resolve("timeout"), TIMEOUT_MS),
+      );
+      const raceResult = await Promise.race([sendPromise, timeoutPromise]);
+      magicLinkSent = raceResult !== "err";
     }
 
     // Candidate email per

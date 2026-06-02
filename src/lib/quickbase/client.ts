@@ -43,6 +43,18 @@ import type {
 const QUICKBASE_API_BASE = "https://api.quickbase.com/v1";
 const QUICKBASE_RECORDS_PATH = "/records";
 
+/** Hard cap on how long we wait for QuickBase before giving up and
+ * treating the response as a retryable network failure. Picked so a
+ * slow QuickBase upstream can't hang the result-page render once
+ * QUICKBASE_PUSH_ENABLED flips on — pushAndersonHandoff is called
+ * inline from the apply page render path (Pattern 1, spec §B6.2).
+ *
+ * 10s is generous against QuickBase's typical sub-second response
+ * but tight enough that a hung connection bails before the user
+ * notices anything beyond a "loading" beat. A timeout returns
+ * `retryable` so the sweeper picks it up later. */
+export const QUICKBASE_REQUEST_TIMEOUT_MS = 10_000;
+
 export interface QuickbaseHandoffInput {
   driver: typeof drivers.$inferSelect;
   carrierJob: typeof carrierJobs.$inferSelect;
@@ -284,6 +296,11 @@ export async function pushAndersonHandoff(
   const payload = buildRecordPayload(input);
 
   let resp: Response;
+  const ac = new AbortController();
+  const timeoutHandle = setTimeout(
+    () => ac.abort(new Error(`QuickBase request exceeded ${QUICKBASE_REQUEST_TIMEOUT_MS}ms`)),
+    QUICKBASE_REQUEST_TIMEOUT_MS,
+  );
   try {
     resp = await fetch(`${QUICKBASE_API_BASE}${QUICKBASE_RECORDS_PATH}`, {
       method: "POST",
@@ -295,14 +312,25 @@ export async function pushAndersonHandoff(
         Accept: "application/json",
       },
       body: JSON.stringify(payload),
+      signal: ac.signal,
     });
   } catch (err) {
-    // Network error — treat as 5xx-equivalent per spec §B6.3.
+    // Network error (incl. AbortError from the timeout) — treat as
+    // 5xx-equivalent per spec §B6.3. The retry sweeper will retry on
+    // its own schedule.
+    const isTimeout =
+      err instanceof Error &&
+      (err.name === "AbortError" ||
+        err.message.includes("exceeded"));
     return {
       ok: false,
       code: "retryable",
-      error: `network: ${err instanceof Error ? err.message : String(err)}`,
+      error: isTimeout
+        ? `network: timeout after ${QUICKBASE_REQUEST_TIMEOUT_MS}ms`
+        : `network: ${err instanceof Error ? err.message : String(err)}`,
     };
+  } finally {
+    clearTimeout(timeoutHandle);
   }
 
   if (resp.status === 401 || resp.status === 403) {

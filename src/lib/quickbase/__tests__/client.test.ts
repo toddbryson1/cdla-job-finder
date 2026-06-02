@@ -388,4 +388,43 @@ describe("pushAndersonHandoff", () => {
       expect(res.error).toContain("ECONNRESET");
     }
   });
+
+  it("times out instead of hanging if QuickBase doesn't respond", async () => {
+    // Catches the regression we'd hit the moment QUICKBASE_PUSH_ENABLED
+    // flips on: pushAndersonHandoff is called inline from the apply
+    // result page render. A slow / hung QuickBase used to mean the
+    // server component blocked indefinitely. Now we abort and return
+    // a retryable response within the configured timeout window.
+    process.env.QUICKBASE_STERLING_API_TOKEN = "secret-abc";
+    process.env.QUICKBASE_PUSH_ENABLED = "true";
+
+    // Mock fetch to respect the AbortSignal — never resolves on its
+    // own; rejects only when the signal aborts. That mirrors the
+    // real-world "QuickBase is hung" failure mode.
+    vi.spyOn(global, "fetch").mockImplementation(
+      (_url: string | URL | Request, init?: RequestInit) =>
+        new Promise<Response>((_resolve, reject) => {
+          init?.signal?.addEventListener("abort", () =>
+            reject(
+              Object.assign(new Error("aborted"), {
+                name: "AbortError",
+              }),
+            ),
+          );
+        }),
+    );
+
+    vi.useFakeTimers();
+    const promise = pushAndersonHandoff(makeInput());
+    // Advance just past the 10s default; the timeout should abort.
+    await vi.advanceTimersByTimeAsync(10_500);
+    const res = await promise;
+    vi.useRealTimers();
+
+    expect(res.ok).toBe(false);
+    if (!res.ok) {
+      expect(res.code).toBe("retryable");
+      expect(res.error.toLowerCase()).toContain("timeout");
+    }
+  });
 });
