@@ -7,6 +7,7 @@ import { runReverseMatches } from "@/lib/reverse-matches";
 import { syncSwiftJobs } from "@/lib/swift-sync";
 import { runFullSync as runTaSync } from "@/lib/transport-america/sync";
 import { spawnPostingCycles } from "@/lib/posting-cycles";
+import { checkMigrationHealth } from "@/lib/db/migration-health";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -57,6 +58,35 @@ export async function GET(request: Request) {
 
   const runAt = new Date().toISOString();
   const out: Record<string, unknown> = { runAt };
+
+  // 0. migration-health — surface any drift between the codebase's
+  // drizzle journal and the DB's __drizzle_migrations table. Runs
+  // first because if the DB is behind, downstream tasks will likely
+  // fail in confusing ways (e.g. inserts hitting NOT NULL constraints
+  // for columns the code thinks are nullable). On drift we log the
+  // pending tags but do NOT abort — the rest of the daily job may
+  // still produce useful work.
+  try {
+    const health = await checkMigrationHealth();
+    out.migrationHealth = {
+      ok: health.ok,
+      expectedCount: health.expected.count,
+      appliedCount: health.applied.count,
+      latestExpectedTag: health.expected.latestTag,
+      pendingTags: health.pendingTags,
+    };
+    if (!health.ok) {
+      console.error("[cron/daily] " + health.message);
+    } else {
+      console.log("[cron/daily] " + health.message);
+    }
+  } catch (err) {
+    console.error("[cron/daily] migration-health probe failed:", err);
+    out.migrationHealth = {
+      ok: false,
+      error: err instanceof Error ? err.message : String(err),
+    };
+  }
 
   // 1. sync-swift
   try {
