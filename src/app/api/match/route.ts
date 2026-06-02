@@ -78,8 +78,13 @@ export async function POST(request: Request) {
 
     const enrichedMatches = result.matches.map((m) => ({
       ...m,
+      // Prefer the composed displayDescription (description with
+      // displayLane/HomeTime/Benefits fallback) over the raw column —
+      // catches the API-sourced carriers (Swift / USX / PAM) whose
+      // long-form description is null but whose structured display
+      // fields ARE populated.
       descriptionSnippet: descriptionSnippet(
-        extras.get(m.jobId)?.description ?? null,
+        extras.get(m.jobId)?.displayDescription ?? null,
       ),
     }));
 

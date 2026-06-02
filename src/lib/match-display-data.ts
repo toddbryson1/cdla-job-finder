@@ -17,6 +17,65 @@ export interface MatchDisplayExtras {
    * a few hours).
    */
   jobPostingHref: string | null;
+  /**
+   * "Best available" prose for the chat MatchCard snippet and the
+   * /matches MatchCard body. Prefers the long-form `description` when
+   * it has real content (≥60 chars after trim). Otherwise composes
+   * a one-line fallback from display_lane_description +
+   * display_home_time_description + display_benefits_summary, joined
+   * with periods so it reads as prose.
+   *
+   * This exists because Swift / USX / PAM and a few other API-sourced
+   * carriers populate only the structured display fields (not the
+   * long-form `description`). The chat used to render those cards
+   * with no description text at all — driver-visible regression caught
+   * walking prod on 2026-06-02.
+   *
+   * Null only when *every* underlying field is null — a genuinely
+   * undescribed job, which the chat / matches card drops cleanly.
+   */
+  displayDescription: string | null;
+}
+
+/**
+ * Compose a prose-shaped fallback when the canonical `description`
+ * is null or thin. Joins the structured display fields with periods
+ * + spaces so the result reads naturally in a single paragraph.
+ * Returns null when nothing usable is available.
+ *
+ * Exported for unit tests; not used outside this module.
+ */
+export function composeDisplayDescription(input: {
+  description: string | null;
+  displayLaneDescription: string | null;
+  displayHomeTimeDescription: string | null;
+  displayBenefitsSummary: string | null;
+}): string | null {
+  // Use the canonical description when it has real content — a 1-line
+  // "OTR" is technically non-null but adds no value beyond the
+  // position title + equipment label already on the card. Threshold
+  // tuned so the most common stub strings get filtered.
+  const canonical = (input.description ?? "").trim();
+  if (canonical.length >= 60) return canonical;
+
+  const pieces: string[] = [];
+  for (const raw of [
+    input.displayLaneDescription,
+    input.displayHomeTimeDescription,
+    input.displayBenefitsSummary,
+  ]) {
+    if (!raw) continue;
+    const t = raw.trim();
+    if (t.length === 0) continue;
+    // Strip trailing punctuation so we control the join below.
+    pieces.push(t.replace(/[.!?,;:\s]+$/, ""));
+  }
+  if (pieces.length === 0) {
+    // Fall back to the canonical description even if short — a 1-word
+    // value is better than nothing on the card.
+    return canonical.length > 0 ? canonical : null;
+  }
+  return pieces.join(". ") + ".";
 }
 
 export async function loadDisplayExtras(
@@ -90,6 +149,12 @@ export async function loadDisplayExtras(
       displaySigningBonusUsd: r.displaySigningBonusUsd,
       lastVerifiedAt: r.lastVerifiedAt,
       jobPostingHref,
+      displayDescription: composeDisplayDescription({
+        description: r.description,
+        displayLaneDescription: r.displayLaneDescription,
+        displayHomeTimeDescription: r.displayHomeTimeDescription,
+        displayBenefitsSummary: r.displayBenefitsSummary,
+      }),
     });
   }
   return out;
