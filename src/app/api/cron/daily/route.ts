@@ -8,6 +8,7 @@ import { syncSwiftJobs } from "@/lib/swift-sync";
 import { runFullSync as runTaSync } from "@/lib/transport-america/sync";
 import { spawnPostingCycles } from "@/lib/posting-cycles";
 import { checkMigrationHealth } from "@/lib/db/migration-health";
+import { runQbRetrySweeper } from "@/lib/quickbase/retry-sweeper";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -84,6 +85,22 @@ export async function GET(request: Request) {
     console.error("[cron/daily] migration-health probe failed:", err);
     out.migrationHealth = {
       ok: false,
+      error: err instanceof Error ? err.message : String(err),
+    };
+  }
+
+  // 0.5 qb-retry — safety-net sweep of the Anderson QuickBase
+  // retry queue. The dedicated 15-min cron at /api/cron/qb-retry
+  // is the primary driver; this run catches anything missed (e.g.
+  // Vercel cron tier blocks the dedicated entry, or the 15-min job
+  // skips a cycle for any reason). No-op when QUICKBASE_PUSH_ENABLED
+  // is off — spec §B11 attorney gate.
+  try {
+    const result = await runQbRetrySweeper();
+    out.qbRetrySweep = result;
+  } catch (err) {
+    console.error("[cron/daily] qb-retry sweep failed:", err);
+    out.qbRetrySweep = {
       error: err instanceof Error ? err.message : String(err),
     };
   }
