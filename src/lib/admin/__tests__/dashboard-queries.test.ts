@@ -4,12 +4,22 @@
 // data; we just check structural invariants.
 
 import { describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll } from "vitest";
+import { and, eq, sql } from "drizzle-orm";
+import { db } from "@/db/client";
+import {
+  carrierJobs,
+  carriers,
+  drivers,
+  partnerApplicationStages,
+} from "@/db/schema";
 import {
   getCarrierBreakdown,
   getCarrierPerformance30d,
   getCyclesExpiringSoon,
   getDashboardCounts,
   getDriverFunnel30d,
+  getPartnerHandoffFunnel,
   getRecentActivity,
   getRecentArchivedJobs,
   getRecentConsents,
@@ -240,5 +250,249 @@ describe("dashboard-queries.getRecentConsents", () => {
       expect(typeof r.cdl_state).toBe("string");
       expect(r.qualified === null || typeof r.qualified === "boolean").toBe(true);
     }
+  });
+});
+
+describe("dashboard-queries.getPartnerHandoffFunnel", () => {
+  // Seeds + cleans up its own row set so the counts are
+  // deterministic against the row inserts in this block, not the
+  // baseline seed. Uses a sentinel carrier name so cleanup can
+  // scope safely.
+
+  const SENTINEL = "Anderson Handoff Funnel Test (sentinel)";
+  const DRIVER_EMAIL_PREFIX = "handoff-funnel-test+";
+
+  async function cleanup(): Promise<void> {
+    const cs = await db
+      .select({ id: carriers.id })
+      .from(carriers)
+      .where(eq(carriers.name, SENTINEL));
+    for (const c of cs) {
+      await db
+        .delete(partnerApplicationStages)
+        .where(eq(partnerApplicationStages.carrierId, c.id));
+      await db.delete(carrierJobs).where(eq(carrierJobs.carrierId, c.id));
+    }
+    await db.delete(carriers).where(eq(carriers.name, SENTINEL));
+    await db
+      .delete(drivers)
+      .where(sql`${drivers.email} LIKE ${DRIVER_EMAIL_PREFIX + "%"}`);
+  }
+
+  async function seedCarrierAndJob() {
+    const [c] = await db
+      .insert(carriers)
+      .values({
+        name: SENTINEL,
+        kind: "partner",
+        tier: "none",
+        status: "active",
+        partnerHandoffConfig: { handoff_type: "anderson_quickbase" },
+      })
+      .returning({ id: carriers.id });
+    const [j] = await db
+      .insert(carrierJobs)
+      .values({
+        carrierId: c!.id,
+        status: "active",
+        positionTitle: "Test job",
+        domicileCity: "St. Cloud",
+        domicileState: "MN",
+        domicileLat: "45.557900",
+        domicileLng: "-94.163200",
+        hiringRadiusMiles: 1500,
+        equipment: "dry-van",
+        minExperienceMonths: 6,
+        acceptedHomeTimeTypes: ["otr"],
+        sapTolerance: "accepts_none",
+        applicationSurface: "tenstreet_intelliapp",
+        dataSource: "manual_partner_intake",
+        verificationStatus: "verified",
+        dataQuality: "complete",
+      })
+      .returning({ id: carrierJobs.id });
+    return { carrierId: c!.id, jobId: j!.id };
+  }
+
+  async function seedDriver(suffix: string): Promise<string> {
+    const [row] = await db
+      .insert(drivers)
+      .values({
+        firstName: "Pat",
+        lastName: `Funnel${suffix}`,
+        email: `${DRIVER_EMAIL_PREFIX}${suffix}@example.com`,
+        phone: "555-555-1234",
+        homeZip: "56301",
+        cdlState: "MN",
+        yearsHeld: "3",
+        otrYears: "2",
+        equipmentRun: ["dry-van"],
+        desiredEquipment: ["dry-van"],
+        desiredRegions: ["any"],
+        homeTime: ["otr"],
+        terminatedFromAnyOfLast3Employers: false,
+        failedDotTest: false,
+        attestAccurate: true,
+        consentToShare: true,
+      })
+      .returning({ id: drivers.id });
+    return row!.id;
+  }
+
+  beforeAll(async () => {
+    await cleanup();
+  });
+  afterAll(async () => {
+    await cleanup();
+  });
+  afterEach(async () => {
+    await cleanup();
+  });
+
+  it("returns the empty-state shape when no handoff rows exist", async () => {
+    // Cleanup just ran, so no sentinel rows. The funnel still
+    // reflects any prod-shaped rows in the test DB — we only assert
+    // structure here.
+    const r = await getPartnerHandoffFunnel();
+    expect(r.byStage.apply_initiated).toBeGreaterThanOrEqual(0);
+    expect(r.byStage.intelliapp_link_sent).toBeGreaterThanOrEqual(0);
+    expect(r.byStage.submitted_to_sterling).toBeGreaterThanOrEqual(0);
+    expect(r.byStage.submit_failed_validation).toBeGreaterThanOrEqual(0);
+    expect(r.byStage.submit_queued_for_retry).toBeGreaterThanOrEqual(0);
+    expect(r.byStage.stalled).toBeGreaterThanOrEqual(0);
+    expect(r.total).toBeGreaterThanOrEqual(0);
+    expect(r.retryDueNow).toBeGreaterThanOrEqual(0);
+    expect(r.sterlingConfirmed).toBeGreaterThanOrEqual(0);
+    expect(r.totalAttempts).toBeGreaterThanOrEqual(0);
+    expect(
+      r.latestSubmissionAt === null || r.latestSubmissionAt instanceof Date,
+    ).toBe(true);
+  });
+
+  it("counts new rows correctly by stage + tracks total + attempts", async () => {
+    const { carrierId, jobId } = await seedCarrierAndJob();
+    const drvA = await seedDriver("A");
+    const drvB = await seedDriver("B");
+    const drvC = await seedDriver("C");
+
+    const baseline = await getPartnerHandoffFunnel();
+
+    await db.insert(partnerApplicationStages).values([
+      {
+        driverId: drvA,
+        carrierJobId: jobId,
+        carrierId,
+        stage: "intelliapp_link_sent",
+        quickbasePushAttempts: 0,
+      },
+      {
+        driverId: drvB,
+        carrierJobId: jobId,
+        carrierId,
+        stage: "submitted_to_sterling",
+        quickbasePushAttempts: 1,
+        quickbaseRecordId: "abc123",
+        quickbasePushSucceededAt: new Date("2026-06-02T10:00:00Z"),
+      },
+      {
+        driverId: drvC,
+        carrierJobId: jobId,
+        carrierId,
+        stage: "submit_failed_validation",
+        quickbasePushAttempts: 3,
+      },
+    ]);
+
+    const after = await getPartnerHandoffFunnel();
+
+    // Delta should match the 3 inserted rows.
+    expect(after.total - baseline.total).toBe(3);
+    expect(
+      after.byStage.intelliapp_link_sent - baseline.byStage.intelliapp_link_sent,
+    ).toBe(1);
+    expect(
+      after.byStage.submitted_to_sterling -
+        baseline.byStage.submitted_to_sterling,
+    ).toBe(1);
+    expect(
+      after.byStage.submit_failed_validation -
+        baseline.byStage.submit_failed_validation,
+    ).toBe(1);
+
+    // Attempts: 0 + 1 + 3 = 4
+    expect(after.totalAttempts - baseline.totalAttempts).toBe(4);
+
+    // Sterling-confirmed: only the row with a quickbase_record_id.
+    expect(after.sterlingConfirmed - baseline.sterlingConfirmed).toBe(1);
+
+    // Latest submission timestamp picks up the new max.
+    expect(after.latestSubmissionAt).not.toBeNull();
+    if (after.latestSubmissionAt) {
+      expect(after.latestSubmissionAt.getTime()).toBeGreaterThanOrEqual(
+        new Date("2026-06-02T10:00:00Z").getTime(),
+      );
+    }
+  });
+
+  it("retryDueNow counts only rows whose next_retry_at <= now", async () => {
+    const { carrierId, jobId } = await seedCarrierAndJob();
+    const drvA = await seedDriver("dueA");
+    const drvB = await seedDriver("notDueB");
+
+    const baseline = await getPartnerHandoffFunnel();
+
+    await db.insert(partnerApplicationStages).values([
+      {
+        driverId: drvA,
+        carrierJobId: jobId,
+        carrierId,
+        stage: "submit_queued_for_retry",
+        quickbasePushAttempts: 1,
+        quickbaseNextRetryAt: new Date(Date.now() - 60_000), // 1 min ago — DUE
+      },
+      {
+        driverId: drvB,
+        carrierJobId: jobId,
+        carrierId,
+        stage: "submit_queued_for_retry",
+        quickbasePushAttempts: 1,
+        quickbaseNextRetryAt: new Date(Date.now() + 60 * 60 * 1000), // in 1h — NOT due
+      },
+    ]);
+
+    const after = await getPartnerHandoffFunnel();
+
+    // Both rows count toward submit_queued_for_retry stage.
+    expect(
+      after.byStage.submit_queued_for_retry -
+        baseline.byStage.submit_queued_for_retry,
+    ).toBe(2);
+
+    // But only the past-due row counts toward retryDueNow.
+    expect(after.retryDueNow - baseline.retryDueNow).toBe(1);
+  });
+
+  it("ignores rows where stage is not submit_queued_for_retry even if next_retry_at is set", async () => {
+    // Belt-and-suspenders: the partial index in migration 0027 only
+    // covers stage='submit_queued_for_retry', but the query also has
+    // an explicit stage filter. Make sure that still works if a row
+    // somehow has a stale next_retry_at on a terminal stage.
+    const { carrierId, jobId } = await seedCarrierAndJob();
+    const drv = await seedDriver("stale");
+    const baseline = await getPartnerHandoffFunnel();
+
+    await db.insert(partnerApplicationStages).values({
+      driverId: drv,
+      carrierJobId: jobId,
+      carrierId,
+      stage: "submitted_to_sterling", // terminal
+      quickbasePushAttempts: 1,
+      quickbaseRecordId: "abc",
+      // Stale: should be cleared but isn't. Funnel must not count this.
+      quickbaseNextRetryAt: new Date(Date.now() - 60_000),
+    });
+
+    const after = await getPartnerHandoffFunnel();
+    expect(after.retryDueNow - baseline.retryDueNow).toBe(0);
   });
 });
