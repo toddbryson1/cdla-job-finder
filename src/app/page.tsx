@@ -1,7 +1,11 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { cookies } from "next/headers";
+import { eq } from "drizzle-orm";
 import { SiteShell } from "@/components/SiteShell";
 import { DebbieIntakeChat } from "@/components/DebbieIntakeChat";
+import { db } from "@/db/client";
+import { drivers } from "@/db/schema";
 
 // Copy is locked verbatim per SPEC_homepage-copy-v1.md and the design
 // reference at cdlajobs-homepage-design.html. Do NOT paraphrase
@@ -37,10 +41,46 @@ export const metadata: Metadata = {
   },
 };
 
-export default function HomePage() {
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * Returning-driver lookup: anonymous intake sets cdla_driver_id, so a
+ * driver who finished intake and then revisits / will have the cookie.
+ * Without this check the homepage was inviting them to start a fresh
+ * intake every time — actual conversion killer for repeat visits.
+ *
+ * We return both the driver id and the first name (when present) so
+ * the welcome-back card can greet them. firstName is null for
+ * anonymous-intake drivers who haven't claimed identity yet.
+ */
+async function getReturningDriver(): Promise<{
+  id: string;
+  firstName: string | null;
+} | null> {
+  const cookieStore = await cookies();
+  const id = cookieStore.get("cdla_driver_id")?.value;
+  if (!id || !UUID_RE.test(id)) return null;
+  try {
+    const row = await db.query.drivers.findFirst({
+      where: eq(drivers.id, id),
+      columns: { id: true, firstName: true },
+    });
+    if (!row) return null;
+    return { id: row.id, firstName: row.firstName };
+  } catch {
+    // DB hiccup — render the homepage as if anonymous. Better to
+    // show the chat (which fails closed if needed) than to error
+    // the whole page.
+    return null;
+  }
+}
+
+export default async function HomePage() {
+  const returning = await getReturningDriver();
   return (
     <SiteShell>
-      <Hero />
+      <Hero returning={returning} />
       <HowItWorks />
       <WhyDifferent />
       <ForCarriers />
@@ -48,7 +88,11 @@ export default function HomePage() {
   );
 }
 
-function Hero() {
+function Hero({
+  returning,
+}: {
+  returning: { id: string; firstName: string | null } | null;
+}) {
   return (
     <section className="relative overflow-hidden bg-brand-paper" id="hero">
       <div className="relative mx-auto grid max-w-6xl gap-12 px-5 pb-16 pt-14 sm:gap-16 sm:pb-24 sm:pt-20 lg:grid-cols-[1fr_1.05fr] lg:items-center">
@@ -90,13 +134,93 @@ function Hero() {
           </ul>
         </div>
 
-        <DebbieIntakeChat
-          audioEnabled={debbieAudioEnabled()}
-          resumeEnabled={debbieResumeEnabled()}
-        />
+        {returning ? (
+          <WelcomeBackCard
+            driverId={returning.id}
+            firstName={returning.firstName}
+          />
+        ) : (
+          <DebbieIntakeChat
+            audioEnabled={debbieAudioEnabled()}
+            resumeEnabled={debbieResumeEnabled()}
+          />
+        )}
       </div>
     </section>
   );
+}
+
+/**
+ * Card that replaces the Debbie chat shell in the hero for drivers
+ * who already have a session cookie. Primary CTA goes straight to
+ * their matches; secondary affordance lets them start fresh if for
+ * some reason they want to (different driver on the same device,
+ * decided to redo intake, etc.).
+ *
+ * Intentionally similar visual weight to the chat shell it replaces
+ * so the page rhythm stays consistent — same rounded card on
+ * brand-paper, same rough vertical footprint.
+ */
+function WelcomeBackCard({
+  driverId,
+  firstName,
+}: {
+  driverId: string;
+  firstName: string | null;
+}) {
+  const greeting = firstName ? `Welcome back, ${firstName}.` : "Welcome back.";
+  return (
+    <div className="rounded-2xl border border-brand-rule bg-brand-paper p-6 shadow-sm sm:p-8">
+      <p className="text-xs font-semibold uppercase tracking-[0.12em] text-brand-medium">
+        Picking up where you left off
+      </p>
+      <h2 className="mt-3 text-2xl font-bold tracking-tight text-brand-ink sm:text-3xl">
+        {greeting}
+      </h2>
+      <p className="mt-3 text-base leading-7 text-brand-ink">
+        Your matches are saved. You can jump straight back to them — no need
+        to redo your intake.
+      </p>
+      <div className="mt-6 flex flex-wrap items-center gap-3">
+        <Link
+          href={`/matches/${driverId}`}
+          className="inline-flex h-12 items-center justify-center rounded-md bg-brand-deep px-6 text-sm font-semibold text-brand-paper shadow-sm transition-colors hover:bg-brand-medium"
+        >
+          See my matches
+        </Link>
+        {/* "Start fresh" → POST to a server action that clears the
+            cookie + revalidates. The form is styled to look like a
+            link to keep the visual hierarchy (matches CTA primary). */}
+        <form action={resetIntakeSession}>
+          <button
+            type="submit"
+            className="text-sm font-medium text-brand-muted underline-offset-2 hover:text-brand-ink hover:underline"
+          >
+            Or start a fresh intake
+          </button>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Server action — clears the cdla_driver_id cookie and revalidates
+ * the homepage. After this fires the driver lands back on / with no
+ * cookie and sees the Debbie chat shell again, ready for a fresh
+ * intake. Used by the "Or start a fresh intake" button on the
+ * returning-driver welcome card.
+ *
+ * Doesn't delete the underlying driver row — the user can still
+ * sign in at /login and find their previous matches if they change
+ * their mind. We only let go of the cookie.
+ */
+async function resetIntakeSession() {
+  "use server";
+  const { revalidatePath } = await import("next/cache");
+  const cookieStore = await cookies();
+  cookieStore.delete("cdla_driver_id");
+  revalidatePath("/");
 }
 
 // Server-side feature-flag reads for the mic + paperclip buttons.
