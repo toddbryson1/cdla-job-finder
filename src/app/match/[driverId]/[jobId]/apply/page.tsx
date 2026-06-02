@@ -25,6 +25,10 @@ import {
   parseResultPageCopyOverrides,
   type ResultPageCopyOverrides,
 } from "./resultCopyOverrides";
+import {
+  pickNextUnappliedMatch,
+  type NextMatchSuggestion,
+} from "@/lib/apply/pick-next-match";
 
 // TODO: add step-up verification before Stage 2 consent
 // (attorney addendum Q10 — magic-link session is "limited"; a step-up SMS
@@ -422,6 +426,17 @@ async function ResultScreen({
     console.error("[apply] failed to persist qualification outcome:", err);
   }
 
+  // Suggest the next un-applied match so the "Apply to next" button
+  // can render with a concrete target. Best-effort: if the engine
+  // errors we just hide the button — driver can still hit "Back to
+  // matches" and pick manually.
+  let nextSuggestion: NextMatchSuggestion | null = null;
+  try {
+    nextSuggestion = await pickNextUnappliedMatch(driverId, jobId);
+  } catch (err) {
+    console.error("[apply] pickNextUnappliedMatch failed:", err);
+  }
+
   if (result.qualifies) {
     // Anderson-style carriers route to Sterling QuickBase as a
     // post-application handoff. Fire once when the result page
@@ -443,6 +458,7 @@ async function ResultScreen({
         job={job}
         carrier={carrier}
         swiftSubmitted={swiftSubmitted}
+        nextSuggestion={nextSuggestion}
       />
     );
   }
@@ -451,6 +467,7 @@ async function ResultScreen({
       driverId={driverId}
       carrierName={carrierName}
       reasons={result.reasons}
+      nextSuggestion={nextSuggestion}
     />
   );
 }
@@ -467,6 +484,7 @@ function Qualified({
   job,
   carrier,
   swiftSubmitted,
+  nextSuggestion,
 }: {
   driverId: string;
   jobId: string;
@@ -474,6 +492,7 @@ function Qualified({
   job: typeof carrierJobs.$inferSelect;
   carrier: typeof carriers.$inferSelect;
   swiftSubmitted: boolean;
+  nextSuggestion: NextMatchSuggestion | null;
 }) {
   const overrides = parseResultPageCopyOverrides(carrier.resultPageCopyOverrides);
   return (
@@ -521,14 +540,7 @@ function Qualified({
         ) : null}
       </div>
 
-      <div className="mt-10">
-        <Link
-          href={`/matches/${driverId}`}
-          className="inline-flex h-11 items-center justify-center rounded-md border border-brand-rule px-5 text-sm font-medium text-brand-ink hover:bg-brand-surface"
-        >
-          Back to matches
-        </Link>
-      </div>
+      <KeepGoingNav driverId={driverId} next={nextSuggestion} />
     </>
   );
 }
@@ -778,10 +790,12 @@ function NotQualified({
   driverId,
   carrierName,
   reasons,
+  nextSuggestion,
 }: {
   driverId: string;
   carrierName: string;
   reasons: string[];
+  nextSuggestion: NextMatchSuggestion | null;
 }) {
   const timeBased = reasons.includes("dui_too_recent");
   return (
@@ -805,15 +819,80 @@ function NotQualified({
           matches page has other options that may be a better fit right now.
         </p>
       )}
-      <div className="mt-8">
+      <KeepGoingNav driverId={driverId} next={nextSuggestion} />
+    </>
+  );
+}
+
+/**
+ * Shared "keep moving through the funnel" nav on Stage 2 result
+ * pages (both Qualified and NotQualified). Two affordances side-by-
+ * side per spec / per user direction:
+ *
+ *   - Primary CTA: "Apply to {next carrier}" → /match/[driverId]/[jobId]/apply
+ *     Skips re-asking for identity since the driver row already has
+ *     name/email/phone/address from the first apply.
+ *   - Secondary link: "Back to all matches" → /matches/[driverId]
+ *
+ * When there's no next un-applied match the primary CTA is hidden
+ * and the secondary becomes the only affordance (Back to matches stays
+ * visually primary so the page still has a strong end-action).
+ */
+function KeepGoingNav({
+  driverId,
+  next,
+}: {
+  driverId: string;
+  next: NextMatchSuggestion | null;
+}) {
+  if (!next) {
+    return (
+      <div className="mt-10">
         <Link
           href={`/matches/${driverId}`}
           className="inline-flex h-11 items-center justify-center rounded-md bg-brand-deep px-5 text-sm font-semibold text-brand-paper shadow-sm hover:bg-brand-medium"
         >
           Back to my matches
         </Link>
+        <p className="mt-3 text-xs text-brand-muted">
+          You&rsquo;ve gone through every carrier we matched you with. New
+          carriers join regularly — we&rsquo;ll email you when there&rsquo;s
+          a new fit.
+        </p>
       </div>
-    </>
+    );
+  }
+  const where =
+    next.domicileCity && next.domicileState
+      ? `${next.domicileCity}, ${next.domicileState}`
+      : next.domicileState || next.domicileCity;
+  return (
+    <div className="mt-10 border-t border-brand-rule pt-6">
+      <p className="text-xs font-semibold uppercase tracking-wide text-brand-muted">
+        Keep going
+      </p>
+      <p className="mt-2 text-sm leading-6 text-brand-ink">
+        Next match in your list is{" "}
+        <span className="font-semibold">{next.carrierName}</span> —{" "}
+        {next.positionTitle}
+        {where ? <> out of {where}</> : null}. We already have your info, so
+        you won&rsquo;t have to re-type it.
+      </p>
+      <div className="mt-4 flex flex-wrap items-center gap-3">
+        <Link
+          href={`/match/${driverId}/${next.jobId}/apply`}
+          className="inline-flex h-11 items-center justify-center rounded-md bg-brand-deep px-5 text-sm font-semibold text-brand-paper shadow-sm hover:bg-brand-medium"
+        >
+          Apply to {next.carrierName}
+        </Link>
+        <Link
+          href={`/matches/${driverId}`}
+          className="inline-flex h-11 items-center justify-center rounded-md border border-brand-rule px-5 text-sm font-medium text-brand-ink hover:bg-brand-surface"
+        >
+          Back to all matches
+        </Link>
+      </div>
+    </div>
   );
 }
 
