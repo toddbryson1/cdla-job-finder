@@ -528,6 +528,7 @@ export function DebbieIntakeChat({ audioEnabled }: DebbieIntakeChatProps) {
             onSmsOptInChange={setSmsOptIn}
             submitting={submitting}
             onSubmit={onSubmitConsent}
+            audioEnabled={audioEnabled}
           />
         ) : null}
         {matchPhase === "pending" ? <TypingIndicator /> : null}
@@ -607,6 +608,44 @@ export function DebbieIntakeChat({ audioEnabled }: DebbieIntakeChatProps) {
           Use the form instead
         </Link>{" "}
         if you'd rather type than chat.
+      </p>
+    </div>
+  );
+}
+
+// Voice-processing disclosure — renders in the Stage 1 consent card
+// when audio is enabled, hidden otherwise. Per spec §6.5: audio
+// processing introduces voice/biometric data handling that requires
+// state-level BIPA / CUBI / WA disclosure language.
+//
+// ⚠ ATTORNEY REVIEW PENDING (spec §12). This copy is a developer-
+// drafted placeholder intended for counsel revision before the
+// DEBBIE_AUDIO_ENABLED flag flips to true in production. Specific
+// points the spec calls out that need counsel decisions:
+//
+//   1. Whether to name OpenAI Whisper as the third-party service
+//      explicitly (we do — biometric statutes generally favor
+//      naming the processor).
+//   2. State-specific consent-vs-notice framing for IL / TX / WA
+//      residents — BIPA requires written informed consent for
+//      biometric collection; the "voice processed for transcription
+//      only, not retained" framing may avoid the biometric-data
+//      classification but counsel decides.
+//   3. Whether to gate behind a separate unchecked checkbox (like
+//      the SMS opt-in) or carry under the existing matching consent.
+//      We chose plain-text disclosure for now — flag for counsel.
+//   4. Retention language — OpenAI's standard policy does not retain
+//      Whisper audio, but the disclosure should pin this in case the
+//      provider changes terms.
+function VoiceProcessingDisclosure() {
+  return (
+    <div className="mt-3 rounded-md border border-brand-rule bg-brand-paper p-3 text-[12.5px] leading-5 text-brand-muted">
+      <p>
+        <strong className="text-brand-ink">Voice input.</strong> If you tap
+        the mic, your audio is sent to OpenAI&rsquo;s Whisper service for
+        transcription only. Neither CDLA.jobs nor OpenAI keeps the
+        recording. You review every transcript before sending. You can
+        always type instead.
       </p>
     </div>
   );
@@ -742,6 +781,7 @@ function ConsentCard({
   onSmsOptInChange,
   submitting,
   onSubmit,
+  audioEnabled,
 }: {
   checked: boolean;
   onCheckedChange: (v: boolean) => void;
@@ -749,6 +789,7 @@ function ConsentCard({
   onSmsOptInChange: (v: boolean) => void;
   submitting: boolean;
   onSubmit: () => void;
+  audioEnabled: boolean;
 }) {
   return (
     <div className="self-stretch rounded-2xl border border-brand-rule bg-brand-paper p-5 shadow-sm">
@@ -785,6 +826,7 @@ function ConsentCard({
           Reply STOP any time to opt out. <em>Optional.</em>
         </span>
       </label>
+      {audioEnabled ? <VoiceProcessingDisclosure /> : null}
       <button
         type="button"
         onClick={onSubmit}
