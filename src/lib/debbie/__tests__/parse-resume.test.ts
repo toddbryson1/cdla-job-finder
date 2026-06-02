@@ -14,19 +14,36 @@ describe("isMimeAccepted", () => {
     expect(isMimeAccepted("text/plain")).toBe(true);
   });
 
+  it("accepts JPEG / PNG / WebP (driver photographs a paper resume per spec §7.1)", () => {
+    expect(isMimeAccepted("image/jpeg")).toBe(true);
+    expect(isMimeAccepted("image/png")).toBe(true);
+    expect(isMimeAccepted("image/webp")).toBe(true);
+  });
+
   it("is case-insensitive", () => {
     expect(isMimeAccepted("APPLICATION/PDF")).toBe(true);
     expect(isMimeAccepted("Text/Plain")).toBe(true);
+    expect(isMimeAccepted("Image/JPEG")).toBe(true);
   });
 
-  it("rejects the formats deferred to a later session", () => {
-    expect(isMimeAccepted("application/vnd.openxmlformats-officedocument.wordprocessingml.document")).toBe(false); // DOCX
-    expect(isMimeAccepted("image/jpeg")).toBe(false);
-    expect(isMimeAccepted("image/png")).toBe(false);
+  it("rejects formats deferred to a later session", () => {
+    // DOCX needs a transcoding step (mammoth or equivalent) — Anthropic
+    // doesn't read DOCX natively. Deferred for now.
+    expect(
+      isMimeAccepted(
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      ),
+    ).toBe(false);
+    // HEIC is iOS-only and adds complexity (Anthropic doesn't accept it
+    // directly — would need to convert to JPEG first). Drivers can take
+    // a screenshot to convert.
+    expect(isMimeAccepted("image/heic")).toBe(false);
+    expect(isMimeAccepted("image/heif")).toBe(false);
   });
 
-  it("rejects arbitrary octet-stream", () => {
+  it("rejects arbitrary octet-stream + GIFs (vision API doesn't support GIF input)", () => {
     expect(isMimeAccepted("application/octet-stream")).toBe(false);
+    expect(isMimeAccepted("image/gif")).toBe(false);
   });
 });
 

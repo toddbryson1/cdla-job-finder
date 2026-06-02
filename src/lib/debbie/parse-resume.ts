@@ -29,14 +29,33 @@ import Anthropic from "@anthropic-ai/sdk";
 
 const MODEL = "claude-haiku-4-5";
 
-/** Whisper's hard limit is 25MB; resumes are tiny so we're stricter. */
+/** Whisper's hard limit is 25MB; resumes are tiny so we're stricter.
+ * Anthropic's image-input limit is 5MB per image too, so this lines
+ * up cleanly with both code paths.
+ */
 export const MAX_RESUME_BYTES = 5 * 1024 * 1024; // 5 MiB
 export const MIN_RESUME_BYTES = 200;
 
+// Spec §7.1 lists PDF + DOCX + TXT + common image formats. v1
+// supports PDF + TXT + the common photo mimes (JPEG/PNG/WebP).
+// DOCX is deferred — requires a transcoding step (mammoth or
+// equivalent) since Anthropic doesn't read DOCX natively. HEIC is
+// also deferred (iOS-only; users can switch camera setting or take
+// a screenshot to convert).
 const ACCEPTED_MIMES = [
   "application/pdf",
   "text/plain",
+  "image/jpeg",
+  "image/png",
+  "image/webp",
 ] as const;
+
+type ImageMime = "image/jpeg" | "image/png" | "image/webp";
+
+function isImageMime(mime: string): mime is ImageMime {
+  const m = mime.toLowerCase();
+  return m === "image/jpeg" || m === "image/png" || m === "image/webp";
+}
 
 export function isResumeEnabled(): boolean {
   const key = process.env.ANTHROPIC_API_KEY;
@@ -172,26 +191,44 @@ export async function parseResume(
 
   const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! });
 
-  // Anthropic accepts PDFs as base64-encoded document content blocks
-  // natively (no upstream OCR step). For text resumes we just send
-  // the body as a plain text block — Claude reads either equally well.
+  // Three input branches:
+  //   - PDF → base64 `document` content block (Anthropic reads
+  //     natively, no upstream OCR step)
+  //   - Image → base64 `image` content block (vision input). Common
+  //     for drivers who photograph a paper resume per spec §7.1.
+  //   - Text → plain `text` block.
+  const mimeLower = mimeType.toLowerCase();
+  let payloadBlock: Anthropic.ContentBlockParam;
+  if (mimeLower === "application/pdf") {
+    payloadBlock = {
+      type: "document",
+      source: {
+        type: "base64",
+        media_type: "application/pdf",
+        data: buf.toString("base64"),
+      },
+    };
+  } else if (isImageMime(mimeLower)) {
+    payloadBlock = {
+      type: "image",
+      source: {
+        type: "base64",
+        media_type: mimeLower,
+        data: buf.toString("base64"),
+      },
+    };
+  } else {
+    payloadBlock = {
+      type: "text",
+      text: buf.toString("utf-8"),
+    };
+  }
+
   const messages: Anthropic.MessageParam[] = [
     {
       role: "user",
       content: [
-        mimeType.toLowerCase() === "application/pdf"
-          ? {
-              type: "document",
-              source: {
-                type: "base64",
-                media_type: "application/pdf",
-                data: buf.toString("base64"),
-              },
-            }
-          : {
-              type: "text",
-              text: buf.toString("utf-8"),
-            },
+        payloadBlock,
         {
           type: "text",
           text: "Extract what you can. Leave fields you can't confirm unset.",
