@@ -61,7 +61,7 @@ function FaqList({
         <h2 className="text-xl font-semibold tracking-tight text-brand-ink sm:text-2xl">
           {heading}
         </h2>
-        <dl className="mt-6 divide-y divide-brand-rule rounded-lg border border-brand-rule bg-white">
+        <dl className="mt-6 divide-y divide-brand-rule rounded-lg border border-brand-rule bg-brand-paper">
           {items.map((it) => (
             <div key={it.q} className="px-5 py-5 sm:px-6">
               <dt className="text-base font-semibold text-brand-ink">
@@ -92,13 +92,13 @@ function StillStuck() {
         <div className="mt-6 flex flex-wrap gap-3">
           <Link
             href="/intake"
-            className="inline-flex h-11 items-center justify-center rounded-md bg-brand-deep px-5 text-sm font-semibold text-white shadow-sm hover:bg-brand-medium"
+            className="inline-flex h-11 items-center justify-center rounded-md bg-brand-deep px-5 text-sm font-semibold text-brand-paper shadow-sm hover:bg-brand-medium"
           >
             Start your intake
           </Link>
           <a
             href="mailto:sales@cdla.jobs"
-            className="inline-flex h-11 items-center justify-center rounded-md border border-brand-rule bg-white px-5 text-sm font-medium text-brand-ink hover:bg-white"
+            className="inline-flex h-11 items-center justify-center rounded-md border border-brand-rule bg-brand-paper px-5 text-sm font-medium text-brand-ink hover:bg-brand-paper"
           >
             Email us
           </a>

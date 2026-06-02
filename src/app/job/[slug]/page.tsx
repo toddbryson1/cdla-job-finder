@@ -536,13 +536,13 @@ export default async function JobPostingPage({
           <div className="mt-5 flex flex-wrap items-center gap-3">
             <Link
               href="/intake"
-              className="inline-flex h-11 items-center justify-center rounded-md bg-brand-deep px-5 text-sm font-semibold text-white hover:bg-brand-medium"
+              className="inline-flex h-11 items-center justify-center rounded-md bg-brand-deep px-5 text-sm font-semibold text-brand-paper hover:bg-brand-medium"
             >
               Start the 6-minute intake
             </Link>
             <Link
               href="/login"
-              className="inline-flex h-11 items-center justify-center rounded-md border border-brand-rule bg-white px-4 text-sm font-medium text-brand-ink hover:border-brand-medium hover:bg-brand-surface"
+              className="inline-flex h-11 items-center justify-center rounded-md border border-brand-rule bg-brand-paper px-4 text-sm font-medium text-brand-ink hover:border-brand-medium hover:bg-brand-surface"
             >
               Already started — sign in
             </Link>

@@ -169,7 +169,7 @@ function WhatWeBelieve() {
           {beliefs.map((b) => (
             <li
               key={b.title}
-              className="rounded-lg border border-brand-rule bg-white p-5"
+              className="rounded-lg border border-brand-rule bg-brand-paper p-5"
             >
               <p className="text-base font-semibold text-brand-ink">
                 {b.title}

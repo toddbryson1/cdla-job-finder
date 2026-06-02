@@ -84,7 +84,7 @@ export default async function CarriersIndexPage() {
         <div className="mt-6">
           <Link
             href="/intake"
-            className="inline-flex h-11 items-center justify-center rounded-md bg-brand-deep px-5 text-sm font-semibold text-white hover:bg-brand-medium transition-colors"
+            className="inline-flex h-11 items-center justify-center rounded-md bg-brand-deep px-5 text-sm font-semibold text-brand-paper hover:bg-brand-medium transition-colors"
           >
             Match in 6 minutes
           </Link>
@@ -106,7 +106,7 @@ export default async function CarriersIndexPage() {
                 <li key={r.name}>
                   <Link
                     href={`/carriers/${slug}`}
-                    className="flex items-center justify-between rounded-xl border border-brand-rule bg-white p-4 hover:border-brand-medium hover:bg-brand-surface transition-colors"
+                    className="flex items-center justify-between rounded-xl border border-brand-rule bg-brand-paper p-4 hover:border-brand-medium hover:bg-brand-surface transition-colors"
                   >
                     <span className="text-base font-semibold text-brand-ink">
                       {displayCarrierName(r.name)}

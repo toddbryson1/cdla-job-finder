@@ -192,7 +192,7 @@ export default async function CarrierProfilePage({
         <div className="mt-6">
           <Link
             href="/intake"
-            className="inline-flex h-11 items-center justify-center rounded-md bg-brand-deep px-5 text-sm font-semibold text-white hover:bg-brand-medium transition-colors"
+            className="inline-flex h-11 items-center justify-center rounded-md bg-brand-deep px-5 text-sm font-semibold text-brand-paper hover:bg-brand-medium transition-colors"
           >
             Match with {name} in 6 minutes
           </Link>
@@ -243,7 +243,7 @@ export default async function CarrierProfilePage({
                       <li key={j.cycle_id}>
                         <Link
                           href={`/job/${cycleSlug}`}
-                          className="block rounded-xl border border-brand-rule bg-white p-4 hover:border-brand-medium hover:bg-brand-surface transition-colors"
+                          className="block rounded-xl border border-brand-rule bg-brand-paper p-4 hover:border-brand-medium hover:bg-brand-surface transition-colors"
                         >
                           <p className="text-sm font-semibold text-brand-ink">
                             {j.position_title}

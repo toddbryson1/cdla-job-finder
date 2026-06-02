@@ -209,7 +209,7 @@ export default async function ArticlePage({
         )}
 
         {article.ctaBlock?.trim() && (
-          <section className="mt-10 rounded-md border border-brand-deep bg-brand-deep p-6 text-white">
+          <section className="mt-10 rounded-md border border-brand-deep bg-brand-deep p-6 text-brand-paper">
             <div className="text-base leading-relaxed">
               <ReactMarkdown remarkPlugins={[remarkGfm]}>
                 {article.ctaBlock}
