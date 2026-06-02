@@ -90,25 +90,32 @@ function Hero() {
           </ul>
         </div>
 
-        <DebbieIntakeChat audioEnabled={debbieAudioEnabled()} />
+        <DebbieIntakeChat
+          audioEnabled={debbieAudioEnabled()}
+          resumeEnabled={debbieResumeEnabled()}
+        />
       </div>
     </section>
   );
 }
 
-// Server-side feature-flag read for the audio mic button. Mirrors
-// src/lib/debbie/transcribe.ts isAudioEnabled() — kept here as a
-// separate read so the client component never imports anything from
-// src/lib/debbie/transcribe.ts (which has Node-only deps like Buffer
-// and would bloat the client bundle).
+// Server-side feature-flag reads for the mic + paperclip buttons.
+// Each mirrors its lib's is{Audio,Resume}Enabled() — kept here as
+// separate reads so the client component never imports anything
+// from the server-only lib modules (which have Node-only deps like
+// Buffer and would bloat the client bundle).
 //
-// We DON'T require OPENAI_API_KEY here because that env var is only
-// readable server-side; the page render only needs to know whether
-// the mic UI should appear. If the key is missing the POST route
-// itself will 503 with a graceful error, so a flag-on key-off setup
+// We DON'T require the API keys here because those env vars are
+// only readable server-side; the page render only needs to know
+// whether the UI should appear. If the key is missing the route
+// itself 503s with a graceful error, so a flag-on key-off setup
 // fails closed rather than open.
 function debbieAudioEnabled(): boolean {
   return process.env.DEBBIE_AUDIO_ENABLED === "true";
+}
+
+function debbieResumeEnabled(): boolean {
+  return process.env.DEBBIE_RESUME_ENABLED === "true";
 }
 
 function TrustItem({ children }: { children: React.ReactNode }) {

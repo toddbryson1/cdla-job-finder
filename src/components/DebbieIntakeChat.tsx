@@ -119,6 +119,11 @@ type AudioState =
   | "transcribing" // POSTing blob to /api/debbie/transcribe
   | "denied"; // user blocked mic; hide button for the session
 
+// Mirror of AudioState, for the paperclip upload flow. "denied"
+// sticks once a failed parse happens so we don't pester the driver
+// with the picker again — they can re-open it manually.
+type ResumeState = "idle" | "uploading" | "parsing";
+
 interface DebbieIntakeChatProps {
   /**
    * Whether the audio mic button should render. Set by the server
@@ -126,9 +131,18 @@ interface DebbieIntakeChatProps {
    * row is text-only — same as before audio shipped.
    */
   audioEnabled: boolean;
+  /**
+   * Whether the paperclip resume-upload button should render. Set
+   * by the server component based on DEBBIE_RESUME_ENABLED. Same
+   * fails-closed pattern as audioEnabled.
+   */
+  resumeEnabled: boolean;
 }
 
-export function DebbieIntakeChat({ audioEnabled }: DebbieIntakeChatProps) {
+export function DebbieIntakeChat({
+  audioEnabled,
+  resumeEnabled,
+}: DebbieIntakeChatProps) {
   const [messages, setMessages] = useState<DebbieIntakeMessage[]>([]);
   const [state, setState] = useState<DebbieIntakeState>("Q1_zip");
   const [fields, setFields] = useState<DebbieIntakeFields>(EMPTY_FIELDS);
@@ -149,6 +163,8 @@ export function DebbieIntakeChat({ audioEnabled }: DebbieIntakeChatProps) {
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<BlobPart[]>([]);
   const mediaStreamRef = useRef<MediaStream | null>(null);
+  const [resumeState, setResumeState] = useState<ResumeState>("idle");
+  const resumeInputRef = useRef<HTMLInputElement | null>(null);
   const scrollerRef = useRef<HTMLDivElement | null>(null);
 
   // Hydrate from sessionStorage on mount.
@@ -303,6 +319,87 @@ export function DebbieIntakeChat({ audioEnabled }: DebbieIntakeChatProps) {
       );
     }
   }, [audioState]);
+
+  // Paperclip-upload handler. File picker opens via resumeInputRef.
+  // On change: POST the file to /api/debbie/parse-resume, merge the
+  // returned fields into Debbie's running state, then append a
+  // synthetic assistant message so the LLM's next turn sees what got
+  // pulled and can confirm conversationally per spec §7.2.
+  const onResumeFile = useCallback(
+    async (file: File) => {
+      if (resumeState !== "idle") return;
+      setError(null);
+      setResumeState("uploading");
+      try {
+        const form = new FormData();
+        form.append("resume", file);
+        setResumeState("parsing");
+        const res = await fetch("/api/debbie/parse-resume", {
+          method: "POST",
+          body: form,
+        });
+        const body = (await res.json()) as {
+          ok?: boolean;
+          extracted?: {
+            homeZip?: string;
+            experienceYears?: number;
+            lastEmployer?: string;
+            equipmentDriven?: string[];
+          };
+          error?: string;
+        };
+        if (!body.ok || !body.extracted) {
+          setError(
+            body.error ??
+              "Couldn't read that file. Try a PDF or paste your info instead.",
+          );
+          return;
+        }
+        const ex = body.extracted;
+        // Merge what we can into Debbie's running fields. Only the
+        // four fields the resume parser is allowed to extract land
+        // here — schedule, terminated_last_job, sap_status are NEVER
+        // auto-filled per spec §7.3.
+        setFields((prev) => ({
+          ...prev,
+          homeZip: ex.homeZip ?? prev.homeZip,
+          experienceYears: ex.experienceYears ?? prev.experienceYears,
+        }));
+        // Synthesize an assistant message that names what got
+        // extracted so the LLM's next turn confirms it instead of
+        // re-asking. Doesn't reset state — Debbie still asks for the
+        // missing fields.
+        const bits: string[] = [];
+        if (ex.experienceYears != null) {
+          bits.push(`about ${ex.experienceYears} years of experience`);
+        }
+        if (ex.lastEmployer) {
+          bits.push(`last at ${ex.lastEmployer}`);
+        }
+        if (ex.equipmentDriven && ex.equipmentDriven.length > 0) {
+          bits.push(`pulling ${ex.equipmentDriven.join(" / ")}`);
+        }
+        if (ex.homeZip) {
+          bits.push(`based in ${ex.homeZip}`);
+        }
+        if (bits.length > 0) {
+          const summary = `Got your resume — looks like you've got ${bits.join(", ")}. Sound right?`;
+          setMessages((prev) => [
+            ...prev,
+            { role: "assistant", content: summary },
+          ]);
+        }
+      } catch {
+        setError(
+          "Couldn't upload that file. Check your connection and try again, or type your answers instead.",
+        );
+      } finally {
+        setResumeState("idle");
+        if (resumeInputRef.current) resumeInputRef.current.value = "";
+      }
+    },
+    [resumeState],
+  );
 
   const onSubmitConsent = useCallback(async () => {
     if (!consentChecked || submitting) return;
@@ -529,6 +626,7 @@ export function DebbieIntakeChat({ audioEnabled }: DebbieIntakeChatProps) {
             submitting={submitting}
             onSubmit={onSubmitConsent}
             audioEnabled={audioEnabled}
+            resumeEnabled={resumeEnabled}
           />
         ) : null}
         {matchPhase === "pending" ? <TypingIndicator /> : null}
@@ -560,6 +658,24 @@ export function DebbieIntakeChat({ audioEnabled }: DebbieIntakeChatProps) {
           }}
           className="flex items-center gap-2.5 border-t border-brand-rule bg-brand-paper px-4 py-3.5"
         >
+          {resumeEnabled ? (
+            <>
+              <input
+                ref={resumeInputRef}
+                type="file"
+                accept="application/pdf,text/plain,.pdf,.txt"
+                onChange={(e) => {
+                  const f = e.target.files?.[0];
+                  if (f) void onResumeFile(f);
+                }}
+                className="hidden"
+              />
+              <PaperclipButton
+                state={resumeState}
+                onClick={() => resumeInputRef.current?.click()}
+              />
+            </>
+          ) : null}
           {audioEnabled && audioState !== "denied" ? (
             <MicButton state={audioState} onClick={onMicClick} />
           ) : null}
@@ -648,6 +764,92 @@ function VoiceProcessingDisclosure() {
         always type instead.
       </p>
     </div>
+  );
+}
+
+// Resume-processing disclosure — renders in the Stage 1 consent card
+// when resume upload is enabled, hidden otherwise. Per spec §7.5:
+// resume parsing introduces a new data flow that requires Stage 1
+// consent disclosure of the third-party processor.
+//
+// ⚠ ATTORNEY REVIEW PENDING (spec §12). Same gate as the voice copy
+// above. Counsel decisions still open:
+//
+//   1. Whether to name Anthropic / Claude as the third-party
+//      processor (we do; transparency aligns with spec voice).
+//   2. Retention language — Anthropic's standard API policy doesn't
+//      retain customer inputs for training, but the disclosure
+//      should pin that in case provider terms change.
+//   3. Whether the extracted-fields output (zip, years, last
+//      employer) deserves separate disclosure beyond the "Debbie
+//      stores my answers" clause already in the matching consent.
+function ResumeProcessingDisclosure() {
+  return (
+    <div className="mt-3 rounded-md border border-brand-rule bg-brand-paper p-3 text-[12.5px] leading-5 text-brand-muted">
+      <p>
+        <strong className="text-brand-ink">Resume upload.</strong> If you
+        upload a resume, the file is sent to Anthropic&rsquo;s Claude API
+        for one-time field extraction (zip, years driving, last carrier,
+        equipment). Neither CDLA.jobs nor Anthropic retains the file. Debbie
+        confirms each extracted field with you before treating it as
+        answered. You can always type instead.
+      </p>
+    </div>
+  );
+}
+
+// Paperclip button — opens the file picker for the spec §7 resume
+// upload. Two visible states: idle (paperclip icon) and busy (small
+// spinner during upload/parse). The hidden <input type=file> sits
+// next to it in the parent; this button just forwards the click.
+function PaperclipButton({
+  state,
+  onClick,
+}: {
+  state: ResumeState;
+  onClick: () => void;
+}) {
+  const isBusy = state !== "idle";
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label={isBusy ? "Reading resume" : "Upload resume"}
+      title={isBusy ? "Reading…" : "Upload a resume (PDF or text)"}
+      disabled={isBusy}
+      className={
+        "flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-md transition-colors disabled:opacity-50 " +
+        "bg-brand-surface text-brand-muted hover:bg-brand-rule hover:text-brand-deep"
+      }
+    >
+      {isBusy ? (
+        <svg
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          aria-hidden="true"
+          className="h-4 w-4 animate-spin"
+        >
+          <path d="M12 3a9 9 0 1 0 9 9" />
+        </svg>
+      ) : (
+        // Paperclip icon
+        <svg
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.8"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          aria-hidden="true"
+          className="h-4 w-4"
+        >
+          <path d="M21.44 11.05l-9.19 9.19a6 6 0 1 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
+        </svg>
+      )}
+    </button>
   );
 }
 
@@ -782,6 +984,7 @@ function ConsentCard({
   submitting,
   onSubmit,
   audioEnabled,
+  resumeEnabled,
 }: {
   checked: boolean;
   onCheckedChange: (v: boolean) => void;
@@ -790,6 +993,7 @@ function ConsentCard({
   submitting: boolean;
   onSubmit: () => void;
   audioEnabled: boolean;
+  resumeEnabled: boolean;
 }) {
   return (
     <div className="self-stretch rounded-2xl border border-brand-rule bg-brand-paper p-5 shadow-sm">
@@ -827,6 +1031,7 @@ function ConsentCard({
         </span>
       </label>
       {audioEnabled ? <VoiceProcessingDisclosure /> : null}
+      {resumeEnabled ? <ResumeProcessingDisclosure /> : null}
       <button
         type="button"
         onClick={onSubmit}
