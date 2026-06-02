@@ -272,7 +272,7 @@ function ProfileNotFound() {
       <div className="mt-6">
         <Link
           href="/intake"
-          className="inline-flex h-11 items-center justify-center rounded-md border border-brand-rule bg-white px-5 text-sm font-medium text-brand-ink hover:bg-brand-surface"
+          className="inline-flex h-11 items-center justify-center rounded-md border border-brand-rule bg-brand-paper px-5 text-sm font-medium text-brand-ink hover:bg-brand-surface"
         >
           Start a new intake
         </Link>
@@ -298,7 +298,7 @@ function WrongDriverForSession() {
       <div className="mt-6 flex flex-wrap gap-3">
         <Link
           href="/login"
-          className="inline-flex h-11 items-center justify-center rounded-md bg-brand-deep px-5 text-sm font-semibold text-white hover:bg-brand-medium"
+          className="inline-flex h-11 items-center justify-center rounded-md bg-brand-deep px-5 text-sm font-semibold text-brand-paper hover:bg-brand-medium"
         >
           Sign in with the right email
         </Link>
@@ -323,7 +323,7 @@ function NeedHomeLocation({ firstName }: { firstName: string }) {
       <div className="mt-6">
         <Link
           href="/intake"
-          className="inline-flex h-11 items-center justify-center rounded-md border border-brand-rule bg-white px-5 text-sm font-medium text-brand-ink hover:bg-brand-surface"
+          className="inline-flex h-11 items-center justify-center rounded-md border border-brand-rule bg-brand-paper px-5 text-sm font-medium text-brand-ink hover:bg-brand-surface"
         >
           Update your intake
         </Link>

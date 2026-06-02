@@ -183,7 +183,7 @@ function Shell({ children }: { children: React.ReactNode }) {
   return (
     <main className="min-h-screen bg-brand-surface">
       <div className="mx-auto max-w-2xl px-5 py-10 sm:py-14">
-        <div className="rounded-2xl border border-brand-rule bg-white p-6 shadow-sm sm:p-10">
+        <div className="rounded-2xl border border-brand-rule bg-brand-paper p-6 shadow-sm sm:p-10">
           {children}
         </div>
       </div>
@@ -267,7 +267,7 @@ function ConsentScreen({
         <div className="flex flex-wrap items-center gap-3">
           <button
             type="submit"
-            className="inline-flex h-11 items-center justify-center rounded-md bg-brand-deep px-5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-brand-medium"
+            className="inline-flex h-11 items-center justify-center rounded-md bg-brand-deep px-5 text-sm font-semibold text-brand-paper shadow-sm transition-colors hover:bg-brand-medium"
           >
             I Agree — Continue to Questions
           </button>
@@ -285,7 +285,7 @@ function ConsentScreen({
 
 function ConsentBlock({ carrierName }: { carrierName: string }) {
   return (
-    <section className="rounded-lg border border-brand-rule bg-white p-5 text-sm leading-6 text-brand-ink">
+    <section className="rounded-lg border border-brand-rule bg-brand-paper p-5 text-sm leading-6 text-brand-ink">
       <h2 className="text-base font-semibold text-brand-ink">
         Carrier Submission Authorization
       </h2>
@@ -583,7 +583,7 @@ function SwiftHandoff({
             href={job.applicationUrl}
             target="_blank"
             rel="noopener noreferrer"
-            className="mt-4 inline-flex h-11 items-center justify-center rounded-md bg-brand-deep px-5 text-sm font-semibold text-white shadow-sm hover:bg-brand-medium"
+            className="mt-4 inline-flex h-11 items-center justify-center rounded-md bg-brand-deep px-5 text-sm font-semibold text-brand-paper shadow-sm hover:bg-brand-medium"
           >
             Complete Step 1 application
           </a>
@@ -609,7 +609,7 @@ function SwiftHandoff({
               href={SWIFT_STEP2_URL}
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex h-11 items-center justify-center rounded-md bg-brand-deep px-5 text-sm font-semibold text-white shadow-sm hover:bg-brand-medium"
+              className="inline-flex h-11 items-center justify-center rounded-md bg-brand-deep px-5 text-sm font-semibold text-brand-paper shadow-sm hover:bg-brand-medium"
             >
               Complete Step 2 application
             </a>
@@ -626,11 +626,11 @@ function SwiftHandoff({
               required
               maxLength={40}
               placeholder="Confirmation number"
-              className="h-11 min-w-56 rounded-md border border-brand-rule bg-white px-3 text-sm text-brand-ink focus:border-brand-medium focus:outline-none focus:ring-2 focus:ring-brand-medium/30"
+              className="h-11 min-w-56 rounded-md border border-brand-rule bg-brand-paper px-3 text-sm text-brand-ink focus:border-brand-medium focus:outline-none focus:ring-2 focus:ring-brand-medium/30"
             />
             <button
               type="submit"
-              className="inline-flex h-11 items-center justify-center rounded-md bg-brand-deep px-5 text-sm font-semibold text-white hover:bg-brand-medium"
+              className="inline-flex h-11 items-center justify-center rounded-md bg-brand-deep px-5 text-sm font-semibold text-brand-paper hover:bg-brand-medium"
             >
               Submit
             </button>
@@ -692,7 +692,7 @@ function StandardIntelliApp({
           href={job.applicationUrl}
           target="_blank"
           rel="noopener noreferrer"
-          className="mt-6 inline-flex h-11 items-center justify-center rounded-md bg-brand-deep px-5 text-sm font-semibold text-white shadow-sm hover:bg-brand-medium"
+          className="mt-6 inline-flex h-11 items-center justify-center rounded-md bg-brand-deep px-5 text-sm font-semibold text-brand-paper shadow-sm hover:bg-brand-medium"
         >
           Complete your application
         </a>
@@ -765,7 +765,7 @@ function FallbackHandoff({
           href={job.applicationUrl}
           target="_blank"
           rel="noopener noreferrer"
-          className="mt-4 inline-flex h-11 items-center justify-center rounded-md border border-brand-rule bg-white px-5 text-sm font-medium text-brand-ink hover:bg-white"
+          className="mt-4 inline-flex h-11 items-center justify-center rounded-md border border-brand-rule bg-brand-paper px-5 text-sm font-medium text-brand-ink hover:bg-brand-paper"
         >
           Open the carrier&rsquo;s site
         </a>
@@ -808,7 +808,7 @@ function NotQualified({
       <div className="mt-8">
         <Link
           href={`/matches/${driverId}`}
-          className="inline-flex h-11 items-center justify-center rounded-md bg-brand-deep px-5 text-sm font-semibold text-white shadow-sm hover:bg-brand-medium"
+          className="inline-flex h-11 items-center justify-center rounded-md bg-brand-deep px-5 text-sm font-semibold text-brand-paper shadow-sm hover:bg-brand-medium"
         >
           Back to my matches
         </Link>
@@ -845,7 +845,7 @@ function WrongDriverForSession() {
       <div className="mt-6">
         <Link
           href="/login"
-          className="inline-flex h-11 items-center justify-center rounded-md bg-brand-deep px-5 text-sm font-semibold text-white hover:bg-brand-medium"
+          className="inline-flex h-11 items-center justify-center rounded-md bg-brand-deep px-5 text-sm font-semibold text-brand-paper hover:bg-brand-medium"
         >
           Sign in with the right email
         </Link>

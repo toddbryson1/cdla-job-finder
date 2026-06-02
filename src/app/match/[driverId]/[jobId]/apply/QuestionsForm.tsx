@@ -136,7 +136,7 @@ export function QuestionsForm({ driverId, jobId, carrierName }: Props) {
               type="month"
               value={duiDate}
               onChange={(e) => setDuiDate(e.target.value)}
-              className="mt-2 h-11 w-full max-w-xs rounded-md border border-brand-rule bg-white px-3 text-sm text-brand-ink focus:border-brand-medium focus:outline-none focus:ring-2 focus:ring-brand-medium/30"
+              className="mt-2 h-11 w-full max-w-xs rounded-md border border-brand-rule bg-brand-paper px-3 text-sm text-brand-ink focus:border-brand-medium focus:outline-none focus:ring-2 focus:ring-brand-medium/30"
             />
           </div>
         ) : null}
@@ -153,7 +153,7 @@ export function QuestionsForm({ driverId, jobId, carrierName }: Props) {
         <button
           type="submit"
           disabled={!ready}
-          className="inline-flex h-11 items-center justify-center rounded-md bg-brand-deep px-5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-brand-medium disabled:cursor-not-allowed disabled:opacity-50"
+          className="inline-flex h-11 items-center justify-center rounded-md bg-brand-deep px-5 text-sm font-semibold text-brand-paper shadow-sm transition-colors hover:bg-brand-medium disabled:cursor-not-allowed disabled:opacity-50"
         >
           See if I qualify
         </button>
@@ -195,8 +195,8 @@ function BucketRow({
             className={
               "inline-flex h-11 min-w-12 items-center justify-center rounded-md border px-4 text-sm font-medium transition-colors " +
               (selected
-                ? "border-brand-deep bg-brand-deep text-white"
-                : "border-brand-rule bg-white text-brand-ink hover:border-brand-medium")
+                ? "border-brand-deep bg-brand-deep text-brand-paper"
+                : "border-brand-rule bg-brand-paper text-brand-ink hover:border-brand-medium")
             }
           >
             {b}
@@ -230,8 +230,8 @@ function YesNo({
             className={
               "inline-flex h-11 min-w-20 items-center justify-center rounded-md border px-5 text-sm font-medium capitalize transition-colors " +
               (selected
-                ? "border-brand-deep bg-brand-deep text-white"
-                : "border-brand-rule bg-white text-brand-ink hover:border-brand-medium")
+                ? "border-brand-deep bg-brand-deep text-brand-paper"
+                : "border-brand-rule bg-brand-paper text-brand-ink hover:border-brand-medium")
             }
           >
             {v}
