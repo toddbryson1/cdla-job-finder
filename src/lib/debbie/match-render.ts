@@ -28,9 +28,58 @@ export interface DebbieMatchView {
   domicileState: string;
   distanceMiles: number | null;
   payRangeLabel: string | null; // "$1,400–$1,800/wk" or null
+  /** ~180-char snippet of carrier_jobs.description, cut at a sentence
+   *  boundary when possible. Null when the row has no description.
+   *  Full description lives on /match/[driverId]/[jobId]/apply. */
+  descriptionSnippet: string | null;
   carrierKind: "partner" | "prospect" | "subscription";
   carrierTier: "tier_1" | "tier_2" | "none";
   label: string; // raw MatchLabel from engine; kept as-is so the badge stays accurate
+}
+
+/** Max chars in the chat MatchCard snippet — picked so two lines fit
+ *  comfortably under the position title at the chat card's width. */
+export const MAX_DESCRIPTION_SNIPPET_CHARS = 180;
+
+/**
+ * Trim a carrier_jobs.description down to a chat-card snippet.
+ *
+ * Rules:
+ *   - null / blank / whitespace-only → null (card drops the line)
+ *   - <= MAX_DESCRIPTION_SNIPPET_CHARS → return as-is, trimmed
+ *   - Otherwise: cut at the last sentence boundary (. ! ?) before
+ *     the cap; if none, cut at the last word boundary; if neither
+ *     fits, hard-cut and append "…"
+ *
+ * Newlines collapse to single spaces — the snippet is one line of
+ * flowing text in the card, not a paragraph.
+ */
+export function descriptionSnippet(raw: string | null): string | null {
+  if (!raw) return null;
+  const flat = raw.replace(/\s+/g, " ").trim();
+  if (flat.length === 0) return null;
+  if (flat.length <= MAX_DESCRIPTION_SNIPPET_CHARS) return flat;
+
+  const cut = flat.slice(0, MAX_DESCRIPTION_SNIPPET_CHARS);
+
+  // Prefer the last sentence end.
+  const lastSentence = Math.max(
+    cut.lastIndexOf(". "),
+    cut.lastIndexOf("! "),
+    cut.lastIndexOf("? "),
+  );
+  if (lastSentence >= MAX_DESCRIPTION_SNIPPET_CHARS * 0.5) {
+    return cut.slice(0, lastSentence + 1);
+  }
+
+  // Otherwise the last word boundary.
+  const lastSpace = cut.lastIndexOf(" ");
+  if (lastSpace >= MAX_DESCRIPTION_SNIPPET_CHARS * 0.5) {
+    return cut.slice(0, lastSpace).trimEnd() + "…";
+  }
+
+  // Single ultra-long token — hard cut.
+  return cut.trimEnd() + "…";
 }
 
 /**

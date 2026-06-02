@@ -3,6 +3,8 @@ import { eq } from "drizzle-orm";
 import { db } from "@/db/client";
 import { drivers, zipCodes } from "@/db/schema";
 import { matchDriver } from "@/lib/matching";
+import { loadDisplayExtras } from "@/lib/match-display-data";
+import { descriptionSnippet } from "@/lib/debbie/match-render";
 
 export const runtime = "nodejs";
 
@@ -61,7 +63,27 @@ export async function POST(request: Request) {
 
   try {
     const result = await matchDriver(driverId);
-    return NextResponse.json(result);
+
+    // Enrich the matches with a short description snippet for the
+    // Debbie chat MatchCard. The matching engine intentionally keeps
+    // its Match type focused on rank/qualifier fields — descriptions
+    // come from carrierJobs.description via loadDisplayExtras, which
+    // also feeds the full /match/[driverId] page.
+    //
+    // Snippet is capped at ~180 chars at a sentence boundary so the
+    // chat card stays compact; the full description shows on the
+    // apply page.
+    const jobIds = result.matches.map((m) => m.jobId);
+    const extras = await loadDisplayExtras(jobIds);
+
+    const enrichedMatches = result.matches.map((m) => ({
+      ...m,
+      descriptionSnippet: descriptionSnippet(
+        extras.get(m.jobId)?.description ?? null,
+      ),
+    }));
+
+    return NextResponse.json({ ...result, matches: enrichedMatches });
   } catch (err) {
     console.error("[match] engine failed:", err);
     return NextResponse.json(

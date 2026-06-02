@@ -4,7 +4,9 @@ import {
   buildAsyncFallbackMessage,
   buildMatchesPreamble,
   buildZeroMatchesMessage,
+  descriptionSnippet,
   equipmentLabel,
+  MAX_DESCRIPTION_SNIPPET_CHARS,
   payRangeLabel,
 } from "@/lib/debbie/match-render";
 
@@ -137,5 +139,61 @@ describe("buildAsyncFallbackMessage", () => {
     expect(msg).not.toMatch(/email/i);
     expect(msg.toLowerCase()).toContain("working on it");
     expect(msg.toLowerCase()).toMatch(/hang|here/);
+  });
+});
+
+describe("descriptionSnippet — chat-card description trimmer", () => {
+  it("returns null for null / empty / whitespace-only", () => {
+    expect(descriptionSnippet(null)).toBeNull();
+    expect(descriptionSnippet("")).toBeNull();
+    expect(descriptionSnippet("   \n  \t  ")).toBeNull();
+  });
+
+  it("returns short descriptions unchanged (just trimmed)", () => {
+    const short = "OTR dry van out of Atlanta. 2,800 mi/wk average.";
+    expect(descriptionSnippet(short)).toBe(short);
+  });
+
+  it("collapses internal whitespace to single spaces", () => {
+    expect(descriptionSnippet("Hello\n\n  world\t!")).toBe("Hello world !");
+  });
+
+  it("trims at the last sentence boundary before the cap", () => {
+    // Long enough to need trimming; has a clear sentence end inside
+    // the cap so we cut there cleanly.
+    const long =
+      "Run dry van OTR out of Atlanta to the Midwest. Home every 11–14 days. " +
+      "Average gross is $1,700/wk after the orientation period. Newer trucks, " +
+      "automatic transmission. Pet and rider policies are flexible.";
+    const out = descriptionSnippet(long);
+    expect(out).not.toBeNull();
+    expect(out!.length).toBeLessThanOrEqual(MAX_DESCRIPTION_SNIPPET_CHARS);
+    expect(out!.endsWith(".")).toBe(true); // landed on a sentence end
+    expect(out).not.toContain("Pet and rider"); // tail dropped
+  });
+
+  it("falls back to word boundary + ellipsis when no sentence end fits", () => {
+    // One long sentence — no periods inside the cap.
+    const long =
+      "Looking for experienced Class A drivers willing to run long-haul lanes" +
+      " across the southeastern United States with flexible scheduling options" +
+      " and competitive weekly settlement payments paid every Friday";
+    const out = descriptionSnippet(long);
+    expect(out).not.toBeNull();
+    expect(out!.length).toBeLessThanOrEqual(MAX_DESCRIPTION_SNIPPET_CHARS);
+    expect(out!.endsWith("…")).toBe(true);
+    expect(out!.endsWith(" …")).toBe(false); // no dangling space before ellipsis
+  });
+
+  it("hard-cuts when a single token blows past the cap", () => {
+    const long = "x".repeat(500);
+    const out = descriptionSnippet(long);
+    expect(out).not.toBeNull();
+    expect(out!.length).toBeLessThanOrEqual(MAX_DESCRIPTION_SNIPPET_CHARS + 1);
+    expect(out!.endsWith("…")).toBe(true);
+  });
+
+  it("MAX cap is 180 chars (don't grow the snippet without updating the card layout)", () => {
+    expect(MAX_DESCRIPTION_SNIPPET_CHARS).toBe(180);
   });
 });

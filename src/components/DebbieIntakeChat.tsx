@@ -1317,6 +1317,11 @@ function MatchCard({
       <p className="mt-0.5 text-[13px] leading-5 text-brand-muted">
         {match.positionTitle}
       </p>
+      {match.descriptionSnippet ? (
+        <p className="mt-2 text-[12.5px] leading-[18px] text-brand-ink">
+          {match.descriptionSnippet}
+        </p>
+      ) : null}
       <dl className="mt-2 flex flex-wrap items-baseline gap-x-3 gap-y-1 text-[12.5px] leading-5 text-brand-ink">
         {match.equipmentLabel ? (
           <span>
@@ -1460,6 +1465,10 @@ function normalizeMatches(rows: Array<Record<string, unknown>>): DebbieMatchView
         r.payRangeMinWeekly,
         r.payRangeMaxWeekly,
       ),
+      descriptionSnippet:
+        typeof r.descriptionSnippet === "string" && r.descriptionSnippet.length > 0
+          ? r.descriptionSnippet
+          : null,
       carrierKind:
         r.carrierKind === "partner" ||
         r.carrierKind === "prospect" ||
