@@ -482,3 +482,101 @@ export async function getRecentConsents(limit = 20): Promise<RecentConsentRow[]>
   `)) as unknown as RecentConsentRow[];
   return rows;
 }
+
+export interface PartnerHandoffFunnel {
+  byStage: Record<
+    | "apply_initiated"
+    | "stage2_consented"
+    | "intelliapp_link_sent"
+    | "submitted_to_sterling"
+    | "submit_failed_validation"
+    | "submit_queued_for_retry"
+    | "stalled",
+    number
+  >;
+  /** Total rows ever produced through the handoff (sum across stages). */
+  total: number;
+  /** Rows currently overdue for a retry sweep (next_retry_at <= now). */
+  retryDueNow: number;
+  /** Rows with a confirmed QuickBase record ID from Sterling. */
+  sterlingConfirmed: number;
+  /** Total push attempts across all rows (cost-tracking proxy). */
+  totalAttempts: number;
+  /** Last sterling-confirmed timestamp; null when none yet. */
+  latestSubmissionAt: Date | null;
+}
+
+/**
+ * Anderson handoff (Sterling QuickBase) funnel. Counts rows in
+ * partner_application_stages by their current stage, plus a few
+ * derived metrics useful when QB push goes live and ops needs to
+ * watch the queue health.
+ *
+ * Per spec §B7. This dashboard panel is the operational read of
+ * what the QB retry sweeper (src/lib/quickbase/retry-sweeper.ts)
+ * is doing — anything not draining shows up here first.
+ */
+export async function getPartnerHandoffFunnel(): Promise<PartnerHandoffFunnel> {
+  // Single query — group by stage + aggregate the derived metrics
+  // together so the admin dashboard does one round-trip not N.
+  const rows = (await db.execute(sql`
+    SELECT
+      stage,
+      count(*)::int AS n,
+      sum(quickbase_push_attempts)::int AS total_attempts,
+      count(*) FILTER (
+        WHERE stage = 'submit_queued_for_retry'
+          AND quickbase_next_retry_at IS NOT NULL
+          AND quickbase_next_retry_at <= now()
+      )::int AS retry_due_now,
+      count(*) FILTER (
+        WHERE quickbase_record_id IS NOT NULL
+      )::int AS sterling_confirmed,
+      max(quickbase_push_succeeded_at) AS latest_submission_at
+    FROM partner_application_stages
+    GROUP BY stage
+  `)) as unknown as Array<{
+    stage: keyof PartnerHandoffFunnel["byStage"];
+    n: number;
+    total_attempts: number;
+    retry_due_now: number;
+    sterling_confirmed: number;
+    latest_submission_at: string | Date | null;
+  }>;
+
+  const byStage: PartnerHandoffFunnel["byStage"] = {
+    apply_initiated: 0,
+    stage2_consented: 0,
+    intelliapp_link_sent: 0,
+    submitted_to_sterling: 0,
+    submit_failed_validation: 0,
+    submit_queued_for_retry: 0,
+    stalled: 0,
+  };
+  let total = 0;
+  let retryDueNow = 0;
+  let sterlingConfirmed = 0;
+  let totalAttempts = 0;
+  let latestSubmissionAt: Date | null = null;
+
+  for (const r of rows) {
+    if (r.stage in byStage) byStage[r.stage] = r.n;
+    total += r.n;
+    retryDueNow += r.retry_due_now;
+    sterlingConfirmed += r.sterling_confirmed;
+    totalAttempts += r.total_attempts;
+    if (r.latest_submission_at) {
+      const d = new Date(r.latest_submission_at);
+      if (!latestSubmissionAt || d > latestSubmissionAt) latestSubmissionAt = d;
+    }
+  }
+
+  return {
+    byStage,
+    total,
+    retryDueNow,
+    sterlingConfirmed,
+    totalAttempts,
+    latestSubmissionAt,
+  };
+}

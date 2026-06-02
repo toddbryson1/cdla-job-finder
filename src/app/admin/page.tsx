@@ -17,6 +17,7 @@ import {
   getCyclesExpiringSoon,
   getDashboardCounts,
   getDriverFunnel30d,
+  getPartnerHandoffFunnel,
   getPendingCarriersReviewQueue,
   getRecentActivity,
   getRecentArchivedJobs,
@@ -62,6 +63,7 @@ export default async function AdminPage({ searchParams }: PageProps) {
     carrierPerf,
     recentConsents,
     pendingCarriers,
+    partnerHandoff,
   ] = await Promise.all([
     getDashboardCounts(),
     getCarrierBreakdown(),
@@ -73,6 +75,7 @@ export default async function AdminPage({ searchParams }: PageProps) {
     getCarrierPerformance30d(),
     getRecentConsents(20),
     getPendingCarriersReviewQueue(),
+    getPartnerHandoffFunnel(),
   ]);
 
   const minimalTotal = breakdown.reduce(
@@ -243,6 +246,94 @@ export default async function AdminPage({ searchParams }: PageProps) {
               small
             />
           </div>
+        </Section>
+
+        {/* PARTNER HANDOFF FUNNEL — Anderson / Sterling QuickBase (spec §B7) */}
+        <Section title="Partner handoff funnel — Anderson / Sterling QuickBase">
+          {partnerHandoff.total === 0 ? (
+            <Empty>
+              No partner_application_stages rows yet. Either no Anderson
+              driver has reached the Stage 2 result page, or QB push hasn&rsquo;t
+              been live long enough to produce activity. Wire is in place
+              (migration 0026 + sweeper + cron) and waiting on attorney
+              clearance per spec §B11 before QUICKBASE_PUSH_ENABLED flips on.
+            </Empty>
+          ) : (
+            <>
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                <CountCard
+                  label="Total handoff rows"
+                  value={partnerHandoff.total}
+                  sub={`${partnerHandoff.totalAttempts} push attempts`}
+                  small
+                />
+                <CountCard
+                  label="Sterling confirmed"
+                  value={partnerHandoff.sterlingConfirmed}
+                  sub={
+                    partnerHandoff.total > 0
+                      ? `${((100 * partnerHandoff.sterlingConfirmed) / partnerHandoff.total).toFixed(1)}% of total`
+                      : "—"
+                  }
+                  small
+                />
+                <CountCard
+                  label="Retries overdue"
+                  value={partnerHandoff.retryDueNow}
+                  sub={
+                    partnerHandoff.retryDueNow > 0
+                      ? "next sweep due — check /api/cron/qb-retry"
+                      : "all caught up"
+                  }
+                  small
+                />
+                <CountCard
+                  label="Latest success"
+                  value={
+                    partnerHandoff.latestSubmissionAt
+                      ? formatRelativeAge(partnerHandoff.latestSubmissionAt)
+                      : "—"
+                  }
+                  sub={
+                    partnerHandoff.latestSubmissionAt
+                      ? partnerHandoff.latestSubmissionAt.toISOString().slice(0, 16) + "Z"
+                      : "no submissions yet"
+                  }
+                  small
+                />
+              </div>
+
+              <p className="mt-4 mb-2 text-xs uppercase tracking-wide text-brand-muted">
+                Stage distribution
+              </p>
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                <CountCard
+                  label="intelliapp_link_sent"
+                  value={partnerHandoff.byStage.intelliapp_link_sent}
+                  sub="link delivered, push pending"
+                  small
+                />
+                <CountCard
+                  label="submitted_to_sterling"
+                  value={partnerHandoff.byStage.submitted_to_sterling}
+                  sub="terminal — success"
+                  small
+                />
+                <CountCard
+                  label="queued_for_retry"
+                  value={partnerHandoff.byStage.submit_queued_for_retry}
+                  sub="5xx pending backoff"
+                  small
+                />
+                <CountCard
+                  label="failed_validation"
+                  value={partnerHandoff.byStage.submit_failed_validation}
+                  sub="4xx — manual review"
+                  small
+                />
+              </div>
+            </>
+          )}
         </Section>
 
         {/* PER-CARRIER PERFORMANCE (last 30d) */}
@@ -556,7 +647,9 @@ function CountCard({
   small,
 }: {
   label: string;
-  value: number;
+  // Most callsites pass a count; some pass a pre-formatted string
+  // (e.g. "2h ago" for the latest-handoff timestamp card).
+  value: number | string;
   sub?: string;
   small?: boolean;
 }) {
@@ -609,6 +702,29 @@ function Empty({ children }: { children: React.ReactNode }) {
       {children}
     </div>
   );
+}
+
+/**
+ * Coarse-grained relative-time formatter for the admin dashboard
+ * "latest success" card. Operator wants "2 hours ago" / "3 days ago",
+ * not "2026-06-02T14:15:00Z". The exact timestamp shows in the sub-
+ * caption beneath. No external date library needed at this precision.
+ */
+function formatRelativeAge(t: Date): string {
+  const ms = Date.now() - t.getTime();
+  if (ms < 0) return "future";
+  const s = Math.floor(ms / 1000);
+  if (s < 60) return `${s}s ago`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}m ago`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h ago`;
+  const d = Math.floor(h / 24);
+  if (d < 7) return `${d}d ago`;
+  const w = Math.floor(d / 7);
+  if (w < 5) return `${w}w ago`;
+  const mo = Math.floor(d / 30);
+  return `${mo}mo ago`;
 }
 
 function QualityBadge({ tier }: { tier: string }) {
