@@ -13,6 +13,7 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import {
   getCarrierBreakdown,
+  getCarrierHandoffDrift,
   getCarrierPerformance30d,
   getCyclesExpiringSoon,
   getDashboardCounts,
@@ -64,6 +65,7 @@ export default async function AdminPage({ searchParams }: PageProps) {
     recentConsents,
     pendingCarriers,
     partnerHandoff,
+    handoffDrift,
   ] = await Promise.all([
     getDashboardCounts(),
     getCarrierBreakdown(),
@@ -76,6 +78,7 @@ export default async function AdminPage({ searchParams }: PageProps) {
     getRecentConsents(20),
     getPendingCarriersReviewQueue(),
     getPartnerHandoffFunnel(),
+    getCarrierHandoffDrift(),
   ]);
 
   const minimalTotal = breakdown.reduce(
@@ -332,6 +335,92 @@ export default async function AdminPage({ searchParams }: PageProps) {
                   small
                 />
               </div>
+            </>
+          )}
+        </Section>
+
+        {/* CARRIER-CONFIG DRIFT — proactive signal so operators see
+            misconfigured carriers BEFORE the retry sweeper terminates
+            their pending rows. Same predicate as the sweeper, so what
+            shows up here is exactly what would fail next. */}
+        <Section title="Carrier-config drift — Anderson handoff">
+          {handoffDrift.drifted.length === 0 ? (
+            <Empty>
+              All carriers with anderson_quickbase handoff have a valid
+              partner_handoff_config. Nothing for the retry sweeper to
+              choke on.
+            </Empty>
+          ) : (
+            <>
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+                <CountCard
+                  label="Drifted carriers"
+                  value={handoffDrift.drifted.length}
+                  sub="config invalid for anderson_quickbase"
+                  small
+                />
+                <CountCard
+                  label="Pending rows doomed"
+                  value={handoffDrift.totalPendingDoomed}
+                  sub={
+                    handoffDrift.totalPendingDoomed > 0
+                      ? "will fail on the next sweep"
+                      : "no pending rows on drifted carriers"
+                  }
+                  small
+                />
+                <CountCard
+                  label="Already failed (historical)"
+                  value={handoffDrift.totalHistoricalDriftRows}
+                  sub="rows already terminated due to drift"
+                  small
+                />
+              </div>
+
+              <div className="mt-4">
+                <Table>
+                  <thead className="text-left text-xs uppercase tracking-wide text-brand-muted">
+                    <tr>
+                      <th className="px-3 py-2">Carrier</th>
+                      <th className="px-3 py-2">Reason</th>
+                      <th className="px-3 py-2 text-right">Pending (doomed)</th>
+                      <th className="px-3 py-2 text-right">Historical</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-brand-rule">
+                    {handoffDrift.drifted.map((r) => (
+                      <tr key={r.carrierId} className="text-sm">
+                        <td className="px-3 py-2 font-medium text-brand-ink">
+                          {r.carrierName}
+                        </td>
+                        <td className="px-3 py-2 text-brand-muted">
+                          <code className="text-xs">{r.code}</code>
+                          <div className="text-xs">{r.reason}</div>
+                        </td>
+                        <td className="px-3 py-2 text-right">
+                          {r.pendingRows > 0 ? (
+                            <span className="font-semibold text-brand-deep">
+                              {r.pendingRows}
+                            </span>
+                          ) : (
+                            <span className="text-brand-muted">0</span>
+                          )}
+                        </td>
+                        <td className="px-3 py-2 text-right text-brand-muted">
+                          {r.historicalDriftRows}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </Table>
+              </div>
+              <p className="mt-2 text-xs text-brand-muted">
+                Fix: update <code>carriers.partner_handoff_config</code> for
+                the affected carrier so it includes a valid{" "}
+                <code>quickbase</code> block (<code>realm_hostname</code>,{" "}
+                <code>app_id</code>, <code>table_id</code>) under{" "}
+                <code>handoff_type = &quot;anderson_quickbase&quot;</code>.
+              </p>
             </>
           )}
         </Section>

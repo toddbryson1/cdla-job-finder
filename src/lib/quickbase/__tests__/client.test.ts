@@ -3,6 +3,7 @@ import {
   deriveExperienceLevel,
   isQuickbaseConfigured,
   pushAndersonHandoff,
+  validateAndersonQuickbaseConfig,
   type QuickbaseHandoffInput,
 } from "../client";
 
@@ -96,6 +97,145 @@ describe("isQuickbaseConfigured (feature flag, spec §B11)", () => {
     process.env.QUICKBASE_STERLING_API_TOKEN = "fake-token";
     process.env.QUICKBASE_PUSH_ENABLED = "true";
     expect(isQuickbaseConfigured()).toBe(true);
+  });
+});
+
+describe("validateAndersonQuickbaseConfig", () => {
+  // This validator is the single source of truth for "is this carrier
+  // wired up for the anderson_quickbase handoff?" — referenced by the
+  // retry sweeper, the inline result-page handler, and the admin drift
+  // card. The codes are stable: the admin card groups by them.
+
+  const validCfg = {
+    handoff_type: "anderson_quickbase",
+    quickbase: {
+      realm_hostname: "sterlingrecruitingsolutions.quickbase.com",
+      app_id: "bcivf3yss",
+      table_id: "bcivf3ysv",
+      default_recruiter_name: "Todd Bryson",
+    },
+  };
+
+  it("accepts a fully-populated anderson_quickbase config", () => {
+    const v = validateAndersonQuickbaseConfig(validCfg);
+    expect(v.ok).toBe(true);
+    if (v.ok) {
+      expect(v.config.quickbase.realm_hostname).toBe(
+        "sterlingrecruitingsolutions.quickbase.com",
+      );
+      expect(v.config.quickbase.default_recruiter_name).toBe("Todd Bryson");
+    }
+  });
+
+  it("accepts a config without default_recruiter_name (optional)", () => {
+    const cfg = {
+      handoff_type: "anderson_quickbase",
+      quickbase: {
+        realm_hostname: "x.quickbase.com",
+        app_id: "a",
+        table_id: "t",
+      },
+    };
+    const v = validateAndersonQuickbaseConfig(cfg);
+    expect(v.ok).toBe(true);
+    if (v.ok) {
+      expect(v.config.quickbase.default_recruiter_name).toBeUndefined();
+    }
+  });
+
+  it.each([null, undefined, "", 42, true, []])(
+    "returns missing_config for non-object input: %p",
+    (input) => {
+      const v = validateAndersonQuickbaseConfig(input);
+      expect(v.ok).toBe(false);
+      if (!v.ok) {
+        // Array is `typeof === "object"`, so it doesn't hit
+        // missing_config — it falls through to wrong_handoff_type
+        // because the array has no handoff_type field. That's fine;
+        // the operator still sees actionable signal.
+        expect([
+          "missing_config",
+          "wrong_handoff_type",
+        ]).toContain(v.code);
+      }
+    },
+  );
+
+  it("returns wrong_handoff_type when handoff_type is missing or different", () => {
+    const v1 = validateAndersonQuickbaseConfig({});
+    expect(v1.ok).toBe(false);
+    if (!v1.ok) expect(v1.code).toBe("wrong_handoff_type");
+
+    const v2 = validateAndersonQuickbaseConfig({ handoff_type: "tenstreet_only" });
+    expect(v2.ok).toBe(false);
+    if (!v2.ok) expect(v2.code).toBe("wrong_handoff_type");
+  });
+
+  it("returns missing_quickbase_block when handoff_type is right but no qb sub-object", () => {
+    const v = validateAndersonQuickbaseConfig({
+      handoff_type: "anderson_quickbase",
+    });
+    expect(v.ok).toBe(false);
+    if (!v.ok) expect(v.code).toBe("missing_quickbase_block");
+  });
+
+  it("returns missing_quickbase_field when realm_hostname is missing", () => {
+    const v = validateAndersonQuickbaseConfig({
+      handoff_type: "anderson_quickbase",
+      quickbase: { app_id: "a", table_id: "t" },
+    });
+    expect(v.ok).toBe(false);
+    if (!v.ok) {
+      expect(v.code).toBe("missing_quickbase_field");
+      expect(v.reason).toMatch(/realm_hostname/);
+    }
+  });
+
+  it("returns missing_quickbase_field when app_id is empty string", () => {
+    const v = validateAndersonQuickbaseConfig({
+      handoff_type: "anderson_quickbase",
+      quickbase: { realm_hostname: "x.quickbase.com", app_id: "", table_id: "t" },
+    });
+    expect(v.ok).toBe(false);
+    if (!v.ok) {
+      expect(v.code).toBe("missing_quickbase_field");
+      expect(v.reason).toMatch(/app_id/);
+    }
+  });
+
+  it("returns missing_quickbase_field when table_id is wrong type", () => {
+    const v = validateAndersonQuickbaseConfig({
+      handoff_type: "anderson_quickbase",
+      quickbase: { realm_hostname: "x.quickbase.com", app_id: "a", table_id: 42 },
+    });
+    expect(v.ok).toBe(false);
+    if (!v.ok) {
+      expect(v.code).toBe("missing_quickbase_field");
+      expect(v.reason).toMatch(/table_id/);
+    }
+  });
+
+  // Wire-format compatibility — these are the exact strings the retry
+  // sweeper has been writing to quickbase_last_error since 0027.
+  // Don't change them lightly; the admin drift card looks for them
+  // historically.
+  it("reason strings match the historical sweeper error messages", () => {
+    const nullCfg = validateAndersonQuickbaseConfig(null);
+    if (!nullCfg.ok) {
+      expect(nullCfg.reason).toBe("Carrier has no partner_handoff_config");
+    }
+    const wrongType = validateAndersonQuickbaseConfig({ handoff_type: "x" });
+    if (!wrongType.ok) {
+      expect(wrongType.reason).toBe(
+        "Carrier handoff config no longer routes to anderson_quickbase",
+      );
+    }
+    const noQb = validateAndersonQuickbaseConfig({
+      handoff_type: "anderson_quickbase",
+    });
+    if (!noQb.ok) {
+      expect(noQb.reason).toBe("Carrier quickbase config malformed");
+    }
   });
 });
 

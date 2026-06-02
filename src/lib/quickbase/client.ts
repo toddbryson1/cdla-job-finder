@@ -77,6 +77,101 @@ export function isQuickbaseConfigured(): boolean {
   return Boolean(token) && enabled === "true";
 }
 
+/** Subset of a valid carriers.partner_handoff_config the QB pipeline
+ *  needs. The push code only ever reads these fields; everything else
+ *  in the blob is opaque to QuickBase. */
+export interface AndersonQuickbaseHandoffConfig {
+  handoff_type: "anderson_quickbase";
+  quickbase: {
+    realm_hostname: string;
+    app_id: string;
+    table_id: string;
+    default_recruiter_name?: string;
+  };
+}
+
+export type AndersonQuickbaseConfigValidation =
+  | { ok: true; config: AndersonQuickbaseHandoffConfig }
+  | {
+      ok: false;
+      /** Stable machine-readable code so the admin drift card can
+       *  group / count by reason without string-matching. */
+      code:
+        | "missing_config"
+        | "wrong_handoff_type"
+        | "missing_quickbase_block"
+        | "missing_quickbase_field";
+      /** Plain-English reason — matches the historical
+       *  quickbase_last_error strings the retry sweeper has been
+       *  writing since 0027 so the drift card can correlate. */
+      reason: string;
+    };
+
+/**
+ * Pure validator for the `partner_handoff_config` jsonb. The retry
+ * sweeper and the admin drift card both depend on this — extracting
+ * it here keeps the predicate identical between "what we'll attempt
+ * to push" and "what the operator sees as misconfigured." Mirrors
+ * the inline checks that previously lived in retry-sweeper.ts.
+ */
+export function validateAndersonQuickbaseConfig(
+  raw: unknown,
+): AndersonQuickbaseConfigValidation {
+  if (!raw || typeof raw !== "object") {
+    return {
+      ok: false,
+      code: "missing_config",
+      reason: "Carrier has no partner_handoff_config",
+    };
+  }
+  const cfg = raw as Record<string, unknown>;
+
+  if (cfg.handoff_type !== "anderson_quickbase") {
+    return {
+      ok: false,
+      code: "wrong_handoff_type",
+      reason:
+        "Carrier handoff config no longer routes to anderson_quickbase",
+    };
+  }
+
+  const qb = cfg.quickbase;
+  if (!qb || typeof qb !== "object") {
+    return {
+      ok: false,
+      code: "missing_quickbase_block",
+      reason: "Carrier quickbase config malformed",
+    };
+  }
+  const qbCfg = qb as Record<string, unknown>;
+
+  for (const field of ["realm_hostname", "app_id", "table_id"] as const) {
+    if (typeof qbCfg[field] !== "string" || (qbCfg[field] as string).length === 0) {
+      return {
+        ok: false,
+        code: "missing_quickbase_field",
+        reason: `Carrier quickbase config malformed — missing ${field}`,
+      };
+    }
+  }
+
+  return {
+    ok: true,
+    config: {
+      handoff_type: "anderson_quickbase",
+      quickbase: {
+        realm_hostname: qbCfg.realm_hostname as string,
+        app_id: qbCfg.app_id as string,
+        table_id: qbCfg.table_id as string,
+        default_recruiter_name:
+          typeof qbCfg.default_recruiter_name === "string"
+            ? qbCfg.default_recruiter_name
+            : undefined,
+      },
+    },
+  };
+}
+
 /**
  * Map driver.years_held (numeric) to one of Sterling's QuickBase
  * EXPERIENCE LEVEL dropdown values. The accepted values are NOT

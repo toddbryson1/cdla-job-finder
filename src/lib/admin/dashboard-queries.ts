@@ -5,6 +5,10 @@
 
 import { sql } from "drizzle-orm";
 import { db } from "@/db/client";
+import {
+  validateAndersonQuickbaseConfig,
+  type AndersonQuickbaseConfigValidation,
+} from "@/lib/quickbase/client";
 
 export interface DashboardCounts {
   carriers: { active: number; partner: number; subscription: number; prospect: number };
@@ -579,4 +583,138 @@ export async function getPartnerHandoffFunnel(): Promise<PartnerHandoffFunnel> {
     totalAttempts,
     latestSubmissionAt,
   };
+}
+
+export interface CarrierHandoffDriftRow {
+  carrierId: string;
+  carrierName: string;
+  /** Stable code, in lock-step with the codes the retry sweeper
+   *  writes to quickbase_last_error. The drift card uses these to
+   *  group identical failure modes together. */
+  code: Exclude<AndersonQuickbaseConfigValidation, { ok: true }>["code"];
+  /** Plain-English explanation of why this carrier's config no
+   *  longer validates as anderson_quickbase. */
+  reason: string;
+  /** Non-terminal stage rows that will fail when the retry sweeper
+   *  next fires for this carrier. The actionable count. */
+  pendingRows: number;
+  /** Stage rows already terminated with a drift-shaped error. The
+   *  historical evidence — useful when triaging a freshly-noticed
+   *  drift to see how long it's been bleeding. */
+  historicalDriftRows: number;
+}
+
+export interface CarrierHandoffDrift {
+  /** One entry per drifted carrier. Empty when everything is well-
+   *  configured (the happy path — most days). */
+  drifted: CarrierHandoffDriftRow[];
+  /** Sum of pendingRows across all drifted carriers. The "if I do
+   *  nothing, this many drivers fail on the next sweep" number. */
+  totalPendingDoomed: number;
+  /** Sum of historicalDriftRows. The "how much has already silently
+   *  failed" number. */
+  totalHistoricalDriftRows: number;
+}
+
+/**
+ * Find carriers whose partner_handoff_config no longer validates as
+ * a usable anderson_quickbase config — but who either declare that
+ * handoff_type today OR have at least one partner_application_stages
+ * row pointing at them. Those are the "doomed handoff" carriers: the
+ * retry sweeper will flip every pending row to submit_failed_validation
+ * the next time it fires.
+ *
+ * This complements getPartnerHandoffFunnel — the funnel shows the
+ * current stage distribution, this shows the underlying carrier-config
+ * health so an operator can act BEFORE the sweep produces failures.
+ *
+ * Stays in code (not SQL): the validator predicate is shared with the
+ * sweeper and the inline handler, so anything that changes about
+ * "what counts as valid" lives in one place
+ * (src/lib/quickbase/client.ts:validateAndersonQuickbaseConfig).
+ */
+export async function getCarrierHandoffDrift(): Promise<CarrierHandoffDrift> {
+  // Two-table scan, joined in code: cheaper than the equivalent
+  // jsonb-shape SQL and easier to keep aligned with the validator.
+  // Partner population is small (~6 carriers in prod today), so an
+  // unbounded scan is fine.
+  const candidates = (await db.execute(sql`
+    SELECT
+      c.id::text AS carrier_id,
+      c.name AS carrier_name,
+      c.partner_handoff_config AS cfg,
+      COALESCE(
+        (SELECT count(*) FROM partner_application_stages s
+          WHERE s.carrier_id = c.id
+            AND s.stage IN (
+              'apply_initiated',
+              'stage2_consented',
+              'intelliapp_link_sent',
+              'submit_queued_for_retry'
+            ))::int,
+        0
+      ) AS pending_rows,
+      COALESCE(
+        (SELECT count(*) FROM partner_application_stages s
+          WHERE s.carrier_id = c.id
+            AND s.stage = 'submit_failed_validation'
+            AND s.quickbase_last_error IS NOT NULL
+            AND (
+              s.quickbase_last_error LIKE 'Carrier handoff config%'
+              OR s.quickbase_last_error LIKE 'Carrier quickbase config%'
+              OR s.quickbase_last_error LIKE 'Carrier has no partner_handoff_config%'
+            ))::int,
+        0
+      ) AS historical_drift_rows
+    FROM carriers c
+    WHERE
+      -- Carrier declares anderson_quickbase today...
+      (c.partner_handoff_config ->> 'handoff_type') = 'anderson_quickbase'
+      OR
+      -- ...or has at least one stage row pointing at it (even if
+      -- the config has since drifted away from anderson_quickbase
+      -- entirely).
+      EXISTS (
+        SELECT 1 FROM partner_application_stages s WHERE s.carrier_id = c.id
+      )
+  `)) as unknown as Array<{
+    carrier_id: string;
+    carrier_name: string;
+    cfg: unknown;
+    pending_rows: number;
+    historical_drift_rows: number;
+  }>;
+
+  const drifted: CarrierHandoffDriftRow[] = [];
+  let totalPendingDoomed = 0;
+  let totalHistoricalDriftRows = 0;
+
+  for (const c of candidates) {
+    const v = validateAndersonQuickbaseConfig(c.cfg);
+    if (v.ok) continue; // valid — not drifted
+
+    drifted.push({
+      carrierId: c.carrier_id,
+      carrierName: c.carrier_name,
+      code: v.code,
+      reason: v.reason,
+      pendingRows: c.pending_rows,
+      historicalDriftRows: c.historical_drift_rows,
+    });
+    totalPendingDoomed += c.pending_rows;
+    totalHistoricalDriftRows += c.historical_drift_rows;
+  }
+
+  // Sort: highest doomed count first, then highest historical, then
+  // by name for stable rendering. The operator's eye lands on what's
+  // most urgent.
+  drifted.sort((a, b) => {
+    if (b.pendingRows !== a.pendingRows) return b.pendingRows - a.pendingRows;
+    if (b.historicalDriftRows !== a.historicalDriftRows) {
+      return b.historicalDriftRows - a.historicalDriftRows;
+    }
+    return a.carrierName.localeCompare(b.carrierName);
+  });
+
+  return { drifted, totalPendingDoomed, totalHistoricalDriftRows };
 }

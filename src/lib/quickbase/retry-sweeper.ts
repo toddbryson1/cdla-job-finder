@@ -20,7 +20,11 @@ import {
   drivers,
   partnerApplicationStages,
 } from "@/db/schema";
-import { pushAndersonHandoff, isQuickbaseConfigured } from "./client";
+import {
+  isQuickbaseConfigured,
+  pushAndersonHandoff,
+  validateAndersonQuickbaseConfig,
+} from "./client";
 import {
   isMaxRetriesExhausted,
   nextRetryAt,
@@ -98,15 +102,16 @@ export async function runQbRetrySweeper(options?: {
   result.attempted = rows.length;
 
   for (const r of rows) {
-    // Defensively read the carrier handoff config. A row queued
-    // under one config shouldn't be re-pushed under a different
-    // one (carrier deactivated, config rotated, etc.) — verify
-    // before fetch.
-    const cfg = (r.carrier.partnerHandoffConfig ?? null) as Record<
-      string,
-      unknown
-    > | null;
-    if (!cfg || cfg.handoff_type !== "anderson_quickbase") {
+    // Defensively re-read the carrier handoff config. A row queued
+    // under one config shouldn't be re-pushed under a different one
+    // (carrier deactivated, config rotated, etc.) — verify before
+    // fetch. Same predicate as the admin drift card; if it ever
+    // diverges, the operator's view diverges from what'll actually
+    // fire when the sweeper next runs.
+    const validation = validateAndersonQuickbaseConfig(
+      r.carrier.partnerHandoffConfig,
+    );
+    if (!validation.ok) {
       // Carrier config drifted. Flip to failed_validation with a
       // clear reason so an operator can investigate; otherwise the
       // row would loop forever.
@@ -114,8 +119,7 @@ export async function runQbRetrySweeper(options?: {
         .update(partnerApplicationStages)
         .set({
           stage: "submit_failed_validation",
-          quickbaseLastError:
-            "Carrier handoff config no longer routes to anderson_quickbase",
+          quickbaseLastError: validation.reason,
           quickbaseNextRetryAt: null,
           updatedAt: new Date(),
         })
@@ -124,32 +128,7 @@ export async function runQbRetrySweeper(options?: {
       continue;
     }
 
-    const qbCfg = cfg.quickbase as
-      | {
-          realm_hostname: string;
-          app_id: string;
-          table_id: string;
-          default_recruiter_name: string;
-        }
-      | undefined;
-    if (
-      !qbCfg ||
-      typeof qbCfg.realm_hostname !== "string" ||
-      typeof qbCfg.app_id !== "string" ||
-      typeof qbCfg.table_id !== "string"
-    ) {
-      await db
-        .update(partnerApplicationStages)
-        .set({
-          stage: "submit_failed_validation",
-          quickbaseLastError: "Carrier quickbase config malformed",
-          quickbaseNextRetryAt: null,
-          updatedAt: new Date(),
-        })
-        .where(eq(partnerApplicationStages.id, r.stageRow.id));
-      result.failedValidation++;
-      continue;
-    }
+    const qbCfg = validation.config.quickbase;
 
     const attemptedAt = new Date();
     const pushResult = await pushAndersonHandoff({
@@ -160,10 +139,7 @@ export async function runQbRetrySweeper(options?: {
         realm_hostname: qbCfg.realm_hostname,
         app_id: qbCfg.app_id,
         table_id: qbCfg.table_id,
-        default_recruiter_name:
-          typeof qbCfg.default_recruiter_name === "string"
-            ? qbCfg.default_recruiter_name
-            : "Todd Bryson",
+        default_recruiter_name: qbCfg.default_recruiter_name ?? "Todd Bryson",
       },
     });
 

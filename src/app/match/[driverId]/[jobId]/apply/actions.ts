@@ -15,6 +15,7 @@ import {
 import {
   isQuickbaseConfigured,
   pushAndersonHandoff,
+  validateAndersonQuickbaseConfig,
 } from "@/lib/quickbase/client";
 import {
   appUrl,
@@ -398,29 +399,16 @@ export async function recordAndersonHandoff(
     });
     if (!carrier) return;
 
-    // Only proceed for carriers whose handoff config opts in.
-    const cfg = (carrier.partnerHandoffConfig ?? null) as Record<
-      string,
-      unknown
-    > | null;
-    if (!cfg || cfg.handoff_type !== "anderson_quickbase") return;
-
-    const qbCfg = cfg.quickbase as
-      | {
-          realm_hostname: string;
-          app_id: string;
-          table_id: string;
-          default_recruiter_name: string;
-        }
-      | undefined;
-    if (
-      !qbCfg ||
-      typeof qbCfg.realm_hostname !== "string" ||
-      typeof qbCfg.app_id !== "string" ||
-      typeof qbCfg.table_id !== "string"
-    ) {
-      return;
-    }
+    // Only proceed for carriers whose handoff config opts in. Same
+    // predicate as the retry sweeper and the admin drift card — see
+    // validateAndersonQuickbaseConfig. Drift here is silent: the
+    // driver still gets the IntelliApp link from the result page;
+    // we just don't queue a Sterling push for them.
+    const validation = validateAndersonQuickbaseConfig(
+      carrier.partnerHandoffConfig,
+    );
+    if (!validation.ok) return;
+    const qbCfg = validation.config.quickbase;
 
     // Upsert the partner_application_stages row at
     // intelliapp_link_sent (Pattern 1 — link has just been rendered).
@@ -484,10 +472,7 @@ export async function recordAndersonHandoff(
         realm_hostname: qbCfg.realm_hostname,
         app_id: qbCfg.app_id,
         table_id: qbCfg.table_id,
-        default_recruiter_name:
-          typeof qbCfg.default_recruiter_name === "string"
-            ? qbCfg.default_recruiter_name
-            : "Todd Bryson",
+        default_recruiter_name: qbCfg.default_recruiter_name ?? "Todd Bryson",
       },
     });
 

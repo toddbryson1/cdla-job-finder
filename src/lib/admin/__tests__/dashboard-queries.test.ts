@@ -15,6 +15,7 @@ import {
 } from "@/db/schema";
 import {
   getCarrierBreakdown,
+  getCarrierHandoffDrift,
   getCarrierPerformance30d,
   getCyclesExpiringSoon,
   getDashboardCounts,
@@ -494,5 +495,289 @@ describe("dashboard-queries.getPartnerHandoffFunnel", () => {
 
     const after = await getPartnerHandoffFunnel();
     expect(after.retryDueNow - baseline.retryDueNow).toBe(0);
+  });
+});
+
+describe("dashboard-queries.getCarrierHandoffDrift", () => {
+  // Three sentinel carriers: one validly configured (should NEVER
+  // appear in drift), one mis-typed (handoff_type wrong), one with a
+  // missing realm_hostname. Cleanup deletes everything by name prefix.
+  const NAME_PREFIX = "Carrier Drift Test (sentinel)";
+  const VALID = `${NAME_PREFIX} VALID`;
+  const WRONG_TYPE = `${NAME_PREFIX} WRONG_TYPE`;
+  const MISSING_FIELD = `${NAME_PREFIX} MISSING_FIELD`;
+  const DRIVER_EMAIL_PREFIX = "carrier-drift-test+";
+
+  async function cleanup(): Promise<void> {
+    const cs = await db
+      .select({ id: carriers.id })
+      .from(carriers)
+      .where(sql`${carriers.name} LIKE ${NAME_PREFIX + "%"}`);
+    for (const c of cs) {
+      await db
+        .delete(partnerApplicationStages)
+        .where(eq(partnerApplicationStages.carrierId, c.id));
+      await db.delete(carrierJobs).where(eq(carrierJobs.carrierId, c.id));
+    }
+    await db
+      .delete(carriers)
+      .where(sql`${carriers.name} LIKE ${NAME_PREFIX + "%"}`);
+    await db
+      .delete(drivers)
+      .where(sql`${drivers.email} LIKE ${DRIVER_EMAIL_PREFIX + "%"}`);
+  }
+
+  async function seedCarrier(name: string, cfg: unknown): Promise<string> {
+    const [c] = await db
+      .insert(carriers)
+      .values({
+        name,
+        kind: "partner",
+        tier: "none",
+        status: "active",
+        partnerHandoffConfig: cfg as Record<string, unknown>,
+      })
+      .returning({ id: carriers.id });
+    return c!.id;
+  }
+
+  async function seedJob(carrierId: string): Promise<string> {
+    const [j] = await db
+      .insert(carrierJobs)
+      .values({
+        carrierId,
+        status: "active",
+        positionTitle: "Drift Test Job",
+        domicileCity: "St. Cloud",
+        domicileState: "MN",
+        domicileLat: "45.557900",
+        domicileLng: "-94.163200",
+        hiringRadiusMiles: 1500,
+        equipment: "dry-van",
+        minExperienceMonths: 6,
+        acceptedHomeTimeTypes: ["otr"],
+        sapTolerance: "accepts_none",
+        applicationSurface: "tenstreet_intelliapp",
+        dataSource: "manual_partner_intake",
+        verificationStatus: "verified",
+        dataQuality: "complete",
+      })
+      .returning({ id: carrierJobs.id });
+    return j!.id;
+  }
+
+  async function seedDriver(suffix: string): Promise<string> {
+    const [row] = await db
+      .insert(drivers)
+      .values({
+        firstName: "Pat",
+        lastName: `Drift${suffix}`,
+        email: `${DRIVER_EMAIL_PREFIX}${suffix}@example.com`,
+        phone: "555-555-1234",
+        homeZip: "56301",
+        cdlState: "MN",
+        yearsHeld: "3",
+        otrYears: "2",
+        equipmentRun: ["dry-van"],
+        desiredEquipment: ["dry-van"],
+        desiredRegions: ["any"],
+        homeTime: ["otr"],
+        terminatedFromAnyOfLast3Employers: false,
+        failedDotTest: false,
+        attestAccurate: true,
+        consentToShare: true,
+      })
+      .returning({ id: drivers.id });
+    return row!.id;
+  }
+
+  beforeAll(async () => {
+    await cleanup();
+  });
+  afterAll(async () => {
+    await cleanup();
+  });
+  afterEach(async () => {
+    await cleanup();
+  });
+
+  it("doesn't flag carriers with a valid anderson_quickbase config", async () => {
+    await seedCarrier(VALID, {
+      handoff_type: "anderson_quickbase",
+      quickbase: {
+        realm_hostname: "sterlingrecruitingsolutions.quickbase.com",
+        app_id: "bcivf3yss",
+        table_id: "bcivf3ysv",
+      },
+    });
+
+    const r = await getCarrierHandoffDrift();
+    // No sentinel carrier should be in the drift list. (Other prod-
+    // shaped carriers may or may not be — we don't assert about them.)
+    expect(r.drifted.find((d) => d.carrierName === VALID)).toBeUndefined();
+  });
+
+  it("flags wrong_handoff_type carriers that have stage rows", async () => {
+    const carrierId = await seedCarrier(WRONG_TYPE, {
+      handoff_type: "tenstreet_only",
+    });
+    const jobId = await seedJob(carrierId);
+    const driverId = await seedDriver("wt1");
+
+    // One pending row + one historically-failed row.
+    await db.insert(partnerApplicationStages).values([
+      {
+        driverId,
+        carrierJobId: jobId,
+        carrierId,
+        stage: "submit_queued_for_retry",
+        quickbasePushAttempts: 1,
+        quickbaseNextRetryAt: new Date(Date.now() + 60 * 60 * 1000),
+      },
+    ]);
+    const driverId2 = await seedDriver("wt2");
+    await db.insert(partnerApplicationStages).values([
+      {
+        driverId: driverId2,
+        carrierJobId: jobId,
+        carrierId,
+        stage: "submit_failed_validation",
+        quickbasePushAttempts: 1,
+        quickbaseLastError:
+          "Carrier handoff config no longer routes to anderson_quickbase",
+      },
+    ]);
+
+    const r = await getCarrierHandoffDrift();
+    const row = r.drifted.find((d) => d.carrierName === WRONG_TYPE);
+    expect(row).toBeDefined();
+    if (row) {
+      expect(row.code).toBe("wrong_handoff_type");
+      expect(row.pendingRows).toBe(1);
+      expect(row.historicalDriftRows).toBe(1);
+    }
+  });
+
+  it("flags carriers declaring anderson_quickbase but missing a quickbase field", async () => {
+    await seedCarrier(MISSING_FIELD, {
+      handoff_type: "anderson_quickbase",
+      quickbase: {
+        // realm_hostname missing on purpose
+        app_id: "a",
+        table_id: "t",
+      },
+    });
+
+    const r = await getCarrierHandoffDrift();
+    const row = r.drifted.find((d) => d.carrierName === MISSING_FIELD);
+    expect(row).toBeDefined();
+    if (row) {
+      expect(row.code).toBe("missing_quickbase_field");
+      expect(row.reason).toMatch(/realm_hostname/);
+      // No stage rows seeded — pending should be 0.
+      expect(row.pendingRows).toBe(0);
+      expect(row.historicalDriftRows).toBe(0);
+    }
+  });
+
+  it("aggregates total pending + historical across drifted carriers", async () => {
+    const c1 = await seedCarrier(WRONG_TYPE, { handoff_type: "x" });
+    const c2 = await seedCarrier(MISSING_FIELD, {
+      handoff_type: "anderson_quickbase",
+      quickbase: { app_id: "a", table_id: "t" },
+    });
+    const j1 = await seedJob(c1);
+    const j2 = await seedJob(c2);
+    const d1 = await seedDriver("agg1");
+    const d2 = await seedDriver("agg2");
+    const d3 = await seedDriver("agg3");
+
+    await db.insert(partnerApplicationStages).values([
+      // c1 — 2 pending, 1 historical
+      {
+        driverId: d1,
+        carrierJobId: j1,
+        carrierId: c1,
+        stage: "intelliapp_link_sent",
+      },
+      {
+        driverId: d2,
+        carrierJobId: j1,
+        carrierId: c1,
+        stage: "submit_queued_for_retry",
+      },
+      {
+        driverId: d3,
+        carrierJobId: j1,
+        carrierId: c1,
+        stage: "submit_failed_validation",
+        quickbaseLastError: "Carrier quickbase config malformed",
+      },
+    ]);
+    // c2 — 1 pending, 0 historical
+    const d4 = await seedDriver("agg4");
+    await db.insert(partnerApplicationStages).values([
+      {
+        driverId: d4,
+        carrierJobId: j2,
+        carrierId: c2,
+        stage: "apply_initiated",
+      },
+    ]);
+
+    const r = await getCarrierHandoffDrift();
+    const r1 = r.drifted.find((d) => d.carrierName === WRONG_TYPE);
+    const r2 = r.drifted.find((d) => d.carrierName === MISSING_FIELD);
+    expect(r1?.pendingRows).toBe(2);
+    expect(r1?.historicalDriftRows).toBe(1);
+    expect(r2?.pendingRows).toBe(1);
+    expect(r2?.historicalDriftRows).toBe(0);
+
+    // Aggregates include at least our sentinel rows. Other prod-
+    // shaped drift may also be present — assert >= not ==.
+    expect(r.totalPendingDoomed).toBeGreaterThanOrEqual(3);
+    expect(r.totalHistoricalDriftRows).toBeGreaterThanOrEqual(1);
+  });
+
+  it("sorts by pending desc, then historical desc, then name asc", async () => {
+    const a = await seedCarrier(`${NAME_PREFIX} A_lo`, { handoff_type: "x" });
+    const b = await seedCarrier(`${NAME_PREFIX} B_hi`, { handoff_type: "x" });
+    const ja = await seedJob(a);
+    const jb = await seedJob(b);
+    const da = await seedDriver("sort_a");
+    const db1 = await seedDriver("sort_b");
+    const db2 = await seedDriver("sort_b2");
+
+    await db.insert(partnerApplicationStages).values([
+      // A — 1 pending
+      {
+        driverId: da,
+        carrierJobId: ja,
+        carrierId: a,
+        stage: "apply_initiated",
+      },
+      // B — 2 pending
+      {
+        driverId: db1,
+        carrierJobId: jb,
+        carrierId: b,
+        stage: "apply_initiated",
+      },
+      {
+        driverId: db2,
+        carrierJobId: jb,
+        carrierId: b,
+        stage: "intelliapp_link_sent",
+      },
+    ]);
+
+    const r = await getCarrierHandoffDrift();
+    const sentinelRows = r.drifted.filter((d) =>
+      d.carrierName.startsWith(NAME_PREFIX),
+    );
+    // B comes before A in the sentinel slice (higher pending count).
+    const bi = sentinelRows.findIndex((d) => d.carrierName.endsWith("B_hi"));
+    const ai = sentinelRows.findIndex((d) => d.carrierName.endsWith("A_lo"));
+    expect(bi).toBeLessThan(ai);
   });
 });
