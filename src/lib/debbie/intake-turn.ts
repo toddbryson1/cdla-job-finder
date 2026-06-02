@@ -17,55 +17,25 @@
 // /apply. It is NOT Debbie's responsibility here.
 
 import Anthropic from "@anthropic-ai/sdk";
+import type {
+  DebbieIntakeExtracted,
+  DebbieIntakeFields,
+  DebbieIntakeMessage,
+  DebbieIntakeState,
+} from "@/lib/debbie/intake-types";
 
 const MODEL = "claude-haiku-4-5";
 const MAX_TURNS_HISTORY = 24; // 12 user + 12 assistant turns
 const MAX_MESSAGE_CHARS = 600;
 
-export type DebbieIntakeState =
-  | "Q1_zip"
-  | "Q2_experience"
-  | "Q3_schedule"
-  | "Q4_termination"
-  | "Q4_termination_probe" // we asked, awaiting reason free-text
-  | "Q5_sap"
-  | "confirmation" // replay summary
-  | "consent_ready"; // ready to render Stage 1 consent UI
-
-export interface DebbieIntakeMessage {
-  role: "user" | "assistant";
-  content: string;
-}
-
-// Mirrors the structured-output tool the model fills in. All fields
-// optional because each turn only extracts what the latest user
-// message actually said.
-export interface DebbieIntakeExtracted {
-  /** 5-digit US zip if the user gave one (or it could be looked up). */
-  homeZip?: string;
-  /** Decimal years (so 18 months → 1.5). */
-  experienceYears?: number;
-  /** Schedule preference normalized to one of these four buckets. */
-  schedule?: "local" | "regional" | "otr" | "any";
-  /** Whether the driver said they were let go from their last trucking job. */
-  terminatedLastJob?: boolean;
-  /** Free-text reason if terminated — captured verbatim. */
-  terminationReason?: string;
-  /** SAP status normalized to one of three enum values. */
-  sapStatus?: "not-in-sap" | "in-sap" | "completed-sap";
-}
-
-// Everything the driver has told us across all turns. Server merges
-// each turn's `extracted` into this so the next turn's prompt sees the
-// full picture.
-export interface DebbieIntakeFields {
-  homeZip: string | null;
-  experienceYears: number | null;
-  schedule: "local" | "regional" | "otr" | "any" | null;
-  terminatedLastJob: boolean | null;
-  terminationReason: string | null;
-  sapStatus: "not-in-sap" | "in-sap" | "completed-sap" | null;
-}
+// Re-export so callers can keep importing from intake-turn during
+// transition. New code should import types directly from intake-types.
+export type {
+  DebbieIntakeExtracted,
+  DebbieIntakeFields,
+  DebbieIntakeMessage,
+  DebbieIntakeState,
+} from "@/lib/debbie/intake-types";
 
 export interface DebbieIntakeTurnInput {
   /** Where the driver currently is in the flow. */
@@ -335,50 +305,11 @@ function parseToolPayload(raw: unknown): {
   return { assistantMessage, extracted, nextState };
 }
 
-// Merge a single-turn extract into the running fields object.
-export function mergeExtracted(
-  fields: DebbieIntakeFields,
-  extracted: DebbieIntakeExtracted,
-): DebbieIntakeFields {
-  return {
-    homeZip: extracted.homeZip ?? fields.homeZip,
-    experienceYears: extracted.experienceYears ?? fields.experienceYears,
-    schedule: extracted.schedule ?? fields.schedule,
-    terminatedLastJob:
-      extracted.terminatedLastJob ?? fields.terminatedLastJob,
-    terminationReason: extracted.terminationReason ?? fields.terminationReason,
-    sapStatus: extracted.sapStatus ?? fields.sapStatus,
-  };
-}
-
-export const EMPTY_FIELDS: DebbieIntakeFields = {
-  homeZip: null,
-  experienceYears: null,
-  schedule: null,
-  terminatedLastJob: null,
-  terminationReason: null,
-  sapStatus: null,
-};
-
-// Map Debbie's Q3 schedule choice → the existing intake-schema's
-// home_time enum array. The matching engine reads this to filter jobs.
-//   local    → ["daily"]
-//   regional → ["weekly"]
-//   otr      → ["otr"]
-//   any      → all four
-export function scheduleToHomeTime(
-  s: DebbieIntakeFields["schedule"],
-): Array<"daily" | "weekly" | "biweekly" | "otr"> {
-  switch (s) {
-    case "local":
-      return ["daily"];
-    case "regional":
-      return ["weekly"];
-    case "otr":
-      return ["otr"];
-    case "any":
-      return ["daily", "weekly", "biweekly", "otr"];
-    default:
-      return ["weekly"]; // safe fallback
-  }
-}
+// mergeExtracted, EMPTY_FIELDS, scheduleToHomeTime moved to
+// intake-types.ts so the client bundle doesn't pull in the Anthropic
+// SDK. Re-export them here for callers transitioning to the new path.
+export {
+  EMPTY_FIELDS,
+  mergeExtracted,
+  scheduleToHomeTime,
+} from "@/lib/debbie/intake-types";

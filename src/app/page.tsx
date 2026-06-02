@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { SiteShell } from "@/components/SiteShell";
+import { DebbieIntakeChat } from "@/components/DebbieIntakeChat";
 
 // Copy is locked verbatim per SPEC_homepage-copy-v1.md and the design
 // reference at cdlajobs-homepage-design.html. Do NOT paraphrase
@@ -8,12 +9,11 @@ import { SiteShell } from "@/components/SiteShell";
 // Sections render top-to-bottom: hero → how it works → why different
 // → for carriers → footer (in shell).
 //
-// Debbie (the conversational intake AI per
-// SPEC_conversational-ai-intake-v1.md) is not yet wired to a backend.
-// The hero renders a visual chat shell — Debbie's opening three
-// messages, an input field, send button — and routes the visitor to
-// /intake (the form fallback) on send. When the Debbie backend ships
-// the shell becomes the real chat surface with no layout changes.
+// The hero's chat surface is now live: DebbieIntakeChat drives the
+// Stage 1 conversation against /api/debbie/intake, captures the five
+// fields, gates on Stage 1 consent, and POSTs to /api/intake to land
+// the driver on /matches. Voice + resume + Stage 2 are not yet built
+// — see SPEC_conversational-ai-intake-v1.md §§6, 7, 5 respectively.
 //
 // Visual evolution per the design ref:
 //   - Warm paper palette (--brand-paper / --brand-surface), fading
@@ -90,7 +90,7 @@ function Hero() {
           </ul>
         </div>
 
-        <DebbieChatScaffold />
+        <DebbieIntakeChat />
       </div>
     </section>
   );
@@ -105,111 +105,6 @@ function TrustItem({ children }: { children: React.ReactNode }) {
       />
       {children}
     </li>
-  );
-}
-
-// Visual scaffold for Debbie's chatbox per
-// SPEC_conversational-ai-intake-v1.md §4.1. Renders the avatar,
-// status pulse, Debbie's opening three messages, an input field, and
-// a gold send button. Until the real backend ships the form submits
-// to /intake (the structured 6-step fallback) so the homepage works
-// without the AI.
-function DebbieChatScaffold() {
-  return (
-    <div className="relative z-10 overflow-hidden rounded-2xl border border-brand-rule bg-brand-paper shadow-[0_8px_24px_rgba(14,30,51,0.08),_0_24px_64px_rgba(14,30,51,0.10)]">
-      <header className="flex items-center gap-3 border-b border-brand-rule bg-brand-surface px-5 py-4">
-        <div
-          aria-hidden="true"
-          className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-brand-deep font-display text-lg font-semibold text-brand-paper"
-        >
-          D
-        </div>
-        <div className="min-w-0">
-          <p className="text-sm font-semibold text-brand-ink">Debbie</p>
-          <p className="mt-0.5 flex items-center gap-1.5 text-xs text-brand-muted">
-            <span
-              aria-hidden="true"
-              className="h-[7px] w-[7px] animate-brand-pulse rounded-full bg-brand-ok"
-            />
-            AI driver matcher · online
-          </p>
-        </div>
-      </header>
-
-      <div className="flex min-h-[280px] flex-col gap-3.5 px-5 py-6">
-        <BotMessage delay={0}>
-          Hey &mdash; I&rsquo;m Debbie. I match Class A drivers to carriers
-          based on what you actually want.
-        </BotMessage>
-        <BotMessage delay={0.4}>
-          I&rsquo;m AI, not a recruiter. Five questions, then I&rsquo;ll show
-          you who&rsquo;s hiring drivers like you.
-        </BotMessage>
-        <BotMessage delay={1.0}>What&rsquo;s your home zip?</BotMessage>
-      </div>
-
-      {/* TODO: replace with the real chat surface once the Debbie
-          backend ships (SPEC_conversational-ai-intake-v1.md). For now
-          the input field is decorative; the send button + Enter key
-          submit to /intake. */}
-      <form
-        action="/intake"
-        method="get"
-        className="flex items-center gap-2.5 border-t border-brand-rule bg-brand-paper px-4 py-3.5"
-      >
-        <input
-          type="text"
-          name="z"
-          inputMode="text"
-          placeholder="Type your zip, or tap to start the form…"
-          aria-label="Message Debbie"
-          className="flex-1 border-none bg-transparent px-1 py-2 text-[15.5px] text-brand-ink outline-none placeholder:text-brand-muted"
-        />
-        <button
-          type="submit"
-          aria-label="Send"
-          className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-md bg-brand-gold text-brand-ink transition-colors hover:bg-brand-gold-soft active:scale-95"
-        >
-          <svg
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2.2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            className="h-4 w-4"
-            aria-hidden="true"
-          >
-            <path d="M5 12h14M13 6l6 6-6 6" />
-          </svg>
-        </button>
-      </form>
-      <p className="px-5 pb-4 text-xs leading-5 text-brand-muted">
-        By chatting, you agree to our{" "}
-        <Link href="/terms" className="underline hover:text-brand-ink">
-          terms
-        </Link>
-        . Reply STOP any time to opt out. Voice chat coming soon &mdash; for
-        now it&rsquo;s a 6-minute form.
-      </p>
-    </div>
-  );
-}
-
-function BotMessage({
-  children,
-  delay,
-}: {
-  children: React.ReactNode;
-  delay: number;
-}) {
-  return (
-    <div
-      className="max-w-[88%] animate-msg-in self-start rounded-2xl rounded-bl-md bg-brand-surface px-4 py-3 text-[15.5px] leading-6 text-brand-ink"
-      style={{ animationDelay: `${delay}s` }}
-    >
-      {children}
-    </div>
   );
 }
 
