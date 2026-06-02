@@ -18,7 +18,7 @@ export default async function IntakeDonePage({ searchParams }: PageProps) {
   return (
     <main className="min-h-screen bg-brand-surface">
       <div className="mx-auto max-w-2xl px-5 py-16 sm:py-24">
-        <div className="rounded-2xl border border-brand-rule bg-white p-8 sm:p-10 shadow-sm">
+        <div className="rounded-2xl border border-brand-rule bg-brand-paper p-8 sm:p-10 shadow-sm">
           <p className="text-sm font-medium text-brand-medium">CDLA.jobs</p>
           {sent ? (
             <>

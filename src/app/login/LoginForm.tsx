@@ -13,7 +13,7 @@ export function LoginForm() {
 
   if (state.status === "sent") {
     return (
-      <div className="rounded-2xl border border-brand-rule bg-white p-6 sm:p-8 shadow-sm">
+      <div className="rounded-2xl border border-brand-rule bg-brand-paper p-6 sm:p-8 shadow-sm">
         <h2 className="text-xl font-semibold tracking-tight text-brand-ink">
           Check your inbox.
         </h2>
@@ -33,7 +33,7 @@ export function LoginForm() {
   return (
     <form
       action={formAction}
-      className="rounded-2xl border border-brand-rule bg-white p-6 sm:p-8 shadow-sm"
+      className="rounded-2xl border border-brand-rule bg-brand-paper p-6 sm:p-8 shadow-sm"
     >
       <label className="block">
         <span className="block text-sm font-medium text-brand-ink">
@@ -47,7 +47,7 @@ export function LoginForm() {
           inputMode="email"
           autoFocus
           placeholder="you@example.com"
-          className="mt-1.5 block w-full rounded-md border border-brand-rule bg-white px-3 py-2.5 text-base text-brand-ink shadow-sm placeholder:text-brand-muted/70 focus:border-brand-medium focus:outline-none focus:ring-2 focus:ring-brand-medium/30"
+          className="mt-1.5 block w-full rounded-md border border-brand-rule bg-brand-paper px-3 py-2.5 text-base text-brand-ink shadow-sm placeholder:text-brand-muted/70 focus:border-brand-medium focus:outline-none focus:ring-2 focus:ring-brand-medium/30"
         />
       </label>
       {state.status === "error" && state.error ? (
@@ -58,7 +58,7 @@ export function LoginForm() {
       <button
         type="submit"
         disabled={pending}
-        className="mt-5 inline-flex h-11 w-full items-center justify-center rounded-md bg-brand-deep px-5 text-sm font-semibold text-white hover:bg-brand-medium disabled:opacity-60 transition-colors"
+        className="mt-5 inline-flex h-11 w-full items-center justify-center rounded-md bg-brand-deep px-5 text-sm font-semibold text-brand-paper hover:bg-brand-medium disabled:opacity-60 transition-colors"
       >
         {pending ? "Sending..." : "Send my link"}
       </button>
