@@ -509,10 +509,18 @@ export async function recordAndersonHandoff(
 
     if (result.code === "not_configured") return; // shouldn't reach here
 
+    const isTerminal = result.code === "no_retry" || result.code === "auth";
     const nextStage: "submit_failed_validation" | "submit_queued_for_retry" =
-      result.code === "no_retry" || result.code === "auth"
-        ? "submit_failed_validation"
-        : "submit_queued_for_retry";
+      isTerminal ? "submit_failed_validation" : "submit_queued_for_retry";
+
+    // Compute the next retry time for queueable failures so the
+    // sweeper (src/lib/quickbase/retry-sweeper.ts) can pick it up
+    // when the spec §B6.3 backoff window elapses. Initial failure
+    // → attempt 1 → 5min from now. Terminal failures clear the
+    // retry timestamp so the sweeper skips them.
+    const { nextRetryAt } = await import("@/lib/quickbase/retry-schedule");
+    const nextAttempts = stageRow.quickbasePushAttempts + 1;
+    const nextAt = isTerminal ? null : nextRetryAt(nextAttempts, new Date());
 
     await db
       .update(partnerApplicationStages)
@@ -521,6 +529,7 @@ export async function recordAndersonHandoff(
         quickbasePushAttemptedAt: attemptedAt,
         quickbasePushAttempts: sql`${partnerApplicationStages.quickbasePushAttempts} + 1`,
         quickbaseLastError: result.error,
+        quickbaseNextRetryAt: nextAt,
         updatedAt: new Date(),
       })
       .where(eq(partnerApplicationStages.id, stageRow.id));
