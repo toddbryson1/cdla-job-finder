@@ -95,19 +95,37 @@ export async function transcribeAudio(
     "Class A CDL driver intake conversation. Trucking terms: reefer, dry van, flatbed, tanker, OTR, regional, local, dedicated, SAP, DOT, IntelliApp.",
   );
 
+  // Hard timeout so a slow Whisper upstream can't hang the chat's
+  // mic-button transition state. Route maxDuration is 30s on Vercel;
+  // 20s timeout leaves margin for the response to flush. Aborting
+  // returns a "network" error, which the chat surfaces as
+  // "Couldn't reach the transcription server. Try typing."
   let res: Response;
+  const ac = new AbortController();
+  const timeoutHandle = setTimeout(
+    () => ac.abort(new Error("Whisper request exceeded 20s")),
+    20_000,
+  );
   try {
     res = await fetch(WHISPER_API_URL, {
       method: "POST",
       headers: { Authorization: `Bearer ${process.env.OPENAI_API_KEY!}` },
       body: form,
+      signal: ac.signal,
     });
   } catch (err) {
+    const isTimeout =
+      err instanceof Error &&
+      (err.name === "AbortError" || err.message.includes("exceeded"));
     return {
       ok: false,
       code: "network",
-      error: `Network error reaching Whisper: ${err instanceof Error ? err.message : String(err)}`,
+      error: isTimeout
+        ? "Whisper request timed out after 20s."
+        : `Network error reaching Whisper: ${err instanceof Error ? err.message : String(err)}`,
     };
+  } finally {
+    clearTimeout(timeoutHandle);
   }
 
   if (res.status === 429) {

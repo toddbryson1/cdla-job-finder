@@ -206,14 +206,23 @@ export async function runDebbieIntakeTurn(
     content: m.content.slice(0, MAX_MESSAGE_CHARS),
   }));
 
-  const res = await client.messages.create({
-    model: MODEL,
-    max_tokens: 600,
-    system: buildSystemPrompt(input),
-    tools: [DEBBIE_TURN_TOOL],
-    tool_choice: { type: "tool", name: DEBBIE_TURN_TOOL.name },
-    messages: trimmed,
-  });
+  // Per-request timeout. The route's maxDuration is 30s on Vercel,
+  // but this is the chat — the driver is staring at the typing
+  // indicator. 15s is well below human-patience-runs-out and leaves
+  // plenty of margin under maxDuration so a timeout still returns a
+  // clean response (the chat surfaces it as "Couldn't reach Debbie")
+  // rather than getting platform-killed mid-stream.
+  const res = await client.messages.create(
+    {
+      model: MODEL,
+      max_tokens: 600,
+      system: buildSystemPrompt(input),
+      tools: [DEBBIE_TURN_TOOL],
+      tool_choice: { type: "tool", name: DEBBIE_TURN_TOOL.name },
+      messages: trimmed,
+    },
+    { timeout: 15_000 },
+  );
 
   const toolBlock = res.content.find((b) => b.type === "tool_use");
   if (!toolBlock || toolBlock.type !== "tool_use") {

@@ -253,14 +253,21 @@ export async function parseResume(
 
   let res: Anthropic.Message;
   try {
-    res = await client.messages.create({
-      model: MODEL,
-      max_tokens: 400,
-      system: SYSTEM_PROMPT,
-      tools: [RESUME_EXTRACTION_TOOL],
-      tool_choice: { type: "tool", name: RESUME_EXTRACTION_TOOL.name },
-      messages,
-    });
+    // 45s timeout — resume parsing involves an image / PDF round
+    // trip with the LLM, so it's intentionally longer than the chat
+    // turn (which is text-only). Route maxDuration is 60s; this
+    // leaves 15s of margin for the response to flush.
+    res = await client.messages.create(
+      {
+        model: MODEL,
+        max_tokens: 400,
+        system: SYSTEM_PROMPT,
+        tools: [RESUME_EXTRACTION_TOOL],
+        tool_choice: { type: "tool", name: RESUME_EXTRACTION_TOOL.name },
+        messages,
+      },
+      { timeout: 45_000 },
+    );
   } catch (err) {
     const e = err as { status?: number; message?: string };
     if (e.status === 429) {
