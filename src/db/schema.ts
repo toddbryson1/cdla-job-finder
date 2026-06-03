@@ -385,6 +385,14 @@ export const drivers = pgTable(
     lastSeenAt: timestamp("last_seen_at", { withTimezone: true }),
     previousSeenAt: timestamp("previous_seen_at", { withTimezone: true }),
 
+    // CAN-SPAM unsubscribe flag. Set by /unsubscribe when a driver
+    // clicks the link in an outbound email. Every email-sending
+    // runner (reverse-matches, application-nudges, nurture-sends,
+    // candidate-email) must check this BEFORE sending and skip when
+    // non-null. Re-subscription is deliberately unsupported in v1.
+    // Migration 0030.
+    unsubscribedAt: timestamp("unsubscribed_at", { withTimezone: true }),
+
     // Free-text notes (kept for human review; not used by engine)
     accidentsDetails: text("accidents_details").notNull().default(""),
     felonyDetails: text("felony_details").notNull().default(""),

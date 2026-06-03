@@ -211,6 +211,13 @@
       "when": 1782600000000,
       "tag": "0029_drivers_last_seen_at",
       "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1782700000000,
+      "tag": "0030_drivers_unsubscribed",
+      "breakpoints": true
     }
   ]
 }

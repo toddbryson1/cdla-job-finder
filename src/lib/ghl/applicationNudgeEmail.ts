@@ -19,6 +19,7 @@
 // recruiter-spam tropes the brand voice guide forbids.
 
 import { resolveRegion } from "@/lib/regions";
+import { renderUnsubscribeFooter } from "@/lib/email/unsubscribe";
 
 const LOGIN_URL_PATH = "/login?redirect=%2Fme";
 
@@ -30,6 +31,9 @@ export interface ApplicationNudgeEmailInput {
   nudgeIndex: 1 | 2;
   /** e.g. https://www.cdla.jobs */
   appUrl: string;
+  /** CAN-SPAM unsubscribe footer requires these. */
+  driverId: string;
+  recipientEmail: string;
 }
 
 export interface ApplicationNudgeEmailOutput {
@@ -46,13 +50,14 @@ function escapeHtml(s: string): string {
     .replace(/'/g, "&#39;");
 }
 
-function shell(bodyInner: string): string {
+function shell(bodyInner: string, unsubscribeFooter: string): string {
   return `
 <!doctype html>
 <html>
   <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #0f1419; line-height: 1.55; font-size: 15px; max-width: 600px; margin: 0 auto; padding: 24px;">
     ${bodyInner}
     <p style="margin-top: 28px; color: #5b6573; font-size: 12px;">CDLA.jobs &middot; Class A driver matching. Built for drivers.</p>
+    ${unsubscribeFooter}
   </body>
 </html>
 `.trim();
@@ -66,6 +71,11 @@ export function applicationNudgeEmail(
     ? `Hey ${escapeHtml(input.firstName)} &mdash;`
     : "Hey there &mdash;";
   const matchesUrl = `${input.appUrl}${LOGIN_URL_PATH}`;
+  const unsubscribeFooter = renderUnsubscribeFooter({
+    driverId: input.driverId,
+    appUrl: input.appUrl,
+    email: input.recipientEmail,
+  });
   const countLabel =
     input.matchCount === 1
       ? "1 carrier"
@@ -91,7 +101,7 @@ export function applicationNudgeEmail(
 
     <p style="margin-top: 22px;">&mdash; The CDLA.jobs team</p>
     `.trim();
-    return { subject, html: shell(inner) };
+    return { subject, html: shell(inner, unsubscribeFooter) };
   }
 
   // nudgeIndex === 2 — last in the series. Slightly more direct.
@@ -114,5 +124,5 @@ export function applicationNudgeEmail(
 
     <p style="margin-top: 22px;">&mdash; The CDLA.jobs team</p>
   `.trim();
-  return { subject, html: shell(inner) };
+  return { subject, html: shell(inner, unsubscribeFooter) };
 }

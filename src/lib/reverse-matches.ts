@@ -16,6 +16,7 @@ import {
 import { appUrl } from "@/lib/stytch/client";
 import { GhlError, sendEmail, upsertContact } from "@/lib/ghl/client";
 import { reverseMatchEmail } from "@/lib/ghl/reverseMatchEmail";
+import { isDriverUnsubscribed } from "@/lib/email/opt-out";
 import { matchDriver } from "@/lib/matching";
 
 type DbClient = typeof defaultDb;
@@ -140,6 +141,13 @@ export async function runReverseMatches(
       bump("anonymous_driver_no_contact");
       continue;
     }
+    // Honor CAN-SPAM opt-outs. Drivers who clicked the unsubscribe
+    // link in any prior CDLA.jobs email get skipped here forever.
+    if (await isDriverUnsubscribed(db, driver.id)) {
+      summary.skipped += 1;
+      bump("unsubscribed");
+      continue;
+    }
 
     try {
       const contact = await upsertContact({
@@ -154,6 +162,8 @@ export async function runReverseMatches(
         cdlState: driver.cdlState,
         newMatchCount,
         appUrl: appUrl(),
+        driverId: driver.id,
+        recipientEmail: driver.email,
       });
       const result = await sendEmail({
         contactId: contact.contactId,

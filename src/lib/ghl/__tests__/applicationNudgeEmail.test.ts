@@ -1,16 +1,42 @@
-import { describe, expect, it } from "vitest";
-import { applicationNudgeEmail } from "@/lib/ghl/applicationNudgeEmail";
+import { beforeAll, describe, expect, it } from "vitest";
+import {
+  applicationNudgeEmail,
+  type ApplicationNudgeEmailInput,
+} from "@/lib/ghl/applicationNudgeEmail";
+
+const FIXTURE_DRIVER_ID = "22222222-3333-4444-5555-666666666666";
+
+function input(
+  overrides: Partial<ApplicationNudgeEmailInput> &
+    Pick<
+      ApplicationNudgeEmailInput,
+      "firstName" | "matchCount" | "nudgeIndex"
+    >,
+): ApplicationNudgeEmailInput {
+  return {
+    firstName: overrides.firstName,
+    cdlState: overrides.cdlState ?? "GA",
+    matchCount: overrides.matchCount,
+    nudgeIndex: overrides.nudgeIndex,
+    appUrl: overrides.appUrl ?? "https://www.cdla.jobs",
+    driverId: overrides.driverId ?? FIXTURE_DRIVER_ID,
+    recipientEmail: overrides.recipientEmail ?? "pat@example.com",
+  };
+}
 
 describe("applicationNudgeEmail", () => {
+  beforeAll(() => {
+    process.env.UNSUBSCRIBE_SECRET ??= "test-unsubscribe-secret";
+  });
   describe("nudgeIndex = 1 (T+24h, soft)", () => {
     it("singular subject when matchCount === 1", () => {
-      const r = applicationNudgeEmail({
+      const r = applicationNudgeEmail(input({
         firstName: "Pat",
         cdlState: "GA",
         matchCount: 1,
         nudgeIndex: 1,
         appUrl: "https://www.cdla.jobs",
-      });
+      }));
       expect(r.subject).toMatch(/your match is waiting/i);
       // Strong-tagged in the body, so just check both pieces appear.
       expect(r.html).toMatch(/1 carrier/);
@@ -19,26 +45,26 @@ describe("applicationNudgeEmail", () => {
     });
 
     it("plural subject + CTA copy when matchCount >= 2", () => {
-      const r = applicationNudgeEmail({
+      const r = applicationNudgeEmail(input({
         firstName: "Pat",
         cdlState: "GA",
         matchCount: 4,
         nudgeIndex: 1,
         appUrl: "https://www.cdla.jobs",
-      });
+      }));
       expect(r.subject).toMatch(/4 carriers are waiting/i);
       expect(r.html).toMatch(/4 carriers/);
       expect(r.html).toMatch(/See your matches/);
     });
 
     it("voice: low-pressure, mentions 2-3 apps pattern", () => {
-      const r = applicationNudgeEmail({
+      const r = applicationNudgeEmail(input({
         firstName: "Pat",
         cdlState: "GA",
         matchCount: 4,
         nudgeIndex: 1,
         appUrl: "https://www.cdla.jobs",
-      });
+      }));
       expect(r.html).toMatch(/think it over/);
       // En-dash renders as the HTML entity &ndash; in the rendered
       // body — match either form.
@@ -48,44 +74,44 @@ describe("applicationNudgeEmail", () => {
 
   describe("nudgeIndex = 2 (T+7d, last nudge)", () => {
     it("explicitly says it's the last nudge", () => {
-      const r = applicationNudgeEmail({
+      const r = applicationNudgeEmail(input({
         firstName: "Pat",
         cdlState: "GA",
         matchCount: 4,
         nudgeIndex: 2,
         appUrl: "https://www.cdla.jobs",
-      });
+      }));
       expect(r.html).toMatch(/last nudge/);
       expect(r.subject).toMatch(/Still thinking it over/);
     });
 
     it("singular vs plural CTA copy", () => {
-      const r1 = applicationNudgeEmail({
+      const r1 = applicationNudgeEmail(input({
         firstName: "Pat",
         cdlState: "GA",
         matchCount: 1,
         nudgeIndex: 2,
         appUrl: "https://www.cdla.jobs",
-      });
+      }));
       expect(r1.html).toMatch(/Open the match/);
-      const r3 = applicationNudgeEmail({
+      const r3 = applicationNudgeEmail(input({
         firstName: "Pat",
         cdlState: "GA",
         matchCount: 3,
         nudgeIndex: 2,
         appUrl: "https://www.cdla.jobs",
-      });
+      }));
       expect(r3.html).toMatch(/Open my matches/);
     });
 
     it("doesn't use forbidden brand-voice tropes", () => {
-      const r = applicationNudgeEmail({
+      const r = applicationNudgeEmail(input({
         firstName: "Pat",
         cdlState: "GA",
         matchCount: 4,
         nudgeIndex: 2,
         appUrl: "https://www.cdla.jobs",
-      });
+      }));
       expect(r.html.toLowerCase()).not.toMatch(/guaranteed/);
       expect(r.html.toLowerCase()).not.toMatch(/exclusive offer/);
       expect(r.html.toLowerCase()).not.toMatch(/limited time/);
@@ -94,47 +120,47 @@ describe("applicationNudgeEmail", () => {
   });
 
   it("falls back to 'Hey there' when firstName is empty", () => {
-    const r = applicationNudgeEmail({
+    const r = applicationNudgeEmail(input({
       firstName: "",
       cdlState: "GA",
       matchCount: 2,
       nudgeIndex: 1,
       appUrl: "https://www.cdla.jobs",
-    });
+    }));
     expect(r.html).toMatch(/Hey there/);
   });
 
   it("escapes HTML in firstName", () => {
-    const r = applicationNudgeEmail({
+    const r = applicationNudgeEmail(input({
       firstName: "<script>",
       cdlState: "GA",
       matchCount: 2,
       nudgeIndex: 1,
       appUrl: "https://www.cdla.jobs",
-    });
+    }));
     expect(r.html).not.toMatch(/<script>Hey/);
     expect(r.html).toMatch(/&lt;script&gt;/);
   });
 
   it("CTA URL points at /login?redirect=/me so the landing is the dashboard", () => {
-    const r = applicationNudgeEmail({
+    const r = applicationNudgeEmail(input({
       firstName: "Pat",
       cdlState: "GA",
       matchCount: 2,
       nudgeIndex: 1,
       appUrl: "https://www.cdla.jobs",
-    });
+    }));
     expect(r.html).toContain("https://www.cdla.jobs/login?redirect=%2Fme");
   });
 
   it("renders the region label from cdl_state", () => {
-    const r = applicationNudgeEmail({
+    const r = applicationNudgeEmail(input({
       firstName: "Pat",
       cdlState: "TX",
       matchCount: 2,
       nudgeIndex: 1,
       appUrl: "https://www.cdla.jobs",
-    });
+    }));
     expect(r.html.toLowerCase()).toMatch(/texas/);
   });
 });

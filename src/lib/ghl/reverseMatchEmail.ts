@@ -11,6 +11,7 @@
 // happens to be a Tier 1 carrier.
 
 import { resolveRegion } from "@/lib/regions";
+import { renderUnsubscribeFooter } from "@/lib/email/unsubscribe";
 
 // Post-click landing target: /login?redirect=/me. /login captures the
 // redirect param and threads it through the Stytch magic-link URL so
@@ -25,6 +26,11 @@ export interface ReverseMatchEmailInput {
   cdlState: string | null;
   newMatchCount: number;
   appUrl: string; // e.g. https://www.cdla.jobs
+  /** Required as of the CAN-SPAM footer rollout — the email shell
+   *  refuses to render without these so a runtime can't ship a
+   *  no-unsubscribe email by accident. */
+  driverId: string;
+  recipientEmail: string;
 }
 
 export interface ReverseMatchEmailOutput {
@@ -41,13 +47,14 @@ function escapeHtml(s: string): string {
     .replace(/'/g, "&#39;");
 }
 
-function shell(bodyInner: string): string {
+function shell(bodyInner: string, unsubscribeFooter: string): string {
   return `
 <!doctype html>
 <html>
   <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #0f1419; line-height: 1.55; font-size: 15px; max-width: 600px; margin: 0 auto; padding: 24px;">
     ${bodyInner}
     <p style="margin-top: 28px; color: #5b6573; font-size: 12px;">CDLA.jobs &middot; Class A driver matching. Built for drivers.</p>
+    ${unsubscribeFooter}
   </body>
 </html>
 `.trim();
@@ -61,6 +68,11 @@ export function reverseMatchEmail(
     ? `Hey ${escapeHtml(input.firstName)} &mdash;`
     : "Hey there &mdash;";
   const matchesUrl = `${input.appUrl}${LOGIN_URL_PATH}`;
+  const unsubscribeFooter = renderUnsubscribeFooter({
+    driverId: input.driverId,
+    appUrl: input.appUrl,
+    email: input.recipientEmail,
+  });
 
   if (input.newMatchCount === 1) {
     // Single new match — spec §3.5
@@ -78,7 +90,7 @@ export function reverseMatchEmail(
 
     <p style="margin-top: 22px;">&mdash; The CDLA.jobs team</p>
     `.trim();
-    return { subject, html: shell(inner) };
+    return { subject, html: shell(inner, unsubscribeFooter) };
   }
 
   // Multiple new matches — spec §3.6
@@ -102,5 +114,5 @@ export function reverseMatchEmail(
 
     <p style="margin-top: 22px;">&mdash; The CDLA.jobs team</p>
   `.trim();
-  return { subject, html: shell(inner) };
+  return { subject, html: shell(inner, unsubscribeFooter) };
 }

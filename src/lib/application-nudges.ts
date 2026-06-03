@@ -22,6 +22,7 @@ import {
 import { matchDriver } from "@/lib/matching";
 import { GhlError, sendEmail, upsertContact } from "@/lib/ghl/client";
 import { applicationNudgeEmail } from "@/lib/ghl/applicationNudgeEmail";
+import { isDriverUnsubscribed } from "@/lib/email/opt-out";
 import { appUrl } from "@/lib/stytch/client";
 
 type DbClient = typeof defaultDb;
@@ -110,6 +111,13 @@ export async function runApplicationNudges(
       bump("anonymous_no_contact");
       continue;
     }
+    // CAN-SPAM opt-out — a driver who unsubscribed from any prior
+    // CDLA.jobs email gets skipped here forever.
+    if (await isDriverUnsubscribed(db, driver.id)) {
+      summary.skipped += 1;
+      bump("unsubscribed");
+      continue;
+    }
 
     // Which nudge index applies right now?
     //   - If both nudges already sent: done forever.
@@ -182,6 +190,8 @@ export async function runApplicationNudges(
         matchCount,
         nudgeIndex,
         appUrl: appUrl(),
+        driverId: driver.id,
+        recipientEmail: driver.email,
       });
       const result = await sendEmail({
         contactId: contact.contactId,
