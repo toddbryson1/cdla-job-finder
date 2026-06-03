@@ -1,5 +1,11 @@
 import type { Metadata } from "next";
+import { redirect as redirectNav } from "next/navigation";
+import { cookies } from "next/headers";
+import { eq } from "drizzle-orm";
 import { LoginForm } from "./LoginForm";
+import { getSessionState } from "@/lib/stytch/session";
+import { db } from "@/db/client";
+import { drivers } from "@/db/schema";
 
 export const metadata: Metadata = {
   title: "Sign in to CDLA.jobs",
@@ -10,6 +16,9 @@ export const metadata: Metadata = {
 interface PageProps {
   searchParams: Promise<{ auth?: string; redirect?: string }>;
 }
+
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** Only allow same-origin paths through the redirect param to avoid
  *  open-redirect via /login?redirect=https://evil.example. */
@@ -41,6 +50,36 @@ export default async function LoginPage({ searchParams }: PageProps) {
   const { auth, redirect } = await searchParams;
   const message = authMessage(auth);
   const redirectAfter = safeRedirectPath(redirect);
+
+  // Already-signed-in short-circuit. Save the driver a round-trip
+  // (form → magic link → second email → click → land here):
+  //   1. Anonymous-intake cookie matches a real driver row → /me
+  //      (or the redirect target, if same-origin)
+  //   2. Stytch session present + email matches a driver → same
+  // Only fires when auth message is absent — if they're coming back
+  // from a failed magic-link click we want them to see the form,
+  // not silently bounce off into the same broken state.
+  if (!message) {
+    const target = redirectAfter ?? "/me";
+    const cookieStore = await cookies();
+    const cookieDriverId = cookieStore.get("cdla_driver_id")?.value;
+    if (cookieDriverId && UUID_RE.test(cookieDriverId)) {
+      const row = await db.query.drivers.findFirst({
+        where: eq(drivers.id, cookieDriverId),
+        columns: { id: true },
+      });
+      if (row) redirectNav(target);
+    }
+
+    const session = await getSessionState();
+    if (session.kind === "ok") {
+      const driver = await db.query.drivers.findFirst({
+        where: eq(drivers.email, session.email),
+        columns: { id: true },
+      });
+      if (driver) redirectNav(target);
+    }
+  }
 
   return (
     <main className="min-h-screen bg-brand-surface">
