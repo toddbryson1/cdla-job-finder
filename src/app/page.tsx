@@ -116,17 +116,38 @@ function Hero({
             />
             Class A driver matching
           </p>
-          <h1 className="text-4xl font-bold leading-[1.04] tracking-[-0.03em] text-brand-ink sm:text-5xl lg:text-6xl">
-            Find your next driving job in{" "}
-            <span className="font-display font-medium italic text-brand-deep">
-              five minutes.
-            </span>
-          </h1>
-          <p className="mt-6 text-lg leading-[1.5] text-brand-ink sm:text-xl">
-            Talk to{" "}
-            <span className="font-semibold text-brand-deep">Debbie</span>. Tell
-            her what you want.
-          </p>
+          {returning ? (
+            <>
+              {/* Returning-driver copy — keep the page rhythm but
+                  reframe the headline around "your matches" instead
+                  of "find your next job." Avoids fighting the
+                  WelcomeBackCard's message on the right. */}
+              <h1 className="text-4xl font-bold leading-[1.04] tracking-[-0.03em] text-brand-ink sm:text-5xl lg:text-6xl">
+                Your matches are{" "}
+                <span className="font-display font-medium italic text-brand-deep">
+                  right here.
+                </span>
+              </h1>
+              <p className="mt-6 text-lg leading-[1.5] text-brand-ink sm:text-xl">
+                We kept your spot. Pick up where you left off — or check
+                what&rsquo;s new since your last visit.
+              </p>
+            </>
+          ) : (
+            <>
+              <h1 className="text-4xl font-bold leading-[1.04] tracking-[-0.03em] text-brand-ink sm:text-5xl lg:text-6xl">
+                Find your next driving job in{" "}
+                <span className="font-display font-medium italic text-brand-deep">
+                  five minutes.
+                </span>
+              </h1>
+              <p className="mt-6 text-lg leading-[1.5] text-brand-ink sm:text-xl">
+                Talk to{" "}
+                <span className="font-semibold text-brand-deep">Debbie</span>.
+                Tell her what you want.
+              </p>
+            </>
+          )}
           <ul className="mt-8 flex flex-wrap gap-x-6 gap-y-3 text-sm text-brand-muted">
             <TrustItem>Free for drivers</TrustItem>
             <TrustItem>We don&rsquo;t sell your data</TrustItem>
