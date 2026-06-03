@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
+import { cookies } from "next/headers";
 import { db } from "@/db/client";
 import { carrierJobs, carriers, drivers } from "@/db/schema";
 import { getSessionState } from "@/lib/stytch/session";
@@ -36,12 +37,6 @@ const askSchema = z.object({
 });
 
 export async function POST(request: Request) {
-  // Auth
-  const session = await getSessionState();
-  if (session.kind !== "ok") {
-    return NextResponse.json({ error: "Sign in required" }, { status: 401 });
-  }
-
   let json: unknown;
   try {
     json = await request.json();
@@ -60,12 +55,36 @@ export async function POST(request: Request) {
   }
   const { driverId, jobId, conversation } = parsed.data;
 
-  // Load driver and verify it matches the session email
+  // Two valid auth paths, mirroring /matches and /apply:
+  //   1. Anonymous-intake driver — `cdla_driver_id` cookie matches
+  //      the driverId in the request body.
+  //   2. Email-claimed driver — Stytch session email matches the
+  //      driver row's email.
+  // Originally this route required path #2 unconditionally, which
+  // 401'd every anonymous driver clicking "Ask Debbie" from a match
+  // card. Caught while wiring the DebbieFollowupBanner.
+  const cookieStore = await cookies();
+  const cookieDriverId = cookieStore.get("cdla_driver_id")?.value;
+  const cookieAuth = cookieDriverId === driverId;
+
   const driver = await db.query.drivers.findFirst({
     where: eq(drivers.id, driverId),
   });
-  if (!driver || !driver.email || driver.email.toLowerCase() !== session.email) {
-    return NextResponse.json({ error: "Not your driver" }, { status: 403 });
+  if (!driver) {
+    return NextResponse.json({ error: "Driver not found" }, { status: 404 });
+  }
+
+  if (!cookieAuth) {
+    const session = await getSessionState();
+    if (session.kind !== "ok") {
+      return NextResponse.json({ error: "Sign in required" }, { status: 401 });
+    }
+    if (
+      !driver.email ||
+      driver.email.toLowerCase() !== session.email
+    ) {
+      return NextResponse.json({ error: "Not your driver" }, { status: 403 });
+    }
   }
 
   // Load job + carrier
