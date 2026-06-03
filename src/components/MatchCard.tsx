@@ -21,6 +21,10 @@ interface Props {
     consentedAt: Date | string;
     lastQualified: boolean | null;
   } | null;
+  /** Open the details on first render (no extra click). Used by the
+   *  matches page to default-expand the top few cards so the driver
+   *  can scan the full job detail without a tap-tap-tap pattern. */
+  initiallyExpanded?: boolean;
 }
 
 function equipmentLabel(slug: string): string {
@@ -30,6 +34,40 @@ function equipmentLabel(slug: string): string {
     .split("-")
     .map((s) => s.charAt(0).toUpperCase() + s.slice(1))
     .join(" ");
+}
+
+/** Short plain-language descriptor for a freight type — kept tight
+ *  so it can ride next to the equipment label without crowding the
+ *  card. Drivers know the equipment; new entrants may not, so the
+ *  descriptor doubles as a glossary entry. */
+function freightDescriptor(slug: string): string | null {
+  const m: Record<string, string> = {
+    "dry-van": "general dry freight",
+    reefer: "refrigerated / temperature-controlled",
+    flatbed: "open-deck freight, tarped or strapped",
+    tanker: "liquid bulk (food-grade, fuel, chemical)",
+    hazmat: "regulated hazardous materials",
+    "auto-hauler": "vehicles on a multi-car trailer",
+    doubles: "two trailers behind one tractor",
+    triples: "three trailers behind one tractor",
+    oversized: "heavy haul / over-dimension loads",
+    dump: "loose bulk material",
+    mixer: "ready-mix concrete",
+    intermodal: "containers on / off rail",
+  };
+  return m[slug] ?? null;
+}
+
+/** Months → human-friendly experience floor for the Requirements row. */
+function formatExperienceFloor(months: number | null): string | null {
+  if (months == null || months <= 0) return null;
+  if (months < 12) return `${months}+ months CDL-A experience`;
+  const years = Math.floor(months / 12);
+  const remainder = months % 12;
+  if (remainder === 0) {
+    return `${years}+ ${years === 1 ? "year" : "years"} CDL-A experience`;
+  }
+  return `${years}.${Math.round((remainder / 12) * 10)}+ years CDL-A experience`;
 }
 
 function payLine(match: Match): { primary: string; note: string | null } {
@@ -68,8 +106,14 @@ function verificationNote(match: Match, lastVerifiedAt: Date | null): string | n
   return "We have not been able to verify this listing recently — details may have changed.";
 }
 
-export function MatchCard({ driverId, match, extras, pursuit }: Props) {
-  const [expanded, setExpanded] = useState(false);
+export function MatchCard({
+  driverId,
+  match,
+  extras,
+  pursuit,
+  initiallyExpanded,
+}: Props) {
+  const [expanded, setExpanded] = useState(initiallyExpanded ?? false);
   const [askDebbieOpen, setAskDebbieOpen] = useState(false);
   const pay = payLine(match);
   const distance = distanceLine(match);
@@ -137,6 +181,11 @@ export function MatchCard({ driverId, match, extras, pursuit }: Props) {
             <dd className="mt-0.5 text-sm font-medium text-brand-ink">
               {equipment}
             </dd>
+            {freightDescriptor(match.equipment) ? (
+              <dd className="text-xs text-brand-muted">
+                {freightDescriptor(match.equipment)}
+              </dd>
+            ) : null}
           </div>
           <div>
             <dt className="text-xs uppercase tracking-wide text-brand-muted">
@@ -149,7 +198,7 @@ export function MatchCard({ driverId, match, extras, pursuit }: Props) {
           </div>
           <div>
             <dt className="text-xs uppercase tracking-wide text-brand-muted">
-              Pay
+              Pay (weekly)
             </dt>
             <dd className="mt-0.5 text-sm font-medium text-brand-ink">
               {pay.primary}
@@ -198,6 +247,8 @@ export function MatchCard({ driverId, match, extras, pursuit }: Props) {
               </p>
             </section>
           ) : null}
+
+          <RequirementsSection extras={extras} />
 
           {extras?.displayBenefitsSummary ? (
             <section className="mt-4">
@@ -283,5 +334,63 @@ export function MatchCard({ driverId, match, extras, pursuit }: Props) {
         onClose={() => setAskDebbieOpen(false)}
       />
     </article>
+  );
+}
+
+/**
+ * Renders the carrier's hiring floor — what the driver needs in order
+ * to apply with a real shot at qualifying. Pulls from the structured
+ * carrier_jobs fields surfaced via MatchDisplayExtras. Renders
+ * nothing if no requirements bullets are available (rare — minExp is
+ * almost always set).
+ *
+ * Voice: short bullets, present tense ("3+ years CDL-A experience"),
+ * no hedging. The driver is comparing carriers side-by-side and
+ * wants a fast read on whether this one fits before clicking Apply.
+ */
+function RequirementsSection({
+  extras,
+}: {
+  extras: MatchDisplayExtras | undefined;
+}) {
+  if (!extras) return null;
+  const bullets: string[] = [];
+
+  const expBullet = formatExperienceFloor(extras.minExperienceMonths);
+  if (expBullet) bullets.push(expBullet);
+
+  if (extras.requiredEndorsements && extras.requiredEndorsements.length > 0) {
+    bullets.push(
+      `Endorsements: ${extras.requiredEndorsements
+        .map((e) => e.toUpperCase())
+        .join(", ")}`,
+    );
+  }
+
+  if (extras.acceptedCdlStates && extras.acceptedCdlStates.length > 0) {
+    // Only surface this when it's actually restrictive (less than ~30
+    // states). A "national" carrier list of 48 states is noise.
+    if (extras.acceptedCdlStates.length <= 30) {
+      bullets.push(
+        `CDL issued in: ${extras.acceptedCdlStates
+          .map((s) => s.toUpperCase())
+          .join(", ")}`,
+      );
+    }
+  }
+
+  if (bullets.length === 0) return null;
+
+  return (
+    <section className="mt-4">
+      <h3 className="text-xs uppercase tracking-wide text-brand-muted">
+        Requirements
+      </h3>
+      <ul className="mt-1.5 list-disc space-y-1 pl-5 text-sm leading-6 text-brand-ink">
+        {bullets.map((b, i) => (
+          <li key={i}>{b}</li>
+        ))}
+      </ul>
+    </section>
   );
 }

@@ -20,6 +20,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   EMPTY_FIELDS,
   scheduleToHomeTime,
@@ -157,6 +158,7 @@ export function DebbieIntakeChat({
   audioEnabled,
   resumeEnabled,
 }: DebbieIntakeChatProps) {
+  const router = useRouter();
   const [messages, setMessages] = useState<DebbieIntakeMessage[]>([]);
   const [state, setState] = useState<DebbieIntakeState>("Q1_zip");
   const [fields, setFields] = useState<DebbieIntakeFields>(EMPTY_FIELDS);
@@ -551,7 +553,10 @@ export function DebbieIntakeChat({
 
         try {
           const arrived = await matchPromise;
-          // Engine eventually came through. Append the matches.
+          // Engine eventually came through. Show the preamble + redirect
+          // to the full-page results view on /matches. Inline rendering
+          // is gone — the chat is the front door, /matches is where the
+          // driver actually picks a carrier to apply to.
           const preamble = buildMatchesPreamble(
             arrived.length,
             where.city,
@@ -563,6 +568,7 @@ export function DebbieIntakeChat({
           ]);
           setMatches(arrived);
           setMatchPhase("shown");
+          setTimeout(() => router.push(`/matches/${forDriverId}`), 1200);
         } catch {
           // Async + fetch error. The driver still has the async copy;
           // just give them a manual link to /matches in case the
@@ -572,7 +578,11 @@ export function DebbieIntakeChat({
         return;
       }
 
-      // Fast path — match resolved before the timer.
+      // Fast path — match resolved before the timer. Same hand-off as
+      // the async path: show the preamble in chat for context, then
+      // redirect to /matches/[id] for the full-screen results view.
+      // The brief delay lets the driver read the preamble before the
+      // page swap — abrupt redirects feel jarring after a conversation.
       const arrived = first;
       const preamble = buildMatchesPreamble(
         arrived.length,
@@ -585,8 +595,9 @@ export function DebbieIntakeChat({
       ]);
       setMatches(arrived);
       setMatchPhase("shown");
+      setTimeout(() => router.push(`/matches/${forDriverId}`), 1200);
     },
-    [],
+    [router],
   );
 
   const showConsent = state === "consent_ready";
@@ -715,8 +726,13 @@ export function DebbieIntakeChat({
           />
         ) : null}
         {matchPhase === "pending" ? <TypingIndicator /> : null}
-        {matches.length > 0 && driverId ? (
-          <MatchesStack matches={matches} driverId={driverId} />
+        {/* Match cards no longer render inside the chat — once
+            matches arrive, the chat redirects to /matches/[id] for
+            a full-screen results experience. We show a brief
+            "pulling them up" message during the 1.2s pre-redirect
+            window so the page swap doesn't feel jarring. */}
+        {matchPhase === "shown" && matches.length > 0 && driverId ? (
+          <PullingUpResults driverId={driverId} count={matches.length} />
         ) : null}
         {matchPhase === "shown" && matches.length === 0 ? (
           <ZeroMatchesCallout
@@ -1274,6 +1290,48 @@ function ConsentCard({
 }
 
 // Stack of compact carrier cards rendered after the matches preamble
+/**
+ * Brief "pulling them up" interstitial rendered during the ~1.2s
+ * window between matches arriving and the redirect to /matches/[id]
+ * firing. Keeps the chat from looking blank or finishing on a dead
+ * end while the page swap happens. The driver should see this for
+ * a beat, then land on the full-screen results view.
+ *
+ * If the redirect fails for any reason (router glitch, etc.), the
+ * inline link in this card is the manual escape hatch — driver can
+ * click through themselves.
+ */
+function PullingUpResults({
+  driverId,
+  count,
+}: {
+  driverId: string;
+  count: number;
+}) {
+  return (
+    <div className="self-stretch animate-msg-in rounded-xl border border-brand-medium/40 bg-brand-paper p-4 shadow-sm">
+      <p className="text-sm leading-6 text-brand-ink">
+        Pulling up your{" "}
+        <span className="font-semibold">
+          {count} match{count === 1 ? "" : "es"}
+        </span>{" "}
+        on the next screen…
+      </p>
+      <Link
+        href={`/matches/${driverId}`}
+        className="mt-2 inline-block text-xs font-medium text-brand-medium hover:text-brand-deep"
+      >
+        Tap if it doesn&rsquo;t load on its own →
+      </Link>
+    </div>
+  );
+}
+
+// Kept for now — inline match card stack was the old chat behavior.
+// Switched off in favor of redirect-to-/matches per
+// 2026-06-02 evening user direction. Left in place because the
+// rendering logic + DebbieMatchView ↔ MatchCard mapping is still
+// useful reference; safe to delete once the new flow is validated.
 // bubble. Sized to fit inside the chat bubble layout (max ~88% width)
 // while still being scannable. Each card links to /match/[driverId]/
 // [jobId]/apply — the same Stage 2 entry point as the form-fallback

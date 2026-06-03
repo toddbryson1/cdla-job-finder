@@ -10,6 +10,12 @@ export interface MatchDisplayExtras {
   displayBenefitsSummary: string | null;
   displaySigningBonusUsd: number | null;
   lastVerifiedAt: Date | null;
+  /** Minimum recent (3-yr) driving experience required, in months. */
+  minExperienceMonths: number | null;
+  /** Endorsements the carrier requires (e.g. "H" hazmat, "N" tanker). */
+  requiredEndorsements: string[];
+  /** What CDL states the carrier accepts. Empty array = no restriction. */
+  acceptedCdlStates: string[];
   /**
    * Canonical /job/[slug] URL for this job, pointing at the active
    * primary posting cycle. Null if no active cycle exists yet (the
@@ -95,6 +101,9 @@ export async function loadDisplayExtras(
       lastVerifiedAt: carrierJobs.lastVerifiedAt,
       positionTitle: carrierJobs.positionTitle,
       carrierName: carriers.name,
+      minExperienceMonths: carrierJobs.minExperienceMonths,
+      requiredEndorsements: carrierJobs.requiredEndorsements,
+      acceptedCdlStates: carrierJobs.acceptedCdlStates,
     })
     .from(carrierJobs)
     .innerJoin(carriers, eq(carriers.id, carrierJobs.carrierId))
@@ -155,6 +164,9 @@ export async function loadDisplayExtras(
         displayHomeTimeDescription: r.displayHomeTimeDescription,
         displayBenefitsSummary: r.displayBenefitsSummary,
       }),
+      minExperienceMonths: r.minExperienceMonths,
+      requiredEndorsements: r.requiredEndorsements ?? [],
+      acceptedCdlStates: r.acceptedCdlStates ?? [],
     });
   }
   return out;

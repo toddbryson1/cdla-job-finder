@@ -157,19 +157,26 @@ export default async function MatchesPage({ params }: PageProps) {
         externalCount={externalMatches.length}
         truncated={result.truncated}
       />
+      <DebbieFollowupBanner />
       {result.matches.length === 0 && externalMatches.length === 0 ? (
         <EmptyMatches firstName={driver.firstName ?? ""} />
       ) : (
         <>
           {result.matches.length > 0 ? (
             <ul className="mt-8 flex flex-col gap-4">
-              {result.matches.map((m) => (
+              {result.matches.map((m, i) => (
                 <li key={m.jobId}>
                   <MatchCard
                     driverId={driverId}
                     match={m}
                     extras={extras.get(m.jobId)}
                     pursuit={pursued.get(m.jobId) ?? null}
+                    // Default-expand the first 3 cards so the driver
+                    // can scan requirements + description without
+                    // clicking each one open. Target is 2-3 apps per
+                    // session — the more friction we strip off the
+                    // top of the list, the better the conversion.
+                    initiallyExpanded={i < 3}
                   />
                 </li>
               ))}
@@ -208,6 +215,37 @@ function Shell({ children }: { children: React.ReactNode }) {
     <main className="min-h-screen bg-brand-surface">
       <div className="mx-auto max-w-3xl px-5 py-10 sm:py-14">{children}</div>
     </main>
+  );
+}
+
+/**
+ * Small "continue the conversation" banner under the matches header.
+ * Bridges the gap between "Debbie's done with intake" and "you're now
+ * looking at matches alone" — drivers who walked in via the chat may
+ * still have follow-up questions about specific jobs. Each match
+ * already has a per-card "Ask Debbie" button (which scopes the
+ * conversation to that job); this banner is the general entry point.
+ *
+ * Links to the home hero's anchor (#hero) where the chat lives. For
+ * a driver who's already in the system that's fine — the
+ * homepage's WelcomeBackCard takes over the hero slot, and they can
+ * still tap into ad-hoc chat via the per-card "Ask Debbie" buttons.
+ */
+function DebbieFollowupBanner() {
+  return (
+    <div className="mt-4 rounded-xl border border-brand-rule bg-brand-paper px-4 py-3 text-sm leading-6 text-brand-ink shadow-sm sm:flex sm:items-center sm:justify-between sm:gap-4">
+      <p>
+        <span
+          aria-hidden="true"
+          className="mr-2 inline-flex h-6 w-6 items-center justify-center rounded-full bg-brand-deep text-[11px] font-semibold text-brand-paper"
+        >
+          D
+        </span>
+        Got questions about any of these? Tap{" "}
+        <span className="font-semibold">Ask Debbie</span> on any match
+        card.
+      </p>
+    </div>
   );
 }
 
