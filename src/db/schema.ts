@@ -467,6 +467,46 @@ export const driverNurtureSends = pgTable(
   ],
 );
 
+// Ad-hoc "you have N matches but haven't applied yet" nudge emails.
+// Separate from nurture (slow 6-email drip) and reverse-match alerts
+// (new matches). Fires conditionally on application state — if the
+// driver consents to any carrier, no more nudges. Cadence:
+//   - nudge_index = 1: T + 24h after intake
+//   - nudge_index = 2: T + 7 days after intake (only if nudge 1 fired)
+// Driver flips off the queue the moment they consent to any carrier.
+// One row per (driver_id, nudge_index) so re-runs of the daily cron
+// don't double-send. Migration 0028.
+export const driverApplicationNudgeSends = pgTable(
+  "driver_application_nudge_sends",
+  {
+    id: uuid("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    driverId: uuid("driver_id")
+      .references(() => drivers.id, { onDelete: "cascade" })
+      .notNull(),
+    nudgeIndex: integer("nudge_index").notNull(),
+    sentAt: timestamp("sent_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    status: text("status").notNull().default("sent"),
+    skipReason: text("skip_reason"),
+    ghlMessageId: text("ghl_message_id"),
+    errorMessage: text("error_message"),
+    matchCountAtSend: integer("match_count_at_send"),
+  },
+  (t) => [
+    uniqueIndex("driver_application_nudge_sends_driver_nudge_uniq").on(
+      t.driverId,
+      t.nudgeIndex,
+    ),
+    index("driver_application_nudge_sends_driver_sent_idx").on(
+      t.driverId,
+      t.sentAt,
+    ),
+  ],
+);
+
 // Tracks every (driver, job) Stage 2 pursuit. Created/updated when the
 // driver consents on /match/[driverId]/[jobId]/apply. Drives the
 // "you pursued this" badge on the matches list and any future

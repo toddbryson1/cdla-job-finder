@@ -4,6 +4,7 @@ import { runContentMachine } from "@/lib/content-machine/run";
 import { isGhlConfigured } from "@/lib/ghl/client";
 import { runNurtureSends } from "@/lib/nurture-sends";
 import { runReverseMatches } from "@/lib/reverse-matches";
+import { runApplicationNudges } from "@/lib/application-nudges";
 import { syncSwiftJobs } from "@/lib/swift-sync";
 import { runFullSync as runTaSync } from "@/lib/transport-america/sync";
 import { spawnPostingCycles } from "@/lib/posting-cycles";
@@ -207,6 +208,25 @@ export async function GET(request: Request) {
   } catch (err) {
     console.error("[cron/daily] reverse-matches failed:", err);
     out.reverseMatches = {
+      ok: false,
+      error: err instanceof Error ? err.message : String(err),
+    };
+  }
+
+  // 5.5 application-nudges — "you matched but haven't applied yet"
+  // 2-email series. Fires at T+24h and T+7d after intake when the
+  // driver has matches but no consented carriers. Independent of
+  // reverse-matches above (different schedule, different cap).
+  try {
+    if (!isGhlConfigured()) {
+      out.applicationNudges = { ok: false, error: "GHL not configured" };
+    } else {
+      const result = await runApplicationNudges(db);
+      out.applicationNudges = { ok: true, ...result };
+    }
+  } catch (err) {
+    console.error("[cron/daily] application-nudges failed:", err);
+    out.applicationNudges = {
       ok: false,
       error: err instanceof Error ? err.message : String(err),
     };
