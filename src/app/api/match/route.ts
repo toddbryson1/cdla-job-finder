@@ -35,6 +35,13 @@ export async function POST(request: Request) {
   if (!driver) {
     return NextResponse.json({ error: "Driver not found" }, { status: 404 });
   }
+  // CCPA deletion defense: treat a deleted row exactly like
+  // not-found so the matching engine never operates on PII-stripped
+  // profile data. (matchDriver itself also gates, but failing here
+  // gives the caller a clean 404 instead of a 500 from the engine.)
+  if (driver.deletedAt != null) {
+    return NextResponse.json({ error: "Driver not found" }, { status: 404 });
+  }
 
   if (!driver.homeZip) {
     return NextResponse.json(

@@ -73,6 +73,10 @@ export async function POST(request: Request) {
   if (!driver) {
     return NextResponse.json({ error: "Driver not found" }, { status: 404 });
   }
+  // CCPA deletion: treat as not-found.
+  if (driver.deletedAt != null) {
+    return NextResponse.json({ error: "Driver not found" }, { status: 404 });
+  }
 
   if (!cookieAuth) {
     const session = await getSessionState();

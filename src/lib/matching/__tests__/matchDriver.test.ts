@@ -41,6 +41,41 @@ describe("matchDriver — empty matches", () => {
   });
 });
 
+describe("matchDriver — CCPA deletion defense", () => {
+  it("rejects a deleted driver the same way it rejects 'not found'", async () => {
+    // Seed an Atlanta-region driver who would normally match. Then
+    // flip deleted_at on the row and assert matchDriver throws —
+    // even before the deletion-aware runners get a chance to call
+    // isDriverUnsubscribed, the engine itself refuses to do work
+    // on PII-stripped data.
+    const { db } = await import("@/db/client");
+    const { drivers } = await import("@/db/schema");
+    const { eq } = await import("drizzle-orm");
+
+    const id = await insertTestDriver({
+      homeLat: ATLANTA.lat,
+      homeLng: ATLANTA.lng,
+      cdlState: "GA",
+      desiredEquipment: ["reefer"],
+      yearsHeld: 3,
+      sapStatus: "not-in-sap",
+    });
+    // First confirm it would normally match.
+    const before = await matchDriver(id);
+    expect(before.matches.length).toBeGreaterThan(0);
+
+    await db
+      .update(drivers)
+      .set({ deletedAt: new Date() })
+      .where(eq(drivers.id, id));
+
+    // Same error class + message shape as "Driver not found" — the
+    // caller can't distinguish, which is the point of the
+    // anonymization pattern.
+    await expect(matchDriver(id)).rejects.toThrow(/not found/);
+  });
+});
+
 describe("matchDriver — single match", () => {
   it("returns the Atlanta reefer carrier for an Atlanta-area driver", async () => {
     const id = await insertTestDriver({

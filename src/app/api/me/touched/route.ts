@@ -30,13 +30,14 @@ export async function POST() {
   let driverId: string | null = null;
 
   if (cookieDriverId && UUID_RE.test(cookieDriverId)) {
-    // Trust the cookie value if a matching row exists. Stale cookie
-    // (driver row deleted) falls through to the session check.
+    // Trust the cookie value if a matching row exists AND isn't
+    // CCPA-deleted. Stale cookie (driver row deleted or hard-gone)
+    // falls through to the session check.
     const row = await db.query.drivers.findFirst({
       where: eq(drivers.id, cookieDriverId),
-      columns: { id: true },
+      columns: { id: true, deletedAt: true },
     });
-    if (row) driverId = row.id;
+    if (row && row.deletedAt == null) driverId = row.id;
   }
 
   if (!driverId) {
@@ -46,9 +47,9 @@ export async function POST() {
     }
     const row = await db.query.drivers.findFirst({
       where: eq(drivers.email, session.email),
-      columns: { id: true },
+      columns: { id: true, deletedAt: true },
     });
-    if (!row) {
+    if (!row || row.deletedAt != null) {
       return NextResponse.json({ ok: false, error: "No driver row" }, { status: 404 });
     }
     driverId = row.id;

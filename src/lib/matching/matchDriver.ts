@@ -29,6 +29,15 @@ export async function matchDriver(
   if (!driverRow) {
     throw new MatchEngineError(`Driver ${driverId} not found`);
   }
+  // CCPA right-to-delete defense in depth. The reverse-matches and
+  // application-nudges runners check isDriverUnsubscribed (which
+  // covers deletion) before calling matchDriver, but any other API
+  // surface that takes a driverId — /api/match, future routes — gets
+  // gated here too. Reject the same way "not found" is rejected;
+  // identity is gone, the row should be treated as non-existent.
+  if (driverRow.deletedAt != null) {
+    throw new MatchEngineError(`Driver ${driverId} not found`);
+  }
   if (driverRow.homeLat == null || driverRow.homeLng == null) {
     throw new MatchEngineError(
       `Driver ${driverId} has no home_lat/home_lng — geocode from home_zip before matching`,
