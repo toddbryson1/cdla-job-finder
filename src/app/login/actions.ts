@@ -1,11 +1,27 @@
 "use server";
 
+import { cookies } from "next/headers";
 import {
   getStytchClient,
   isStytchConfigured,
   appUrl,
   MAGIC_LINK_EXPIRATION_MINUTES,
 } from "@/lib/stytch/client";
+
+/** Cookie that carries the post-auth redirect target across the
+ *  magic-link round-trip. We can't put redirect in the magic-link
+ *  URL itself because Stytch validates the full URL against a
+ *  dashboard allow-list and arbitrary query params break that. */
+const LOGIN_REDIRECT_COOKIE = "cdla_login_redirect";
+const LOGIN_REDIRECT_MAX_AGE_S = 30 * 60; // 30 min, matches MLM TTL
+
+function safeRedirectPath(raw: unknown): string | null {
+  if (typeof raw !== "string") return null;
+  if (raw.length === 0 || raw.length > 200) return null;
+  if (!raw.startsWith("/")) return null;
+  if (raw.startsWith("//")) return null;
+  return raw;
+}
 
 export interface SendLinkState {
   status: "idle" | "sent" | "error";
@@ -44,8 +60,25 @@ export async function sendMagicLink(
 
   // No query params on the callback — Stytch validates the full URL against
   // the dashboard allow-list. /authenticate looks the driver up by their
-  // verified email after auth and routes to /matches/[id] from there.
+  // verified email after auth and routes to /me (or the cookied redirect
+  // target) from there.
   const callback = `${appUrl()}/authenticate`;
+
+  // If the login page captured a same-origin redirect target (e.g.
+  // /me from a reverse-match email click), drop it in a httpOnly
+  // cookie so /authenticate can honor it after Stytch sign-in. We
+  // CAN'T put it in the callback URL because Stytch allow-lists.
+  const redirectAfter = safeRedirectPath(formData.get("redirect"));
+  if (redirectAfter) {
+    const cookieStore = await cookies();
+    cookieStore.set(LOGIN_REDIRECT_COOKIE, redirectAfter, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "lax",
+      path: "/",
+      maxAge: LOGIN_REDIRECT_MAX_AGE_S,
+    });
+  }
 
   try {
     await getStytchClient().magicLinks.email.loginOrCreate({
@@ -65,3 +98,4 @@ export async function sendMagicLink(
     };
   }
 }
+

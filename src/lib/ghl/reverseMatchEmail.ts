@@ -12,7 +12,13 @@
 
 import { resolveRegion } from "@/lib/regions";
 
-const LOGIN_URL_PATH = "/login";
+// Post-click landing target: /login?redirect=/me. /login captures the
+// redirect param and threads it through the Stytch magic-link URL so
+// /authenticate can drop the driver on /me (their dashboard) instead
+// of the generic /matches/[id]. /me itself is cookie-OR-session
+// authed; drivers already signed-in on the device skip /login
+// entirely and land directly on /me.
+const LOGIN_URL_PATH = "/login?redirect=%2Fme";
 
 export interface ReverseMatchEmailInput {
   firstName: string;

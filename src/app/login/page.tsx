@@ -8,7 +8,17 @@ export const metadata: Metadata = {
 };
 
 interface PageProps {
-  searchParams: Promise<{ auth?: string }>;
+  searchParams: Promise<{ auth?: string; redirect?: string }>;
+}
+
+/** Only allow same-origin paths through the redirect param to avoid
+ *  open-redirect via /login?redirect=https://evil.example. */
+function safeRedirectPath(raw: string | undefined): string | null {
+  if (!raw) return null;
+  if (raw.length > 200) return null;
+  if (!raw.startsWith("/")) return null;
+  if (raw.startsWith("//")) return null; // protocol-relative
+  return raw;
 }
 
 function authMessage(reason: string | undefined): string | null {
@@ -28,8 +38,9 @@ function authMessage(reason: string | undefined): string | null {
 }
 
 export default async function LoginPage({ searchParams }: PageProps) {
-  const { auth } = await searchParams;
+  const { auth, redirect } = await searchParams;
   const message = authMessage(auth);
+  const redirectAfter = safeRedirectPath(redirect);
 
   return (
     <main className="min-h-screen bg-brand-surface">
@@ -49,7 +60,7 @@ export default async function LoginPage({ searchParams }: PageProps) {
             {message}
           </div>
         ) : null}
-        <LoginForm />
+        <LoginForm redirectAfter={redirectAfter} />
       </div>
     </main>
   );

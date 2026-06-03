@@ -5,7 +5,11 @@ import { sendMagicLink, type SendLinkState } from "./actions";
 
 const initialState: SendLinkState = { status: "idle" };
 
-export function LoginForm() {
+export function LoginForm({
+  redirectAfter,
+}: {
+  redirectAfter?: string | null;
+}) {
   const [state, formAction, pending] = useActionState(
     sendMagicLink,
     initialState,
@@ -35,6 +39,12 @@ export function LoginForm() {
       action={formAction}
       className="rounded-2xl border border-brand-rule bg-brand-paper p-6 sm:p-8 shadow-sm"
     >
+      {/* Hidden redirect — picked up by the sendMagicLink action and
+          forwarded as a query param on the Stytch magic-link URL so
+          /authenticate knows where to drop the driver after sign-in. */}
+      {redirectAfter ? (
+        <input type="hidden" name="redirect" value={redirectAfter} />
+      ) : null}
       <label className="block">
         <span className="block text-sm font-medium text-brand-ink">
           Email address

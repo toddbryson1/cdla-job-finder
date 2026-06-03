@@ -12,6 +12,20 @@ import {
 
 export const runtime = "nodejs";
 
+/** Cookie /login sets when a redirect target is captured via
+ *  ?redirect=. /authenticate reads + clears it after sign-in. */
+const LOGIN_REDIRECT_COOKIE = "cdla_login_redirect";
+
+/** Same-origin path guard so a stale cookie can't redirect the
+ *  driver to an attacker-controlled URL. */
+function safeRedirectPath(raw: string | undefined): string | null {
+  if (!raw) return null;
+  if (raw.length > 200) return null;
+  if (!raw.startsWith("/")) return null;
+  if (raw.startsWith("//")) return null;
+  return raw;
+}
+
 // Stytch magic-link callback. Route Handler (not a server component) so it
 // can set the session cookie — Next 16 forbids cookies().set() inside
 // server components.
@@ -60,17 +74,32 @@ export async function GET(request: Request) {
     return NextResponse.redirect(new URL("/login?auth=no_session", url));
   }
 
-  // Look up driver by verified email. If they've re-submitted intake more
-  // than once we have multiple rows for the same email — take the most
-  // recent so they see the answers they just gave us.
+  // Pick the post-auth destination. Priority order:
+  //   1. cdla_login_redirect cookie — set by /login when a same-origin
+  //      ?redirect= came in (e.g. from a reverse-match email click).
+  //   2. /me — the driver dashboard. Better default than /matches
+  //      directly since /me surfaces history + alerts + links onward
+  //      to /matches.
+  //   3. / — fallback when neither of the above applies (no driver
+  //      row, no redirect cookie).
+  const redirectCookie = request.headers.get("cookie") ?? "";
+  const cookieMatch = redirectCookie.match(
+    new RegExp(`(?:^|; )${LOGIN_REDIRECT_COOKIE}=([^;]+)`),
+  );
+  const cookiedRedirect = cookieMatch
+    ? safeRedirectPath(decodeURIComponent(cookieMatch[1]!))
+    : null;
+
   let destination = "/";
-  if (verifiedEmail) {
+  if (cookiedRedirect) {
+    destination = cookiedRedirect;
+  } else if (verifiedEmail) {
     const driver = await db.query.drivers.findFirst({
       where: eq(drivers.email, verifiedEmail),
       orderBy: [desc(drivers.createdAt)],
       columns: { id: true },
     });
-    if (driver) destination = `/matches/${driver.id}`;
+    if (driver) destination = "/me";
   }
 
   const response = NextResponse.redirect(new URL(destination, url));
@@ -81,5 +110,16 @@ export async function GET(request: Request) {
     path: "/",
     maxAge: SESSION_ABSOLUTE_SECONDS,
   });
+  // Clear the redirect cookie after honoring it so a future sign-in
+  // from this device doesn't accidentally reuse it.
+  if (cookieMatch) {
+    response.cookies.set(LOGIN_REDIRECT_COOKIE, "", {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "lax",
+      path: "/",
+      maxAge: 0,
+    });
+  }
   return response;
 }
