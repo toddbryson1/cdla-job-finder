@@ -5,12 +5,13 @@
 // queries assume the caller has already verified the driver belongs
 // to the requester.
 
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq, gt, sql } from "drizzle-orm";
 import { db } from "@/db/client";
 import {
   carrierJobs,
   carriers,
   driverCarrierApplications,
+  driverCarrierMatches,
   partnerApplicationStages,
 } from "@/db/schema";
 
@@ -141,6 +142,59 @@ export interface DriverDashboardStats {
   /** Most recent consent timestamp — anchors the "last applied X ago"
    *  copy. Null when the driver hasn't applied to anything yet. */
   latestApplicationAt: Date | null;
+}
+
+/** Counts that compare against the driver's previous_seen_at — the
+ *  "what's new since you last looked" surface. Null when previousSeenAt
+ *  is null (first visit) so the dashboard can hide the section
+ *  cleanly. */
+export interface NewSinceLastVisit {
+  /** First-matched-after value of previousSeenAt for any (driver, job)
+   *  pair. driver_carrier_matches is upserted onConflictDoNothing so
+   *  matchedAt = "when this driver+job pair first appeared" — making
+   *  it a clean "new since" signal. */
+  newMatches: number;
+  /** Sterling-confirmation events whose quickbase_push_succeeded_at
+   *  fell after the last visit. A real "your application moved
+   *  forward" signal. */
+  newSterlingConfirmations: number;
+  /** ISO-ish anchor for the wording ("since 3 days ago"). */
+  since: Date;
+}
+
+export async function getNewSinceLastVisit(
+  driverId: string,
+  previousSeenAt: Date | null,
+): Promise<NewSinceLastVisit | null> {
+  if (!previousSeenAt) return null;
+
+  const [matchesRow] = await db
+    .select({ n: sql<number>`count(*)::int` })
+    .from(driverCarrierMatches)
+    .where(
+      and(
+        eq(driverCarrierMatches.driverId, driverId),
+        gt(driverCarrierMatches.matchedAt, previousSeenAt),
+      ),
+    );
+  const [confirmationsRow] = await db
+    .select({ n: sql<number>`count(*)::int` })
+    .from(partnerApplicationStages)
+    .where(
+      and(
+        eq(partnerApplicationStages.driverId, driverId),
+        gt(
+          partnerApplicationStages.quickbasePushSucceededAt,
+          previousSeenAt,
+        ),
+      ),
+    );
+
+  return {
+    newMatches: matchesRow?.n ?? 0,
+    newSterlingConfirmations: confirmationsRow?.n ?? 0,
+    since: previousSeenAt,
+  };
 }
 
 export function summarizeApplications(

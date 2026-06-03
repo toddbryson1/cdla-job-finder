@@ -9,11 +9,13 @@ import {
   carrierJobs,
   carriers,
   driverCarrierApplications,
+  driverCarrierMatches,
   drivers,
   partnerApplicationStages,
 } from "@/db/schema";
 import {
   getDriverApplicationHistory,
+  getNewSinceLastVisit,
   summarizeApplications,
 } from "../dashboard-queries";
 
@@ -264,5 +266,192 @@ describe("getDriverApplicationHistory + summarizeApplications", () => {
     expect(stats.notQualifiedCount).toBe(1);
     expect(stats.sterlingConfirmedCount).toBe(1);
     expect(stats.latestApplicationAt).not.toBeNull();
+  });
+});
+
+describe("getNewSinceLastVisit", () => {
+  // Shares the same sentinel cleanup as the block above. Re-declare
+  // helpers locally so the test file stays scannable when read in
+  // isolation.
+  const SINCE_DRIVER_EMAIL_PREFIX = "since-test+";
+  const SINCE_SENTINEL_CARRIER = "Since Visit Test (sentinel)";
+
+  async function cleanup(): Promise<void> {
+    const cs = await db
+      .select({ id: carriers.id })
+      .from(carriers)
+      .where(eq(carriers.name, SINCE_SENTINEL_CARRIER));
+    for (const c of cs) {
+      await db
+        .delete(partnerApplicationStages)
+        .where(eq(partnerApplicationStages.carrierId, c.id));
+      await db
+        .delete(driverCarrierMatches)
+        .where(eq(driverCarrierMatches.carrierId, c.id));
+      await db
+        .delete(driverCarrierApplications)
+        .where(eq(driverCarrierApplications.carrierId, c.id));
+      await db.delete(carrierJobs).where(eq(carrierJobs.carrierId, c.id));
+    }
+    await db.delete(carriers).where(eq(carriers.name, SINCE_SENTINEL_CARRIER));
+    await db
+      .delete(drivers)
+      .where(sql`${drivers.email} LIKE ${SINCE_DRIVER_EMAIL_PREFIX + "%"}`);
+  }
+
+  async function seedDriver(suffix: string): Promise<string> {
+    const [row] = await db
+      .insert(drivers)
+      .values({
+        firstName: "Since",
+        lastName: `Sentinel${suffix}`,
+        email: `${SINCE_DRIVER_EMAIL_PREFIX}${suffix}@example.com`,
+        phone: "555-555-1234",
+        homeZip: "30303",
+        cdlState: "GA",
+        yearsHeld: "3",
+        otrYears: "2",
+        equipmentRun: ["reefer"],
+        desiredEquipment: ["reefer"],
+        desiredRegions: ["any"],
+        homeTime: ["otr"],
+        terminatedFromAnyOfLast3Employers: false,
+        failedDotTest: false,
+        attestAccurate: true,
+        consentToShare: true,
+      })
+      .returning({ id: drivers.id });
+    return row!.id;
+  }
+
+  async function seedCarrierAndJob(): Promise<{
+    carrierId: string;
+    jobId: string;
+  }> {
+    const [c] = await db
+      .insert(carriers)
+      .values({
+        name: SINCE_SENTINEL_CARRIER,
+        kind: "partner",
+        tier: "none",
+        status: "active",
+      })
+      .returning({ id: carriers.id });
+    const [j] = await db
+      .insert(carrierJobs)
+      .values({
+        carrierId: c!.id,
+        status: "active",
+        positionTitle: "Sentinel",
+        domicileCity: "Atlanta",
+        domicileState: "GA",
+        domicileLat: "33.7488",
+        domicileLng: "-84.3877",
+        hiringRadiusMiles: 1500,
+        equipment: "reefer",
+        minExperienceMonths: 6,
+        acceptedHomeTimeTypes: ["otr"],
+        sapTolerance: "accepts_none",
+        applicationSurface: "tenstreet_intelliapp",
+        dataSource: "manual_partner_intake",
+        verificationStatus: "verified",
+        dataQuality: "complete",
+      })
+      .returning({ id: carrierJobs.id });
+    return { carrierId: c!.id, jobId: j!.id };
+  }
+
+  beforeAll(async () => {
+    await cleanup();
+  });
+  afterAll(async () => {
+    await cleanup();
+  });
+  afterEach(async () => {
+    await cleanup();
+  });
+
+  it("returns null when previousSeenAt is null (first visit)", async () => {
+    const driverId = await seedDriver("firstvisit");
+    const r = await getNewSinceLastVisit(driverId, null);
+    expect(r).toBeNull();
+  });
+
+  it("counts driver_carrier_matches rows with matchedAt > previousSeenAt", async () => {
+    const driverId = await seedDriver("matches");
+    const { carrierId, jobId } = await seedCarrierAndJob();
+    const { jobId: jobId2 } = await seedCarrierAndJob();
+
+    const cutoff = new Date("2026-06-01T12:00:00Z");
+    const before = new Date("2026-05-31T12:00:00Z");
+    const after = new Date("2026-06-02T12:00:00Z");
+
+    await db.insert(driverCarrierMatches).values([
+      {
+        driverId,
+        jobId,
+        carrierId,
+        matchedAt: before,
+        softRankScore: "1",
+      },
+      {
+        driverId,
+        jobId: jobId2,
+        carrierId,
+        matchedAt: after,
+        softRankScore: "1",
+      },
+    ]);
+
+    const r = await getNewSinceLastVisit(driverId, cutoff);
+    expect(r).not.toBeNull();
+    expect(r!.newMatches).toBe(1);
+    expect(r!.newSterlingConfirmations).toBe(0);
+    expect(r!.since.getTime()).toBe(cutoff.getTime());
+  });
+
+  it("counts Sterling confirmations whose quickbase_push_succeeded_at > previousSeenAt", async () => {
+    const driverId = await seedDriver("sterling");
+    const { carrierId, jobId } = await seedCarrierAndJob();
+    const cutoff = new Date("2026-06-01T12:00:00Z");
+    await db.insert(partnerApplicationStages).values({
+      driverId,
+      carrierJobId: jobId,
+      carrierId,
+      stage: "submitted_to_sterling",
+      quickbasePushAttempts: 1,
+      quickbaseRecordId: "QB-NEW",
+      quickbasePushSucceededAt: new Date("2026-06-02T10:00:00Z"),
+    });
+    const r = await getNewSinceLastVisit(driverId, cutoff);
+    expect(r).not.toBeNull();
+    expect(r!.newSterlingConfirmations).toBe(1);
+  });
+
+  it("doesn't count Sterling confirmations whose quickbase_push_succeeded_at is at-or-before previousSeenAt", async () => {
+    const driverId = await seedDriver("oldsterling");
+    const { carrierId, jobId } = await seedCarrierAndJob();
+    const cutoff = new Date("2026-06-02T12:00:00Z");
+    await db.insert(partnerApplicationStages).values({
+      driverId,
+      carrierJobId: jobId,
+      carrierId,
+      stage: "submitted_to_sterling",
+      quickbasePushAttempts: 1,
+      quickbaseRecordId: "QB-OLD",
+      quickbasePushSucceededAt: new Date("2026-06-01T10:00:00Z"),
+    });
+    const r = await getNewSinceLastVisit(driverId, cutoff);
+    expect(r).not.toBeNull();
+    expect(r!.newSterlingConfirmations).toBe(0);
+  });
+
+  it("returns 0/0 when there's no activity since previousSeenAt", async () => {
+    const driverId = await seedDriver("quiet");
+    const cutoff = new Date(Date.now() - 60 * 60 * 1000); // 1h ago
+    const r = await getNewSinceLastVisit(driverId, cutoff);
+    expect(r).not.toBeNull();
+    expect(r!.newMatches).toBe(0);
+    expect(r!.newSterlingConfirmations).toBe(0);
   });
 });

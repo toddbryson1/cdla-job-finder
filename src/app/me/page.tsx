@@ -21,9 +21,12 @@ import { drivers } from "@/db/schema";
 import { getSessionState } from "@/lib/stytch/session";
 import {
   getDriverApplicationHistory,
+  getNewSinceLastVisit,
   summarizeApplications,
   type DriverApplicationRow,
+  type NewSinceLastVisit,
 } from "@/lib/me/dashboard-queries";
+import { MeTouchBeacon } from "./MeTouchBeacon";
 
 export const metadata: Metadata = {
   title: "Your CDLA.jobs",
@@ -76,6 +79,9 @@ export default async function MePage() {
 
   const applications = await getDriverApplicationHistory(driverId);
   const stats = summarizeApplications(applications);
+  // "Since your last visit" deltas — null on the driver's first /me
+  // visit (previousSeenAt is null until the beacon fires twice).
+  const newSince = await getNewSinceLastVisit(driverId, driver.previousSeenAt);
 
   const intakeAge = ageInWords(driver.createdAt);
 
@@ -92,6 +98,7 @@ export default async function MePage() {
           applications={applications}
           intakeAge={intakeAge}
           driverId={driverId}
+          newSince={newSince}
         />
 
         <StatsRow stats={stats} />
@@ -143,6 +150,9 @@ export default async function MePage() {
           {driver.homeZip ?? "no home zip"}. To update intake answers, talk
           to Debbie again — she&rsquo;ll write the changes back.
         </p>
+        {/* Mounts after first paint and POSTs /api/me/touched so the
+            next visit can show "new since {date}" deltas. */}
+        <MeTouchBeacon />
       </div>
     </main>
   );
@@ -184,13 +194,54 @@ function AlertsStrip({
   applications,
   intakeAge,
   driverId,
+  newSince,
 }: {
   stats: ReturnType<typeof summarizeApplications>;
   applications: DriverApplicationRow[];
   intakeAge: string | null;
   driverId: string;
+  newSince: NewSinceLastVisit | null;
 }) {
   const alerts: React.ReactNode[] = [];
+
+  // Since-last-visit deltas first — most visit-relevant alert, sits
+  // at the top of the strip when present. Hidden entirely when
+  // there's nothing new (the driver doesn't need to see "0 new
+  // matches" — that's just noise).
+  if (
+    newSince &&
+    (newSince.newMatches > 0 || newSince.newSterlingConfirmations > 0)
+  ) {
+    const sinceLabel = ageInWords(newSince.since) ?? "last time";
+    const pieces: string[] = [];
+    if (newSince.newMatches > 0) {
+      pieces.push(
+        `${newSince.newMatches} new match${newSince.newMatches === 1 ? "" : "es"}`,
+      );
+    }
+    if (newSince.newSterlingConfirmations > 0) {
+      pieces.push(
+        `${newSince.newSterlingConfirmations} carrier${newSince.newSterlingConfirmations === 1 ? "" : "s"} confirmed your application`,
+      );
+    }
+    alerts.push(
+      <li
+        key="new-since"
+        className="rounded-md border border-brand-gold/50 bg-brand-gold/10 px-4 py-2.5 text-sm leading-6 text-brand-ink"
+      >
+        <span className="font-semibold">Since {sinceLabel}:</span>{" "}
+        {pieces.join(" · ")}.{" "}
+        {newSince.newMatches > 0 ? (
+          <Link
+            href={`/matches/${driverId}`}
+            className="font-medium text-brand-deep underline-offset-2 hover:underline"
+          >
+            See what&rsquo;s new →
+          </Link>
+        ) : null}
+      </li>,
+    );
+  }
 
   // Sterling confirmations — most recent first, cap at 3 so the strip
   // doesn't dominate the page.

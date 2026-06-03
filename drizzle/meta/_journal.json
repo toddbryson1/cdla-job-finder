@@ -204,6 +204,13 @@
       "when": 1782500000000,
       "tag": "0028_driver_application_nudge_sends",
       "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1782600000000,
+      "tag": "0029_drivers_last_seen_at",
+      "breakpoints": true
     }
   ]
 }

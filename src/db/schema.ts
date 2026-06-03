@@ -374,6 +374,17 @@ export const drivers = pgTable(
     stage2ConsentTextVersion: text("stage_2_consent_text_version"),
     stage2TcpaOptIn: boolean("stage_2_tcpa_opt_in").default(false),
 
+    // Last-seen tracking for the /me dashboard's "new since your last
+    // visit" badges. Written by /api/me/touched (called from a tiny
+    // client beacon on /me AFTER render) so a single page load doesn't
+    // overwrite the value used to compute the deltas. previousSeenAt
+    // retains the second-most-recent value so the dashboard can show
+    // "since {date}" wording without ambiguity. Both null for legacy
+    // drivers who haven't re-visited /me since this column shipped.
+    // Migration 0029.
+    lastSeenAt: timestamp("last_seen_at", { withTimezone: true }),
+    previousSeenAt: timestamp("previous_seen_at", { withTimezone: true }),
+
     // Free-text notes (kept for human review; not used by engine)
     accidentsDetails: text("accidents_details").notNull().default(""),
     felonyDetails: text("felony_details").notNull().default(""),
