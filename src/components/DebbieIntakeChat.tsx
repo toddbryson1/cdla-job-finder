@@ -604,6 +604,33 @@ export function DebbieIntakeChat({
   const showConfirmation = state === "confirmation" && allFieldsSet(fields);
   const showOpening = messages.length === 0;
 
+  // Pre-warm /api/intake and /api/match the moment the consent
+  // screen renders. The 400-responses are intentionally discarded —
+  // the side effect is what we want: route handler JS loads,
+  // drizzle compiles its queries, postgres-js opens a connection in
+  // the pool. By the time the driver clicks "I agree", both routes
+  // on the critical path (intake POST → match POST) are already hot.
+  //
+  // Both calls Zod-validate before touching the DB, so missing-body
+  // requests 400 without side effects. Tracked with a ref so React's
+  // strict-mode double-effect or any re-render won't double-fire the
+  // warmup (cheap either way, but pointless to repeat).
+  const warmupSentRef = useRef(false);
+  useEffect(() => {
+    if (!showConsent || warmupSentRef.current) return;
+    warmupSentRef.current = true;
+    // Fire-and-forget. Failures are silent; the cold path will run
+    // identically if these never land.
+    for (const url of ["/api/intake", "/api/match"]) {
+      void fetch(url, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({}), // bad body → 400, that's fine
+        keepalive: true,
+      }).catch(() => {});
+    }
+  }, [showConsent]);
+
   // Confirmation card click — advance directly to consent_ready
   // without another LLM round-trip. The driver has visually verified
   // every field; no need to spend tokens re-extracting from "yes".
