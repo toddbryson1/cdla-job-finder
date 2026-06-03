@@ -722,6 +722,7 @@ export function DebbieIntakeChat({
           <ZeroMatchesCallout
             homeCity={homeLocation.city}
             homeState={homeLocation.state}
+            driverId={driverId}
           />
         ) : null}
         {matchPhase === "error" && driverId ? (
@@ -1360,9 +1361,11 @@ function MatchCard({
 function ZeroMatchesCallout({
   homeCity,
   homeState,
+  driverId,
 }: {
   homeCity: string | null;
   homeState: string | null;
+  driverId: string | null;
 }) {
   const where =
     homeCity && homeState
@@ -1377,6 +1380,18 @@ function ZeroMatchesCallout({
         carriers are joining and posting positions all the time — could be a
         day, could be a couple weeks.
       </p>
+      {/* Even at zero internal matches, the /matches page tops up with
+          Adzuna public listings (when available for the driver's region).
+          Without this link, drivers with zero internal matches had no
+          path off the chat to discover those externals. */}
+      {driverId ? (
+        <Link
+          href={`/matches/${driverId}`}
+          className="mt-3 inline-block text-xs font-medium text-brand-medium hover:text-brand-deep"
+        >
+          See public listings near you →
+        </Link>
+      ) : null}
     </div>
   );
 }
