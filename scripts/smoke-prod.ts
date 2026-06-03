@@ -197,6 +197,27 @@ async function main() {
     );
   }
 
+  // 7. /me anonymous → redirect to /login. Confirms the driver
+  // dashboard's auth gate is wired correctly without needing a real
+  // driver session.
+  try {
+    const res = await fetch(`${origin}/me`, { redirect: "manual" });
+    const looksRight =
+      (res.status === 307 || res.status === 308 || res.status === 302) &&
+      (res.headers.get("location") ?? "").includes("/login");
+    check(
+      "/me redirects anonymous visitors to /login",
+      looksRight,
+      `HTTP ${res.status} → ${res.headers.get("location") ?? "(no location)"}`,
+    );
+  } catch (err) {
+    check(
+      "/me redirects anonymous visitors to /login",
+      false,
+      `fetch failed: ${(err as Error).message}`,
+    );
+  }
+
   // Summary
   const failed = results.filter((r) => !r.ok);
   console.log("");

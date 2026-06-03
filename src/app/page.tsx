@@ -153,6 +153,17 @@ function Hero({
             <TrustItem>We don&rsquo;t sell your data</TrustItem>
             <TrustItem>Real carriers, hiring now</TrustItem>
           </ul>
+          {!returning ? (
+            <p className="mt-6 text-sm text-brand-muted">
+              Already signed up?{" "}
+              <Link
+                href="/login?redirect=/me"
+                className="font-medium text-brand-deep underline-offset-2 hover:underline"
+              >
+                Log in to your matches
+              </Link>
+            </p>
+          ) : null}
         </div>
 
         {returning ? (

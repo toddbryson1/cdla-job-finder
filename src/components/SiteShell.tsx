@@ -55,13 +55,15 @@ function Wordmark({ size = "header" }: { size?: "header" | "footer" }) {
 
 function SiteHeader({ driverIdForNav }: { driverIdForNav: string | null }) {
   // Two nav postures:
-  //   - Returning driver (cookie present): primary CTA = "My matches",
-  //     so every page on the site has a one-click path back to their
-  //     personalized matches list.
+  //   - Returning driver (cookie present): primary CTA = "My profile",
+  //     pointing at /me — the driver dashboard with applications +
+  //     stats + a link onward to /matches. We point at /me rather
+  //     than /matches directly so the driver has one persistent
+  //     entry point that surfaces both history and current matches.
   //   - New visitor: primary CTA = "Talk to Debbie", which scrolls
   //     to the homepage hero / chat shell.
   const primaryCta = driverIdForNav
-    ? { href: `/matches/${driverIdForNav}`, label: "My matches" }
+    ? { href: "/me", label: "My profile" }
     : { href: "/#hero", label: "Talk to Debbie" };
   return (
     <header className="sticky top-0 z-50 border-b border-brand-rule bg-brand-paper/85 backdrop-blur">
