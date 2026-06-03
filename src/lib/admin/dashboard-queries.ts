@@ -806,3 +806,52 @@ export async function getApplicationNudgeStats(): Promise<ApplicationNudgeStats>
     latestSentAt: agg.latest_sent_at ? new Date(agg.latest_sent_at) : null,
   };
 }
+
+/** Operator-facing email opt-out signal. Lets the dashboard catch
+ *  cadence-or-copy problems before they tank deliverability — if
+ *  the recent unsubscribe rate exceeds ~2% per cohort, the runners
+ *  are spamming someone. */
+export interface UnsubscribeStats {
+  /** Total drivers with a non-null unsubscribed_at, all time. */
+  totalUnsubscribed: number;
+  /** Drivers who unsubscribed in the last 7 days. */
+  unsubscribedLast7d: number;
+  /** Population denominator: drivers with a non-null email. The
+   *  unsubscribe column is only relevant for drivers we can email,
+   *  so we score the rate against the addressable population. */
+  driversWithEmail: number;
+  /** Most recent unsubscribed_at across all rows. Anchors the
+   *  "last opt-out X ago" copy. Null when nobody has ever
+   *  unsubscribed. */
+  latestUnsubscribedAt: Date | null;
+}
+
+export async function getUnsubscribeStats(): Promise<UnsubscribeStats> {
+  const rows = (await db.execute(sql`
+    SELECT
+      count(*) FILTER (
+        WHERE unsubscribed_at IS NOT NULL
+      )::int AS total_unsubscribed,
+      count(*) FILTER (
+        WHERE unsubscribed_at IS NOT NULL
+          AND unsubscribed_at >= now() - interval '7 days'
+      )::int AS unsubscribed_last_7d,
+      count(*) FILTER (WHERE email IS NOT NULL)::int AS drivers_with_email,
+      max(unsubscribed_at) AS latest_unsubscribed_at
+    FROM drivers
+  `)) as unknown as Array<{
+    total_unsubscribed: number;
+    unsubscribed_last_7d: number;
+    drivers_with_email: number;
+    latest_unsubscribed_at: string | Date | null;
+  }>;
+  const r = rows[0]!;
+  return {
+    totalUnsubscribed: r.total_unsubscribed,
+    unsubscribedLast7d: r.unsubscribed_last_7d,
+    driversWithEmail: r.drivers_with_email,
+    latestUnsubscribedAt: r.latest_unsubscribed_at
+      ? new Date(r.latest_unsubscribed_at)
+      : null,
+  };
+}

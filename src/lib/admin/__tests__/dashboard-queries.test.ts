@@ -28,6 +28,7 @@ import {
   getRecentArchivedJobs,
   getRecentConsents,
   getTaUnresolved,
+  getUnsubscribeStats,
 } from "@/lib/admin/dashboard-queries";
 
 describe("dashboard-queries.getDashboardCounts", () => {
@@ -1015,6 +1016,113 @@ describe("dashboard-queries.getApplicationNudgeStats", () => {
       // the baseline DB may push it higher).
       expect(after.latestSentAt.getTime()).toBeGreaterThanOrEqual(
         newerTs.getTime(),
+      );
+    }
+  });
+});
+
+describe("dashboard-queries.getUnsubscribeStats", () => {
+  const UNSUB_EMAIL_PREFIX = "unsub-stats-test+";
+
+  async function cleanup(): Promise<void> {
+    await db
+      .delete(drivers)
+      .where(sql`${drivers.email} LIKE ${UNSUB_EMAIL_PREFIX + "%"}`);
+  }
+
+  async function seedDriver(
+    suffix: string,
+    overrides: { unsubscribedAt?: Date | null; email?: string | null },
+  ): Promise<void> {
+    await db.insert(drivers).values({
+      firstName: "Unsub",
+      lastName: `Sentinel${suffix}`,
+      email:
+        overrides.email === undefined
+          ? `${UNSUB_EMAIL_PREFIX}${suffix}@example.com`
+          : overrides.email,
+      phone: "555-555-1234",
+      homeZip: "30303",
+      cdlState: "GA",
+      yearsHeld: "3",
+      otrYears: "2",
+      equipmentRun: ["dry-van"],
+      desiredEquipment: ["dry-van"],
+      desiredRegions: ["any"],
+      homeTime: ["otr"],
+      terminatedFromAnyOfLast3Employers: false,
+      failedDotTest: false,
+      attestAccurate: true,
+      consentToShare: true,
+      unsubscribedAt: overrides.unsubscribedAt ?? null,
+    });
+  }
+
+  beforeAll(async () => {
+    await cleanup();
+  });
+  afterAll(async () => {
+    await cleanup();
+  });
+  afterEach(async () => {
+    await cleanup();
+  });
+
+  it("returns the empty-state shape (non-negative integers, etc.)", async () => {
+    const r = await getUnsubscribeStats();
+    expect(r.totalUnsubscribed).toBeGreaterThanOrEqual(0);
+    expect(r.unsubscribedLast7d).toBeGreaterThanOrEqual(0);
+    expect(r.driversWithEmail).toBeGreaterThanOrEqual(0);
+    expect(
+      r.latestUnsubscribedAt === null ||
+        r.latestUnsubscribedAt instanceof Date,
+    ).toBe(true);
+  });
+
+  it("counts unsubscribed drivers and addressable population", async () => {
+    const baseline = await getUnsubscribeStats();
+    // Seed 3 with email; 1 unsubscribed.
+    await seedDriver("A", { unsubscribedAt: new Date() });
+    await seedDriver("B", { unsubscribedAt: null });
+    await seedDriver("C", { unsubscribedAt: null });
+
+    const after = await getUnsubscribeStats();
+    expect(after.totalUnsubscribed - baseline.totalUnsubscribed).toBe(1);
+    expect(after.driversWithEmail - baseline.driversWithEmail).toBe(3);
+  });
+
+  it("only counts the last-7-day window for unsubscribedLast7d", async () => {
+    const baseline = await getUnsubscribeStats();
+    const now = new Date();
+    const within = new Date(now.getTime() - 2 * 24 * 60 * 60 * 1000);
+    const outside = new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000);
+
+    await seedDriver("recent", { unsubscribedAt: within });
+    await seedDriver("old", { unsubscribedAt: outside });
+
+    const after = await getUnsubscribeStats();
+    expect(after.totalUnsubscribed - baseline.totalUnsubscribed).toBe(2);
+    expect(after.unsubscribedLast7d - baseline.unsubscribedLast7d).toBe(1);
+  });
+
+  it("excludes null-email drivers from driversWithEmail", async () => {
+    const baseline = await getUnsubscribeStats();
+    await seedDriver("anon", {
+      unsubscribedAt: null,
+      email: null,
+    });
+    const after = await getUnsubscribeStats();
+    expect(after.driversWithEmail - baseline.driversWithEmail).toBe(0);
+  });
+
+  it("latestUnsubscribedAt advances when a sentinel is the newest", async () => {
+    const farFuture = new Date("2099-01-01T00:00:00Z");
+    await seedDriver("future", { unsubscribedAt: farFuture });
+    const after = await getUnsubscribeStats();
+    expect(after.latestUnsubscribedAt).not.toBeNull();
+    if (after.latestUnsubscribedAt) {
+      expect(after.latestUnsubscribedAt.getTime()).toBe(
+        farFuture.getTime(),
       );
     }
   });

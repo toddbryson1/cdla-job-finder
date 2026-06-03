@@ -25,6 +25,7 @@ import {
   getRecentArchivedJobs,
   getRecentConsents,
   getTaUnresolved,
+  getUnsubscribeStats,
 } from "@/lib/admin/dashboard-queries";
 import { PendingCarrierActions } from "./PendingCarrierActions";
 
@@ -68,6 +69,7 @@ export default async function AdminPage({ searchParams }: PageProps) {
     partnerHandoff,
     handoffDrift,
     nudgeStats,
+    unsubscribeStats,
   ] = await Promise.all([
     getDashboardCounts(),
     getCarrierBreakdown(),
@@ -82,6 +84,7 @@ export default async function AdminPage({ searchParams }: PageProps) {
     getPartnerHandoffFunnel(),
     getCarrierHandoffDrift(),
     getApplicationNudgeStats(),
+    getUnsubscribeStats(),
   ]);
 
   const minimalTotal = breakdown.reduce(
@@ -531,6 +534,78 @@ export default async function AdminPage({ searchParams }: PageProps) {
                 </p>
               ) : null}
             </>
+          )}
+        </Section>
+
+        {/* EMAIL OPT-OUT RATE — CAN-SPAM unsubscribe signal. Watch
+            for unsubscribed_last_7d climbing as a share of email-
+            having drivers; cadence/copy needs work if it crosses
+            ~2% per cohort. */}
+        <Section title="Email opt-outs — CAN-SPAM unsubscribe rate">
+          {unsubscribeStats.driversWithEmail === 0 ? (
+            <Empty>
+              No drivers with email yet — nothing to opt out of. The
+              unsubscribed column starts mattering after the first round
+              of email-bearing intakes.
+            </Empty>
+          ) : (
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+              <CountCard
+                label="Total unsubscribed"
+                value={unsubscribeStats.totalUnsubscribed}
+                sub={`${unsubscribeStats.driversWithEmail} drivers with email`}
+                small
+              />
+              <CountCard
+                label="Last 7 days"
+                value={unsubscribeStats.unsubscribedLast7d}
+                sub={
+                  unsubscribeStats.driversWithEmail > 0
+                    ? `${(
+                        (100 * unsubscribeStats.unsubscribedLast7d) /
+                        unsubscribeStats.driversWithEmail
+                      ).toFixed(2)}% of addressable population`
+                    : "—"
+                }
+                small
+              />
+              <CountCard
+                label="Total rate"
+                value={
+                  unsubscribeStats.driversWithEmail > 0
+                    ? `${(
+                        (100 * unsubscribeStats.totalUnsubscribed) /
+                        unsubscribeStats.driversWithEmail
+                      ).toFixed(2)}%`
+                    : "—"
+                }
+                sub={
+                  unsubscribeStats.driversWithEmail > 0 &&
+                  (100 * unsubscribeStats.totalUnsubscribed) /
+                    unsubscribeStats.driversWithEmail >
+                    2
+                    ? "> 2%: revisit cadence + copy"
+                    : "healthy zone"
+                }
+                small
+              />
+              <CountCard
+                label="Latest opt-out"
+                value={
+                  unsubscribeStats.latestUnsubscribedAt
+                    ? formatRelativeAge(unsubscribeStats.latestUnsubscribedAt)
+                    : "—"
+                }
+                sub={
+                  unsubscribeStats.latestUnsubscribedAt
+                    ? unsubscribeStats.latestUnsubscribedAt
+                        .toISOString()
+                        .slice(0, 16) + "Z"
+                    : "never"
+                }
+                small
+              />
+            </div>
           )}
         </Section>
 
