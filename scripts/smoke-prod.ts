@@ -169,6 +169,34 @@ async function main() {
     }
   }
 
+  // 6. /api/match shape check — POST with a known-invalid driverId
+  // and confirm the route returns a clean 404 rather than 5xx'ing
+  // somewhere in the matching pipeline. Catches regressions in the
+  // route's auth / validation / enrichment plumbing without needing
+  // a real driver row.
+  try {
+    const res = await fetch(`${origin}/api/match`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        driverId: "00000000-0000-0000-0000-000000000000",
+      }),
+    });
+    // Route returns 404 when the driverId doesn't resolve to a real
+    // row — exactly the path a smoke test should exercise.
+    check(
+      "/api/match returns 404 for unknown driver",
+      res.status === 404,
+      `HTTP ${res.status}`,
+    );
+  } catch (err) {
+    check(
+      "/api/match returns 404 for unknown driver",
+      false,
+      `fetch failed: ${(err as Error).message}`,
+    );
+  }
+
   // Summary
   const failed = results.filter((r) => !r.ok);
   console.log("");
