@@ -1,0 +1,37 @@
+# Dev environment for GitHub Codespaces.
+# Two containers: the Node app and a Postgres 16 database — both run on
+# GitHub's hardware, not your Mac. The app talks to Postgres at host "db".
+services:
+  app:
+    image: mcr.microsoft.com/devcontainers/javascript-node:20-bookworm
+    volumes:
+      - ../..:/workspaces:cached
+    command: sleep infinity
+    environment:
+      # Real env var — takes precedence over .env.local / .env in both Next
+      # and the tsx scripts (dotenv does not override already-set vars).
+      #
+      # If you set a DATABASE_URL Codespaces secret (e.g. a Neon string), it
+      # wins; otherwise this falls back to the in-container "db" service below.
+      DATABASE_URL: ${DATABASE_URL:-postgres://postgres:postgres@db:5432/cdla_dev}
+    depends_on:
+      db:
+        condition: service_healthy
+
+  db:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: cdla_dev
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d cdla_dev"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  pgdata:
