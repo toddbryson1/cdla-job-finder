@@ -12,6 +12,7 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import {
+  getApplicationNudgeStats,
   getCarrierBreakdown,
   getCarrierHandoffDrift,
   getCarrierPerformance30d,
@@ -66,6 +67,7 @@ export default async function AdminPage({ searchParams }: PageProps) {
     pendingCarriers,
     partnerHandoff,
     handoffDrift,
+    nudgeStats,
   ] = await Promise.all([
     getDashboardCounts(),
     getCarrierBreakdown(),
@@ -79,6 +81,7 @@ export default async function AdminPage({ searchParams }: PageProps) {
     getPendingCarriersReviewQueue(),
     getPartnerHandoffFunnel(),
     getCarrierHandoffDrift(),
+    getApplicationNudgeStats(),
   ]);
 
   const minimalTotal = breakdown.reduce(
@@ -421,6 +424,112 @@ export default async function AdminPage({ searchParams }: PageProps) {
                 <code>app_id</code>, <code>table_id</code>) under{" "}
                 <code>handoff_type = &quot;anderson_quickbase&quot;</code>.
               </p>
+            </>
+          )}
+        </Section>
+
+        {/* APPLICATION-NUDGE RUNNER — "you haven't applied yet" email
+            series. Operational visibility into the runner shipped in
+            commit a55e251. */}
+        <Section title="Application-nudge runner — &ldquo;you haven&rsquo;t applied yet&rdquo;">
+          {nudgeStats.totalSent === 0 && nudgeStats.failedTotal === 0 ? (
+            <Empty>
+              No nudges sent yet. The runner fires from{" "}
+              <code>/api/cron/daily</code> step 5.5 — drivers ≥24h past
+              intake with 0 applications and ≥1 current match get nudge 1;
+              ≥7d past intake with nudge 1 already sent get nudge 2. Empty
+              here usually means GHL isn&rsquo;t configured, migration 0028
+              hasn&rsquo;t been applied, or no drivers met the criteria yet.
+            </Empty>
+          ) : (
+            <>
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                <CountCard
+                  label="Total sent"
+                  value={nudgeStats.totalSent}
+                  sub={
+                    nudgeStats.failedTotal > 0
+                      ? `${nudgeStats.failedTotal} send failures`
+                      : "no send failures"
+                  }
+                  small
+                />
+                <CountCard
+                  label="Sent (last 7d)"
+                  value={nudgeStats.sentLast7d}
+                  sub={
+                    nudgeStats.totalSent > 0
+                      ? `${Math.round(
+                          (100 * nudgeStats.sentLast7d) / nudgeStats.totalSent,
+                        )}% of all-time`
+                      : "—"
+                  }
+                  small
+                />
+                <CountCard
+                  label="Conversion"
+                  value={
+                    nudgeStats.distinctDriversNudged > 0
+                      ? `${Math.round(
+                          (100 *
+                            nudgeStats.distinctDriversConverted) /
+                            nudgeStats.distinctDriversNudged,
+                        )}%`
+                      : "—"
+                  }
+                  sub={`${nudgeStats.distinctDriversConverted}/${nudgeStats.distinctDriversNudged} nudged drivers applied`}
+                  small
+                />
+                <CountCard
+                  label="Latest send"
+                  value={
+                    nudgeStats.latestSentAt
+                      ? formatRelativeAge(nudgeStats.latestSentAt)
+                      : "—"
+                  }
+                  sub={
+                    nudgeStats.latestSentAt
+                      ? nudgeStats.latestSentAt
+                          .toISOString()
+                          .slice(0, 16) + "Z"
+                      : "never"
+                  }
+                  small
+                />
+              </div>
+
+              <p className="mt-4 mb-2 text-xs uppercase tracking-wide text-brand-muted">
+                Series distribution
+              </p>
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-2">
+                <CountCard
+                  label="Nudge 1 (T+24h)"
+                  value={nudgeStats.byNudgeIndex.nudge1}
+                  sub="soft first-touch"
+                  small
+                />
+                <CountCard
+                  label="Nudge 2 (T+7d)"
+                  value={nudgeStats.byNudgeIndex.nudge2}
+                  sub={
+                    nudgeStats.byNudgeIndex.nudge1 > 0
+                      ? `${Math.round(
+                          (100 * nudgeStats.byNudgeIndex.nudge2) /
+                            nudgeStats.byNudgeIndex.nudge1,
+                        )}% follow-through`
+                      : "final, only fires if nudge 1 did"
+                  }
+                  small
+                />
+              </div>
+              {nudgeStats.failedTotal > 0 ? (
+                <p className="mt-3 text-xs text-brand-muted">
+                  {nudgeStats.failedTotal} failed-send rows in{" "}
+                  <code>driver_application_nudge_sends</code>. Check the
+                  table&rsquo;s <code>error_message</code> column for
+                  details — usually a GHL contact-upsert or bounced email.
+                </p>
+              ) : null}
             </>
           )}
         </Section>

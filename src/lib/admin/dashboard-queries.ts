@@ -718,3 +718,91 @@ export async function getCarrierHandoffDrift(): Promise<CarrierHandoffDrift> {
 
   return { drifted, totalPendingDoomed, totalHistoricalDriftRows };
 }
+
+/** Operational stats for the "you haven't applied yet" nudge runner
+ *  shipped in commit a55e251. Drives the admin dashboard card so the
+ *  operator can tell at a glance whether the runner is firing, what
+ *  share of intakes get nudged, and whether the nudges convert. */
+export interface ApplicationNudgeStats {
+  /** Total status='sent' nudge rows, all time. */
+  totalSent: number;
+  /** status='sent' rows in the last 7 days. */
+  sentLast7d: number;
+  /** Split by which nudge in the 2-email series fired. */
+  byNudgeIndex: { nudge1: number; nudge2: number };
+  /** Total status='failed' rows — every send attempt that GHL bounced. */
+  failedTotal: number;
+  /** Total distinct drivers we've nudged at least once. */
+  distinctDriversNudged: number;
+  /** Distinct nudged drivers who later show at least one
+   *  driverCarrierApplications row. Because the runner only fires
+   *  on drivers with applications=0, any application is post-nudge —
+   *  this is the conversion numerator. */
+  distinctDriversConverted: number;
+  /** Most recent sent_at across all rows; null when nothing has
+   *  fired yet. Anchors the "last fired Xm ago" copy. */
+  latestSentAt: Date | null;
+}
+
+export async function getApplicationNudgeStats(): Promise<ApplicationNudgeStats> {
+  // Single grouped query for the count metrics — FILTER aggregates
+  // give us per-status / per-index splits in one round trip.
+  const aggRows = (await db.execute(sql`
+    SELECT
+      count(*) FILTER (WHERE status = 'sent')::int AS total_sent,
+      count(*) FILTER (
+        WHERE status = 'sent'
+          AND sent_at >= now() - interval '7 days'
+      )::int AS sent_last_7d,
+      count(*) FILTER (
+        WHERE status = 'sent' AND nudge_index = 1
+      )::int AS nudge_1,
+      count(*) FILTER (
+        WHERE status = 'sent' AND nudge_index = 2
+      )::int AS nudge_2,
+      count(*) FILTER (WHERE status = 'failed')::int AS failed_total,
+      count(DISTINCT driver_id) FILTER (
+        WHERE status = 'sent'
+      )::int AS distinct_drivers_nudged,
+      max(sent_at) FILTER (WHERE status = 'sent') AS latest_sent_at
+    FROM driver_application_nudge_sends
+  `)) as unknown as Array<{
+    total_sent: number;
+    sent_last_7d: number;
+    nudge_1: number;
+    nudge_2: number;
+    failed_total: number;
+    distinct_drivers_nudged: number;
+    latest_sent_at: string | Date | null;
+  }>;
+  const agg = aggRows[0]!;
+
+  // Conversion query — distinct nudged drivers who later created at
+  // least one application row. The runner guards against double-
+  // sending so a driver with applications can't appear in
+  // driver_application_nudge_sends post-application; this lets us
+  // treat any application as post-nudge for accounting purposes.
+  const conversionRows = (await db.execute(sql`
+    SELECT count(DISTINCT n.driver_id)::int AS converted
+    FROM driver_application_nudge_sends n
+    WHERE n.status = 'sent'
+      AND EXISTS (
+        SELECT 1
+        FROM driver_carrier_applications a
+        WHERE a.driver_id = n.driver_id
+      )
+  `)) as unknown as Array<{ converted: number }>;
+
+  return {
+    totalSent: agg.total_sent,
+    sentLast7d: agg.sent_last_7d,
+    byNudgeIndex: {
+      nudge1: agg.nudge_1,
+      nudge2: agg.nudge_2,
+    },
+    failedTotal: agg.failed_total,
+    distinctDriversNudged: agg.distinct_drivers_nudged,
+    distinctDriversConverted: conversionRows[0]?.converted ?? 0,
+    latestSentAt: agg.latest_sent_at ? new Date(agg.latest_sent_at) : null,
+  };
+}

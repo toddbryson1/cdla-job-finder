@@ -10,10 +10,13 @@ import { db } from "@/db/client";
 import {
   carrierJobs,
   carriers,
+  driverApplicationNudgeSends,
+  driverCarrierApplications,
   drivers,
   partnerApplicationStages,
 } from "@/db/schema";
 import {
+  getApplicationNudgeStats,
   getCarrierBreakdown,
   getCarrierHandoffDrift,
   getCarrierPerformance30d,
@@ -779,5 +782,240 @@ describe("dashboard-queries.getCarrierHandoffDrift", () => {
     const bi = sentinelRows.findIndex((d) => d.carrierName.endsWith("B_hi"));
     const ai = sentinelRows.findIndex((d) => d.carrierName.endsWith("A_lo"));
     expect(bi).toBeLessThan(ai);
+  });
+});
+
+describe("dashboard-queries.getApplicationNudgeStats", () => {
+  // Seeds + cleans up its own sentinel rows so the counts are
+  // deterministic against the row inserts in this block, not the
+  // baseline data.
+  const NUDGE_DRIVER_EMAIL_PREFIX = "nudge-stats-test+";
+  const SENTINEL_CARRIER = "Nudge Stats Test (sentinel)";
+
+  async function cleanup(): Promise<void> {
+    const cs = await db
+      .select({ id: carriers.id })
+      .from(carriers)
+      .where(eq(carriers.name, SENTINEL_CARRIER));
+    for (const c of cs) {
+      await db
+        .delete(driverCarrierApplications)
+        .where(eq(driverCarrierApplications.carrierId, c.id));
+      await db.delete(carrierJobs).where(eq(carrierJobs.carrierId, c.id));
+    }
+    await db.delete(carriers).where(eq(carriers.name, SENTINEL_CARRIER));
+    // Delete nudge rows for sentinel drivers BEFORE the driver
+    // rows themselves (FK cascade would handle it but explicit is
+    // cleaner).
+    const drvs = await db
+      .select({ id: drivers.id })
+      .from(drivers)
+      .where(sql`${drivers.email} LIKE ${NUDGE_DRIVER_EMAIL_PREFIX + "%"}`);
+    for (const d of drvs) {
+      await db
+        .delete(driverApplicationNudgeSends)
+        .where(eq(driverApplicationNudgeSends.driverId, d.id));
+    }
+    await db
+      .delete(drivers)
+      .where(sql`${drivers.email} LIKE ${NUDGE_DRIVER_EMAIL_PREFIX + "%"}`);
+  }
+
+  async function seedDriver(suffix: string): Promise<string> {
+    const [row] = await db
+      .insert(drivers)
+      .values({
+        firstName: "Nudge",
+        lastName: `Sentinel${suffix}`,
+        email: `${NUDGE_DRIVER_EMAIL_PREFIX}${suffix}@example.com`,
+        phone: "555-555-1234",
+        homeZip: "30303",
+        cdlState: "GA",
+        yearsHeld: "3",
+        otrYears: "2",
+        equipmentRun: ["dry-van"],
+        desiredEquipment: ["dry-van"],
+        desiredRegions: ["any"],
+        homeTime: ["otr"],
+        terminatedFromAnyOfLast3Employers: false,
+        failedDotTest: false,
+        attestAccurate: true,
+        consentToShare: true,
+      })
+      .returning({ id: drivers.id });
+    return row!.id;
+  }
+
+  async function seedCarrierAndJob(): Promise<{
+    carrierId: string;
+    jobId: string;
+  }> {
+    const [c] = await db
+      .insert(carriers)
+      .values({
+        name: SENTINEL_CARRIER,
+        kind: "partner",
+        tier: "none",
+        status: "active",
+      })
+      .returning({ id: carriers.id });
+    const [j] = await db
+      .insert(carrierJobs)
+      .values({
+        carrierId: c!.id,
+        status: "active",
+        positionTitle: "Sentinel",
+        domicileCity: "Atlanta",
+        domicileState: "GA",
+        domicileLat: "33.7488",
+        domicileLng: "-84.3877",
+        hiringRadiusMiles: 1500,
+        equipment: "dry-van",
+        minExperienceMonths: 6,
+        acceptedHomeTimeTypes: ["otr"],
+        sapTolerance: "accepts_none",
+        applicationSurface: "tenstreet_intelliapp",
+        dataSource: "manual_partner_intake",
+        verificationStatus: "verified",
+        dataQuality: "complete",
+      })
+      .returning({ id: carrierJobs.id });
+    return { carrierId: c!.id, jobId: j!.id };
+  }
+
+  beforeAll(async () => {
+    await cleanup();
+  });
+  afterAll(async () => {
+    await cleanup();
+  });
+  afterEach(async () => {
+    await cleanup();
+  });
+
+  it("returns the empty-state shape when no nudges have been sent", async () => {
+    // cleanup just ran. Anything in the baseline DB is fine; we only
+    // assert non-negativity here.
+    const r = await getApplicationNudgeStats();
+    expect(r.totalSent).toBeGreaterThanOrEqual(0);
+    expect(r.sentLast7d).toBeGreaterThanOrEqual(0);
+    expect(r.byNudgeIndex.nudge1).toBeGreaterThanOrEqual(0);
+    expect(r.byNudgeIndex.nudge2).toBeGreaterThanOrEqual(0);
+    expect(r.failedTotal).toBeGreaterThanOrEqual(0);
+    expect(r.distinctDriversNudged).toBeGreaterThanOrEqual(0);
+    expect(r.distinctDriversConverted).toBeGreaterThanOrEqual(0);
+    expect(
+      r.latestSentAt === null || r.latestSentAt instanceof Date,
+    ).toBe(true);
+  });
+
+  it("counts sent rows + nudge_index split correctly", async () => {
+    const baseline = await getApplicationNudgeStats();
+    const drvA = await seedDriver("counts_A");
+    const drvB = await seedDriver("counts_B");
+    await db.insert(driverApplicationNudgeSends).values([
+      {
+        driverId: drvA,
+        nudgeIndex: 1,
+        status: "sent",
+        matchCountAtSend: 3,
+      },
+      {
+        driverId: drvA,
+        nudgeIndex: 2,
+        status: "sent",
+        matchCountAtSend: 3,
+      },
+      {
+        driverId: drvB,
+        nudgeIndex: 1,
+        status: "sent",
+        matchCountAtSend: 5,
+      },
+    ]);
+
+    const after = await getApplicationNudgeStats();
+    expect(after.totalSent - baseline.totalSent).toBe(3);
+    expect(after.byNudgeIndex.nudge1 - baseline.byNudgeIndex.nudge1).toBe(2);
+    expect(after.byNudgeIndex.nudge2 - baseline.byNudgeIndex.nudge2).toBe(1);
+    expect(
+      after.distinctDriversNudged - baseline.distinctDriversNudged,
+    ).toBe(2);
+  });
+
+  it("excludes failed rows from totalSent and distinctDriversNudged", async () => {
+    const baseline = await getApplicationNudgeStats();
+    const drv = await seedDriver("fail_only");
+    await db.insert(driverApplicationNudgeSends).values({
+      driverId: drv,
+      nudgeIndex: 1,
+      status: "failed",
+      errorMessage: "GHL bounced",
+    });
+    const after = await getApplicationNudgeStats();
+    expect(after.totalSent - baseline.totalSent).toBe(0);
+    expect(after.failedTotal - baseline.failedTotal).toBe(1);
+    expect(
+      after.distinctDriversNudged - baseline.distinctDriversNudged,
+    ).toBe(0);
+  });
+
+  it("counts a driver as converted when they have any application after being nudged", async () => {
+    const baseline = await getApplicationNudgeStats();
+    const drv = await seedDriver("converter");
+    const { carrierId, jobId } = await seedCarrierAndJob();
+    await db.insert(driverApplicationNudgeSends).values({
+      driverId: drv,
+      nudgeIndex: 1,
+      status: "sent",
+      matchCountAtSend: 2,
+    });
+    await db.insert(driverCarrierApplications).values({
+      driverId: drv,
+      carrierId,
+      jobId,
+      consentTextVersion: "v1",
+      tcpaOptIn: false,
+    });
+
+    const after = await getApplicationNudgeStats();
+    expect(
+      after.distinctDriversConverted - baseline.distinctDriversConverted,
+    ).toBe(1);
+    expect(
+      after.distinctDriversNudged - baseline.distinctDriversNudged,
+    ).toBe(1);
+  });
+
+  it("latestSentAt advances to the newest sent_at", async () => {
+    const drvA = await seedDriver("latest_A");
+    const drvB = await seedDriver("latest_B");
+    const oldTs = new Date("2026-05-01T10:00:00Z");
+    const newerTs = new Date("2026-06-01T10:00:00Z");
+    await db.insert(driverApplicationNudgeSends).values([
+      {
+        driverId: drvA,
+        nudgeIndex: 1,
+        status: "sent",
+        sentAt: oldTs,
+        matchCountAtSend: 1,
+      },
+      {
+        driverId: drvB,
+        nudgeIndex: 1,
+        status: "sent",
+        sentAt: newerTs,
+        matchCountAtSend: 1,
+      },
+    ]);
+    const after = await getApplicationNudgeStats();
+    expect(after.latestSentAt).not.toBeNull();
+    if (after.latestSentAt) {
+      // It MUST be >= the newer of our two sentinels (other rows in
+      // the baseline DB may push it higher).
+      expect(after.latestSentAt.getTime()).toBeGreaterThanOrEqual(
+        newerTs.getTime(),
+      );
+    }
   });
 });
