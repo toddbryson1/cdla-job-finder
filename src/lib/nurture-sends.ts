@@ -11,6 +11,7 @@ import type { db as defaultDb } from "@/db/client";
 import { driverNurtureSends, drivers } from "@/db/schema";
 import { GhlError, sendEmail, upsertContact } from "@/lib/ghl/client";
 import { nurtureEmail } from "@/lib/ghl/nurtureEmails";
+import { isDriverUnsubscribed } from "@/lib/email/opt-out";
 import { appUrl } from "@/lib/stytch/client";
 
 type DbClient = typeof defaultDb;
@@ -93,6 +94,23 @@ export async function runNurtureSends(db: DbClient): Promise<NurtureRunResult> {
       continue;
     }
 
+    // CAN-SPAM opt-out — flip the row to skipped permanently so the
+    // queue drains, and don't re-schedule. Re-subscription requires
+    // an affirmative new action elsewhere; we don't auto-revive
+    // skipped rows.
+    if (await isDriverUnsubscribed(db, row.driverId)) {
+      await db
+        .update(driverNurtureSends)
+        .set({
+          status: "skipped",
+          skipReason: "unsubscribed",
+          sentAt: new Date(),
+        })
+        .where(eq(driverNurtureSends.id, row.sendId));
+      summary.skipped += 1;
+      continue;
+    }
+
     try {
       const contact = await upsertContact({
         email: row.driverEmail,
@@ -106,6 +124,8 @@ export async function runNurtureSends(db: DbClient): Promise<NurtureRunResult> {
         cdlState: row.driverCdlState,
         appUrl: appUrl(),
         emailIndex: row.emailIndex as 1 | 2 | 3 | 4 | 5 | 6,
+        driverId: row.driverId,
+        recipientEmail: row.driverEmail,
       });
       const result = await sendEmail({
         contactId: contact.contactId,

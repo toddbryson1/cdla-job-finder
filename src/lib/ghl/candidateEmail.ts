@@ -14,13 +14,18 @@
 // (out of scope for the candidate email).
 
 import { resolveRegion } from "@/lib/regions";
+import { renderUnsubscribeFooter } from "@/lib/email/unsubscribe";
 
-interface CandidateEmailInput {
+export interface CandidateEmailInput {
   firstName: string;
   cdlState: string | null;
   matchCount: number;
   topCarrierNames: string[]; // up to 3
   matchesUrl: string; // /matches/[driverId] absolute URL
+  /** CAN-SPAM unsubscribe footer requires these. */
+  driverId: string;
+  recipientEmail: string;
+  appUrl: string; // e.g. https://www.cdla.jobs
 }
 
 function escapeHtml(s: string): string {
@@ -43,13 +48,19 @@ export function candidateEmail(
   return { subject, html };
 }
 
-function shell(bodyInner: string): string {
+function shell(bodyInner: string, input: CandidateEmailInput): string {
+  const footer = renderUnsubscribeFooter({
+    driverId: input.driverId,
+    appUrl: input.appUrl,
+    email: input.recipientEmail,
+  });
   return `
 <!doctype html>
 <html>
   <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #0f1419; line-height: 1.55; font-size: 15px; max-width: 600px; margin: 0 auto; padding: 24px;">
     ${bodyInner}
     <p style="margin-top: 28px; color: #5b6573; font-size: 12px;">CDLA.jobs &middot; Class A driver matching. Built for drivers.</p>
+    ${footer}
   </body>
 </html>
 `.trim();
@@ -93,7 +104,7 @@ function matchesBody(input: CandidateEmailInput): string {
     <p style="margin-top: 22px;">&mdash; The CDLA.jobs team</p>
   `.trim();
 
-  return shell(inner);
+  return shell(inner, input);
 }
 
 function zeroMatchesBody(input: CandidateEmailInput): string {
@@ -132,5 +143,5 @@ function zeroMatchesBody(input: CandidateEmailInput): string {
     <p style="margin-top: 22px;">&mdash; The CDLA.jobs team</p>
   `.trim();
 
-  return shell(inner);
+  return shell(inner, input);
 }

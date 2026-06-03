@@ -11,6 +11,7 @@ import {
   MAGIC_LINK_EXPIRATION_MINUTES,
 } from "@/lib/stytch/client";
 import { matchDriver } from "@/lib/matching";
+import { isDriverUnsubscribed } from "@/lib/email/opt-out";
 import {
   isGhlConfigured,
   sendEmail,
@@ -272,6 +273,20 @@ async function sendCandidateEmail(input: {
   homeCity: string;
   homeZip: string;
 }): Promise<void> {
+  // Honor opt-outs even at intake-time. Edge case: a driver who
+  // unsubscribed in a prior session re-submits intake with the same
+  // email; we don't want their first post-resub email to be a
+  // "Your CDLA.jobs matches" the moment they re-fill the form. The
+  // driver row's unsubscribed_at survives the upsert in our intake
+  // handler (we set firstName/lastName/etc but never touch
+  // unsubscribed_at), so this check is real.
+  if (await isDriverUnsubscribed(db, input.driverId)) {
+    console.log(
+      `[intake] candidate email skipped for ${input.driverId}: unsubscribed`,
+    );
+    return;
+  }
+
   // Run the matching engine. If it errors, we abort the candidate email
   // rather than send a stale or wrong-counted message (spec §2.9).
   const result = await matchDriver(input.driverId);
@@ -309,6 +324,9 @@ async function sendCandidateEmail(input: {
     matchCount,
     topCarrierNames,
     matchesUrl,
+    driverId: input.driverId,
+    recipientEmail: input.email,
+    appUrl: appUrl(),
   });
 
   await sendEmail({
