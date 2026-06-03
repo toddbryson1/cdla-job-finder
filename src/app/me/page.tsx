@@ -150,6 +150,16 @@ export default async function MePage() {
           {driver.homeZip ?? "no home zip"}. To update intake answers, talk
           to Debbie again — she&rsquo;ll write the changes back.
         </p>
+        <p className="mt-3 text-xs leading-5 text-brand-muted">
+          Want your data gone? You can{" "}
+          <Link
+            href="/me/delete"
+            className="font-medium text-brand-muted underline-offset-2 hover:text-brand-ink hover:underline"
+          >
+            delete it permanently (CCPA / GDPR right to delete)
+          </Link>
+          .
+        </p>
         {/* Mounts after first paint and POSTs /api/me/touched so the
             next visit can show "new since {date}" deltas. */}
         <MeTouchBeacon />

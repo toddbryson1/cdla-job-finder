@@ -393,6 +393,17 @@ export const drivers = pgTable(
     // Migration 0030.
     unsubscribedAt: timestamp("unsubscribed_at", { withTimezone: true }),
 
+    // CCPA right-to-delete / GDPR Art. 17 erasure flag. Set by
+    // /me/delete when the driver confirms deletion. The same server
+    // action that flips this also NULLs every PII column on the row
+    // (firstName, lastName, email, phone, address_*) so a DB dump
+    // post-deletion has no recoverable identity. Relational shape
+    // (applications, matches, partner_application_stages) is kept
+    // so funnel metrics don't retroactively rewrite. Every runner
+    // and gate checks `deleted_at IS NULL` before doing anything
+    // with the row. Migration 0031.
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
+
     // Free-text notes (kept for human review; not used by engine)
     accidentsDetails: text("accidents_details").notNull().default(""),
     felonyDetails: text("felony_details").notNull().default(""),
