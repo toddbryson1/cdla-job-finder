@@ -19,6 +19,7 @@ import { db } from "@/db/client";
 import { driverCarrierApplications } from "@/db/schema";
 import { matchDriver } from "@/lib/matching";
 import type { Match } from "@/lib/matching/types";
+import { getDismissedCarrierIds } from "@/lib/dismissals";
 
 export interface NextMatchSuggestion {
   jobId: string;
@@ -68,14 +69,20 @@ export async function pickNextUnappliedMatch(
   driverId: string,
   currentJobId: string,
 ): Promise<NextMatchSuggestion | null> {
-  const [matchResult, applications] = await Promise.all([
+  const [matchResult, applications, dismissedCarriers] = await Promise.all([
     matchDriver(driverId),
     db
       .select({ jobId: driverCarrierApplications.jobId })
       .from(driverCarrierApplications)
       .where(eq(driverCarrierApplications.driverId, driverId)),
+    getDismissedCarrierIds(driverId),
   ]);
 
   const appliedJobIds = new Set(applications.map((a) => a.jobId));
-  return pickNextFromMatches(matchResult.matches, currentJobId, appliedJobIds);
+  // Drop dismissed carriers' jobs from the pool BEFORE picking. The
+  // engine still considers them; we just don't suggest them next.
+  const candidatePool = matchResult.matches.filter(
+    (m) => !dismissedCarriers.has(m.carrierId),
+  );
+  return pickNextFromMatches(candidatePool, currentJobId, appliedJobIds);
 }

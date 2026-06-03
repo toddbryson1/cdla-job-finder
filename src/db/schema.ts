@@ -981,6 +981,42 @@ export const driverCarrierMatches = pgTable(
   ],
 );
 
+// Driver-initiated "not interested" dismissals — scoped to CARRIER,
+// not job. Dismissing Swift hides ALL their matching jobs from the
+// driver's view (chat + /matches) and keeps them out of the
+// "Apply to next" CTA on the result page. Soft state: deleting the
+// row undoes the dismissal; the (no row) state means "active."
+// Doesn't feed into the matching engine's hard filter, only the
+// view-layer filter, so reverse-match alerts continue to track
+// new (driver, job) pairs in driver_carrier_matches. Migration 0032.
+export const driverCarrierDismissals = pgTable(
+  "driver_carrier_dismissals",
+  {
+    id: uuid("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    driverId: uuid("driver_id")
+      .references(() => drivers.id, { onDelete: "cascade" })
+      .notNull(),
+    carrierId: uuid("carrier_id")
+      .references(() => carriers.id, { onDelete: "cascade" })
+      .notNull(),
+    dismissedAt: timestamp("dismissed_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (t) => [
+    uniqueIndex("driver_carrier_dismissals_driver_carrier_uniq").on(
+      t.driverId,
+      t.carrierId,
+    ),
+    index("driver_carrier_dismissals_driver_idx").on(
+      t.driverId,
+      t.dismissedAt,
+    ),
+  ],
+);
+
 // Staging for the prospect-carrier ingestion pipeline per
 // SPEC_prospect-carrier-job-ingestion-v1.md §9 Phase 1. The
 // carrier-discovery CLI emits DiscoveredJob[] rows; we land those

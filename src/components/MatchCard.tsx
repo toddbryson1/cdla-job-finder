@@ -25,6 +25,11 @@ interface Props {
    *  matches page to default-expand the top few cards so the driver
    *  can scan the full job detail without a tap-tap-tap pattern. */
   initiallyExpanded?: boolean;
+  /** Optional dismiss action — when present, renders a "Not
+   *  interested in this carrier" button in the expanded view.
+   *  /matches passes it; other consumers (e.g. /me's pursued list)
+   *  can omit. */
+  onDismissCarrier?: (carrierId: string) => Promise<void>;
 }
 
 function equipmentLabel(slug: string): string {
@@ -112,8 +117,10 @@ export function MatchCard({
   extras,
   pursuit,
   initiallyExpanded,
+  onDismissCarrier,
 }: Props) {
   const [expanded, setExpanded] = useState(initiallyExpanded ?? false);
+  const [dismissPending, setDismissPending] = useState(false);
   const [askDebbieOpen, setAskDebbieOpen] = useState(false);
   const pay = payLine(match);
   const distance = distanceLine(match);
@@ -323,6 +330,38 @@ export function MatchCard({
                 : "You decide what to share before anything goes to the carrier."}
             </span>
           </div>
+
+          {onDismissCarrier && !pursuit ? (
+            <div className="mt-5 border-t border-brand-rule pt-4">
+              <button
+                type="button"
+                disabled={dismissPending}
+                onClick={async (e) => {
+                  e.stopPropagation();
+                  setDismissPending(true);
+                  try {
+                    await onDismissCarrier(match.carrierId);
+                  } catch {
+                    // revalidatePath in the action drives the
+                    // disappearance; if it errored the card stays
+                    // and the user can retry. Reset the local
+                    // pending state so the button is clickable
+                    // again.
+                    setDismissPending(false);
+                  }
+                }}
+                className="text-xs font-medium text-brand-muted underline-offset-2 hover:text-brand-ink hover:underline disabled:opacity-50"
+              >
+                {dismissPending
+                  ? "Removing…"
+                  : `Not interested in ${match.carrierName}`}
+              </button>
+              <p className="mt-1 text-[11px] leading-4 text-brand-muted">
+                Hides {match.carrierName} from your match list. You can
+                un-dismiss from your profile.
+              </p>
+            </div>
+          ) : null}
         </div>
       ) : null}
       <AskDebbie

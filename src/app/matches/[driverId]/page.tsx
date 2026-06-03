@@ -13,6 +13,8 @@ import {
 } from "@/lib/external-jobs";
 import { getSessionState } from "@/lib/stytch/session";
 import { MatchCard } from "@/components/MatchCard";
+import { getDismissedCarrierIds } from "@/lib/dismissals";
+import { dismissCarrierAction } from "./actions";
 import { ExternalJobCard } from "@/components/ExternalJobCard";
 import { EmptyMatches } from "@/components/EmptyMatches";
 
@@ -101,7 +103,17 @@ export default async function MatchesPage({ params }: PageProps) {
   }
 
   const result = await matchDriver(driverId);
-  const extras = await loadDisplayExtras(result.matches.map((m) => m.jobId));
+  // Driver-initiated dismissals (carrier-level). Filter the engine's
+  // result set so dismissed carriers' jobs don't appear on the page.
+  // We keep them in driverCarrierMatches (the engine still writes
+  // them) so reverse-match alerts for NEW (driver, job) pairs
+  // continue to fire — dismissing today's Phoenix lane shouldn't
+  // suppress next month's Atlanta one. View-layer filter only.
+  const dismissedCarrierIds = await getDismissedCarrierIds(driverId);
+  const visibleMatches = result.matches.filter(
+    (m) => !dismissedCarrierIds.has(m.carrierId),
+  );
+  const extras = await loadDisplayExtras(visibleMatches.map((m) => m.jobId));
 
   // Top up to TARGET_MATCH_COUNT with external listings when our
   // internal matches are sparse. No-op when Adzuna isn't configured
@@ -118,7 +130,7 @@ export default async function MatchesPage({ params }: PageProps) {
             willingToRelocate: driver.willingToRelocate,
           },
           targetCount: TARGET_MATCH_COUNT,
-          internalCount: result.matches.length,
+          internalCount: visibleMatches.length,
         })
       : [];
 
@@ -149,28 +161,36 @@ export default async function MatchesPage({ params }: PageProps) {
     });
   }
 
+  // Bind the dismiss action to this driverId once so each MatchCard
+  // gets a per-carrier callback without re-deriving in the render.
+  const dismissForThisDriver = async (carrierId: string) => {
+    "use server";
+    await dismissCarrierAction(driverId, carrierId);
+  };
+
   return (
     <Shell>
       <Header
         firstName={driver.firstName ?? ""}
-        matchCount={result.matches.length}
+        matchCount={visibleMatches.length}
         externalCount={externalMatches.length}
         truncated={result.truncated}
       />
       <DebbieFollowupBanner />
-      {result.matches.length === 0 && externalMatches.length === 0 ? (
+      {visibleMatches.length === 0 && externalMatches.length === 0 ? (
         <EmptyMatches firstName={driver.firstName ?? ""} />
       ) : (
         <>
-          {result.matches.length > 0 ? (
+          {visibleMatches.length > 0 ? (
             <ul className="mt-8 flex flex-col gap-4">
-              {result.matches.map((m, i) => (
+              {visibleMatches.map((m, i) => (
                 <li key={m.jobId}>
                   <MatchCard
                     driverId={driverId}
                     match={m}
                     extras={extras.get(m.jobId)}
                     pursuit={pursued.get(m.jobId) ?? null}
+                    onDismissCarrier={dismissForThisDriver}
                     // Default-expand the first 3 cards so the driver
                     // can scan requirements + description without
                     // clicking each one open. Target is 2-3 apps per

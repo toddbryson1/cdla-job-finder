@@ -225,6 +225,13 @@
       "when": 1782800000000,
       "tag": "0031_drivers_deleted_at",
       "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1782900000000,
+      "tag": "0032_driver_carrier_dismissals",
+      "breakpoints": true
     }
   ]
 }
