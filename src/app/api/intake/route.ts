@@ -19,6 +19,7 @@ import {
 } from "@/lib/ghl/client";
 import { candidateEmail } from "@/lib/ghl/candidateEmail";
 import { resolveRegion } from "@/lib/regions";
+import { recordFunnelEvent } from "@/lib/funnel-events";
 
 export const runtime = "nodejs";
 
@@ -135,6 +136,17 @@ export async function POST(request: Request) {
     console.log(
       `[intake] driver ${row?.id} ${isAnonymousIntake ? "(anonymous)" : `${d.firstName} ${d.lastName} <${d.email}>`} wants ${d.desiredEquipment.join(",")} in ${d.desiredRegions.join(",")} (home: ${d.homeTime.join("|")})`,
     );
+
+    // Best-effort top-of-funnel event. Counted by DISTINCT driver in
+    // the admin funnel, so the email-path upsert (re-submission updates
+    // the same row) doesn't inflate the unique-driver total.
+    if (row?.id) {
+      void recordFunnelEvent({
+        eventType: "intake_completed",
+        driverId: row.id,
+        metadata: { anonymous: isAnonymousIntake },
+      });
+    }
 
     // Send a magic link to the email the driver just confirmed so they can
     // reach /matches/[id] without typing it again. Best-effort: a Stytch

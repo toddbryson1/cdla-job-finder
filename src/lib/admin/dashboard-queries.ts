@@ -313,6 +313,9 @@ export async function getDriverFunnel30d(): Promise<DriverFunnel30d> {
 }
 
 export interface FunnelEventStats {
+  /** Distinct drivers with an intake_completed event in the window —
+   *  the event-log top of the funnel. */
+  uniqueDriversIntake: number;
   /** matches_viewed events in the window. */
   matchesViewed: number;
   /** Distinct drivers who hit /matches in the window. */
@@ -366,8 +369,15 @@ export async function getFunnelEventStats(
       FROM funnel_events
       WHERE event_type = 'consent_submitted'
         AND created_at >= NOW() - (${days} * INTERVAL '1 day')
+    ),
+    intakes AS (
+      SELECT driver_id
+      FROM funnel_events
+      WHERE event_type = 'intake_completed'
+        AND created_at >= NOW() - (${days} * INTERVAL '1 day')
     )
     SELECT
+      (SELECT COUNT(DISTINCT driver_id)::int FROM intakes WHERE driver_id IS NOT NULL) AS unique_drivers_intake,
       (SELECT COUNT(*)::int FROM views) AS matches_viewed,
       (SELECT COUNT(*)::int FROM viewer_drivers) AS unique_drivers_viewed,
       (SELECT COUNT(*)::int FROM views WHERE match_count = 0) AS zero_match_views,
@@ -381,6 +391,7 @@ export async function getFunnelEventStats(
       (SELECT COUNT(DISTINCT driver_id)::int FROM consents WHERE driver_id IS NOT NULL) AS unique_drivers_consented,
       (SELECT MAX(created_at) FROM views) AS latest_view_at
   `)) as unknown as Array<{
+    unique_drivers_intake: number;
     matches_viewed: number;
     unique_drivers_viewed: number;
     zero_match_views: number;
@@ -392,6 +403,7 @@ export async function getFunnelEventStats(
   }>;
 
   return {
+    uniqueDriversIntake: row.unique_drivers_intake,
     matchesViewed: row.matches_viewed,
     uniqueDriversViewed: row.unique_drivers_viewed,
     zeroMatchViews: row.zero_match_views,

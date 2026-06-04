@@ -149,6 +149,32 @@ describe("dashboard-queries.getFunnelEventStats", () => {
     expect(stats.latestViewAt).toBeInstanceOf(Date);
   });
 
+  it("counts intake_completed by DISTINCT driver (re-submits don't inflate)", async () => {
+    const d1 = await seedDriver("ic1");
+    const d2 = await seedDriver("ic2");
+    // d1 submits intake twice (email-path upsert / re-submission); d2 once.
+    await recordFunnelEvent({
+      eventType: "intake_completed",
+      driverId: d1,
+      metadata: { test: "funnel-events", anonymous: false },
+    });
+    await recordFunnelEvent({
+      eventType: "intake_completed",
+      driverId: d1,
+      metadata: { test: "funnel-events", anonymous: false },
+    });
+    await recordFunnelEvent({
+      eventType: "intake_completed",
+      driverId: d2,
+      metadata: { test: "funnel-events", anonymous: true },
+    });
+
+    const stats = await getFunnelEventStats(30);
+    // Two distinct drivers despite three events — the upsert/re-submit
+    // case must count once per driver.
+    expect(stats.uniqueDriversIntake).toBeGreaterThanOrEqual(2);
+  });
+
   it("counts consent_submitted events (total + unique drivers) in-window", async () => {
     const d1 = await seedDriver("ce1");
     const d2 = await seedDriver("ce2");

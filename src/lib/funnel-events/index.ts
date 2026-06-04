@@ -21,12 +21,19 @@ import { funnelEvents } from "@/db/schema";
  * keeps producers and the admin reader honest about what actually
  * exists. Add a value when you add its call site — not before.
  *
+ *   - intake_completed: driver submitted the intake (top of funnel;
+ *     metadata.anonymous distinguishes anon vs email-keyed). Counted
+ *     by DISTINCT driver so the email-path upsert / re-submits don't
+ *     inflate the unique total.
  *   - matches_viewed: driver landed on /matches (matchCount = cards seen)
  *   - consent_submitted: driver completed Stage 2 consent for a carrier
  *     (carrierId set). Pairs with matches_viewed for a view→consent
  *     funnel measured from events, not just reconstructed state.
  */
-export type FunnelEventType = "matches_viewed" | "consent_submitted";
+export type FunnelEventType =
+  | "intake_completed"
+  | "matches_viewed"
+  | "consent_submitted";
 
 export interface RecordFunnelEventInput {
   eventType: FunnelEventType;
