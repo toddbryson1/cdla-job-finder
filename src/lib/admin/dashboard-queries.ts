@@ -326,6 +326,13 @@ export interface FunnelEventStats {
    *  one consent on record. The view→consent conversion the
    *  state-only funnel can't isolate to actual page views. */
   viewedThenConsented: number;
+  /** consent_submitted events in the window (each is one Stage 2
+   *  consent completion, including re-consents to the same carrier). */
+  consentEvents: number;
+  /** Distinct drivers with at least one consent_submitted event in the
+   *  window — the event-log numerator that pairs with
+   *  uniqueDriversViewed for a pure view→consent rate. */
+  uniqueDriversConsented: number;
   /** Most recent matches_viewed event, or null if none yet. */
   latestViewAt: Date | null;
 }
@@ -353,6 +360,12 @@ export async function getFunnelEventStats(
     ),
     viewer_drivers AS (
       SELECT DISTINCT driver_id FROM views WHERE driver_id IS NOT NULL
+    ),
+    consents AS (
+      SELECT driver_id
+      FROM funnel_events
+      WHERE event_type = 'consent_submitted'
+        AND created_at >= NOW() - (${days} * INTERVAL '1 day')
     )
     SELECT
       (SELECT COUNT(*)::int FROM views) AS matches_viewed,
@@ -364,6 +377,8 @@ export async function getFunnelEventStats(
           SELECT 1 FROM driver_carrier_applications a
           WHERE a.driver_id = vd.driver_id
         )) AS viewed_then_consented,
+      (SELECT COUNT(*)::int FROM consents) AS consent_events,
+      (SELECT COUNT(DISTINCT driver_id)::int FROM consents WHERE driver_id IS NOT NULL) AS unique_drivers_consented,
       (SELECT MAX(created_at) FROM views) AS latest_view_at
   `)) as unknown as Array<{
     matches_viewed: number;
@@ -371,6 +386,8 @@ export async function getFunnelEventStats(
     zero_match_views: number;
     avg_match_count: string | number;
     viewed_then_consented: number;
+    consent_events: number;
+    unique_drivers_consented: number;
     latest_view_at: Date | string | null;
   }>;
 
@@ -380,6 +397,8 @@ export async function getFunnelEventStats(
     zeroMatchViews: row.zero_match_views,
     avgMatchCount: Number(row.avg_match_count),
     viewedThenConsented: row.viewed_then_consented,
+    consentEvents: row.consent_events,
+    uniqueDriversConsented: row.unique_drivers_consented,
     latestViewAt: row.latest_view_at ? new Date(row.latest_view_at) : null,
   };
 }

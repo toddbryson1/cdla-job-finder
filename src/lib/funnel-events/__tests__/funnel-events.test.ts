@@ -149,6 +149,36 @@ describe("dashboard-queries.getFunnelEventStats", () => {
     expect(stats.latestViewAt).toBeInstanceOf(Date);
   });
 
+  it("counts consent_submitted events (total + unique drivers) in-window", async () => {
+    const d1 = await seedDriver("ce1");
+    const d2 = await seedDriver("ce2");
+    // d1 consents twice (e.g. two carriers), d2 once.
+    await recordFunnelEvent({
+      eventType: "consent_submitted",
+      driverId: d1,
+      carrierId: null,
+      metadata: { test: "funnel-events" },
+    });
+    await recordFunnelEvent({
+      eventType: "consent_submitted",
+      driverId: d1,
+      carrierId: null,
+      metadata: { test: "funnel-events" },
+    });
+    await recordFunnelEvent({
+      eventType: "consent_submitted",
+      driverId: d2,
+      carrierId: null,
+      metadata: { test: "funnel-events" },
+    });
+
+    const stats = await getFunnelEventStats(30);
+    // Global table (shared with other suites/prod), so assert our
+    // contribution is reflected rather than exact totals.
+    expect(stats.consentEvents).toBeGreaterThanOrEqual(3);
+    expect(stats.uniqueDriversConsented).toBeGreaterThanOrEqual(2);
+  });
+
   it("counts viewed→consented only for viewers with an application", async () => {
     const viewer = await seedDriver("conv1");
 

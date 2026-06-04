@@ -24,6 +24,7 @@ import {
   MAGIC_LINK_EXPIRATION_MINUTES,
 } from "@/lib/stytch/client";
 import { getSessionState } from "@/lib/stytch/session";
+import { recordFunnelEvent } from "@/lib/funnel-events";
 import { STAGE_2_CONSENT_TEXT_VERSION } from "./constants";
 
 const UUID_RE =
@@ -109,6 +110,17 @@ export async function submitConsent(
         tcpaOptIn: parsed.tcpa,
       },
     });
+
+  // Best-effort funnel event: this driver completed Stage 2 consent for
+  // this carrier. Pairs with matches_viewed to give a view→consent
+  // funnel from the event log. Fire-and-forget — analytics must never
+  // block or break the consent write that just succeeded.
+  void recordFunnelEvent({
+    eventType: "consent_submitted",
+    driverId,
+    carrierId: job.carrierId,
+    metadata: { jobId, tcpa: parsed.tcpa },
+  });
 
   // Skip the questions step if intake already captured the Stage 2 safety
   // answers. Re-asking is annoying and confuses drivers ("I already told you

@@ -20,8 +20,13 @@ import { funnelEvents } from "@/db/schema";
  * call sites don't need a migration, but pinning the emitted set here
  * keeps producers and the admin reader honest about what actually
  * exists. Add a value when you add its call site — not before.
+ *
+ *   - matches_viewed: driver landed on /matches (matchCount = cards seen)
+ *   - consent_submitted: driver completed Stage 2 consent for a carrier
+ *     (carrierId set). Pairs with matches_viewed for a view→consent
+ *     funnel measured from events, not just reconstructed state.
  */
-export type FunnelEventType = "matches_viewed";
+export type FunnelEventType = "matches_viewed" | "consent_submitted";
 
 export interface RecordFunnelEventInput {
   eventType: FunnelEventType;
