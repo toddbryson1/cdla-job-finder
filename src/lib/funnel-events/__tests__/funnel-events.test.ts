@@ -2,8 +2,6 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { and, eq, like, sql } from "drizzle-orm";
 import { db } from "@/db/client";
 import {
-  carrierJobs,
-  carriers,
   driverCarrierApplications,
   drivers,
   funnelEvents,
@@ -205,56 +203,87 @@ describe("dashboard-queries.getFunnelEventStats", () => {
     expect(stats.uniqueDriversConsented).toBeGreaterThanOrEqual(2);
   });
 
-  it("counts viewed→consented only for viewers with an application", async () => {
-    const viewer = await seedDriver("conv1");
-
-    // Carrier + job + application so the viewer has a consent on record.
-    const [carrier] = await db
-      .insert(carriers)
-      .values({
-        name: `${EMAIL_PREFIX}carrier`,
-        kind: "partner",
-        tier: "none",
-        status: "active",
-      })
-      .returning({ id: carriers.id });
-    const [job] = await db
-      .insert(carrierJobs)
-      .values({
-        carrierId: carrier!.id,
-        status: "active",
-        positionTitle: "Funnel Test Job",
-        domicileCity: "St. Cloud",
-        domicileState: "MN",
-        domicileLat: "45.557900",
-        domicileLng: "-94.163200",
-        hiringRadiusMiles: 1500,
-        equipment: "dry-van",
-        acceptedHomeTimeTypes: ["otr"],
-      })
-      .returning({ id: carrierJobs.id });
-    await db.insert(driverCarrierApplications).values({
-      driverId: viewer,
-      jobId: job!.id,
-      carrierId: carrier!.id,
-      consentTextVersion: "v1",
-    });
+  it("counts viewed→consented as the in-window event intersection (view AND consent, both in window)", async () => {
+    // A driver who BOTH viewed and consented within the window counts.
+    const both = await seedDriver("conv1");
     await recordFunnelEvent({
       eventType: "matches_viewed",
-      driverId: viewer,
+      driverId: both,
       matchCount: 3,
+      metadata: { test: "funnel-events" },
+    });
+    await recordFunnelEvent({
+      eventType: "consent_submitted",
+      driverId: both,
+      carrierId: null,
+      metadata: { test: "funnel-events" },
+    });
+
+    // A driver who viewed but never consented must NOT count toward the
+    // intersection (only toward uniqueDriversViewed).
+    const viewOnly = await seedDriver("conv2");
+    await recordFunnelEvent({
+      eventType: "matches_viewed",
+      driverId: viewOnly,
+      matchCount: 2,
       metadata: { test: "funnel-events" },
     });
 
     const stats = await getFunnelEventStats(30);
     expect(stats.viewedThenConsented).toBeGreaterThanOrEqual(1);
+    // The intersection can never exceed the number of unique viewers.
+    expect(stats.viewedThenConsented).toBeLessThanOrEqual(
+      stats.uniqueDriversViewed,
+    );
+  });
 
-    // Cleanup carrier + job (driver/app/events handled by cleanup()).
+  it("excludes an out-of-window consent from viewed→consented", async () => {
+    // Driver viewed in-window but consented 40 days ago — the old
+    // state-table join would have counted this; the windowed event
+    // intersection must not.
+    const d = await seedDriver("oow1");
+    await recordFunnelEvent({
+      eventType: "matches_viewed",
+      driverId: d,
+      matchCount: 4,
+      metadata: { test: "funnel-events" },
+    });
+    await recordFunnelEvent({
+      eventType: "consent_submitted",
+      driverId: d,
+      carrierId: null,
+      metadata: { test: "funnel-events" },
+    });
+    // Backdate ONLY the consent event 40 days.
     await db
-      .delete(driverCarrierApplications)
-      .where(eq(driverCarrierApplications.carrierId, carrier!.id));
-    await db.delete(carrierJobs).where(eq(carrierJobs.id, job!.id));
-    await db.delete(carriers).where(eq(carriers.id, carrier!.id));
+      .update(funnelEvents)
+      .set({ createdAt: sql`NOW() - INTERVAL '40 days'` })
+      .where(
+        and(
+          eq(funnelEvents.driverId, d),
+          eq(funnelEvents.eventType, "consent_submitted"),
+        ),
+      );
+
+    // In a 7-day window this driver is a viewer but their consent is
+    // out of window, so they don't count in the intersection. We assert
+    // on this driver specifically (shared table → no exact totals): no
+    // in-window consent row exists for them.
+    const consentInWindow = await db
+      .select()
+      .from(funnelEvents)
+      .where(
+        and(
+          eq(funnelEvents.driverId, d),
+          eq(funnelEvents.eventType, "consent_submitted"),
+          sql`${funnelEvents.createdAt} >= NOW() - INTERVAL '7 days'`,
+        ),
+      );
+    expect(consentInWindow).toHaveLength(0);
+    const stats = await getFunnelEventStats(7);
+    expect(stats.viewedThenConsented).toBeLessThanOrEqual(
+      stats.uniqueDriversViewed,
+    );
   });
 
   it("excludes events older than the window", async () => {

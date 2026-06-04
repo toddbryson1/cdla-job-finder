@@ -325,9 +325,10 @@ export interface FunnelEventStats {
   zeroMatchViews: number;
   /** Average match_count across matches_viewed events, 1 decimal. */
   avgMatchCount: number;
-  /** Of the distinct drivers who viewed, how many later have at least
-   *  one consent on record. The view→consent conversion the
-   *  state-only funnel can't isolate to actual page views. */
+  /** Distinct in-window viewers who ALSO have an in-window
+   *  consent_submitted event — the true funnel intersection. Both
+   *  sides are window-scoped events, so this can't be inflated by a
+   *  consent that happened long before the viewing window. */
   viewedThenConsented: number;
   /** consent_submitted events in the window (each is one Stage 2
    *  consent completion, including re-consents to the same carrier). */
@@ -384,8 +385,7 @@ export async function getFunnelEventStats(
       (SELECT COALESCE(ROUND(AVG(match_count)::numeric, 1), 0) FROM views) AS avg_match_count,
       (SELECT COUNT(*)::int FROM viewer_drivers vd
         WHERE EXISTS (
-          SELECT 1 FROM driver_carrier_applications a
-          WHERE a.driver_id = vd.driver_id
+          SELECT 1 FROM consents c WHERE c.driver_id = vd.driver_id
         )) AS viewed_then_consented,
       (SELECT COUNT(*)::int FROM consents) AS consent_events,
       (SELECT COUNT(DISTINCT driver_id)::int FROM consents WHERE driver_id IS NOT NULL) AS unique_drivers_consented,

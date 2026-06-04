@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextResponse, after } from "next/server";
 import { eq } from "drizzle-orm";
 import { intakeSchema } from "@/lib/intake-schema";
 import { db } from "@/db/client";
@@ -137,15 +137,20 @@ export async function POST(request: Request) {
       `[intake] driver ${row?.id} ${isAnonymousIntake ? "(anonymous)" : `${d.firstName} ${d.lastName} <${d.email}>`} wants ${d.desiredEquipment.join(",")} in ${d.desiredRegions.join(",")} (home: ${d.homeTime.join("|")})`,
     );
 
-    // Best-effort top-of-funnel event. Counted by DISTINCT driver in
-    // the admin funnel, so the email-path upsert (re-submission updates
-    // the same row) doesn't inflate the unique-driver total.
+    // Best-effort top-of-funnel event. Scheduled via after() so the
+    // INSERT survives the response flush on serverless. Counted by
+    // DISTINCT driver in the admin funnel, so the email-path upsert
+    // (re-submission updates the same row) doesn't inflate the
+    // unique-driver total.
     if (row?.id) {
-      void recordFunnelEvent({
-        eventType: "intake_completed",
-        driverId: row.id,
-        metadata: { anonymous: isAnonymousIntake },
-      });
+      const driverId = row.id;
+      after(() =>
+        recordFunnelEvent({
+          eventType: "intake_completed",
+          driverId,
+          metadata: { anonymous: isAnonymousIntake },
+        }),
+      );
     }
 
     // Send a magic link to the email the driver just confirmed so they can

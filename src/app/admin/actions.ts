@@ -5,10 +5,11 @@
 // re-checks it server-side, then runs the promote/reject paths.
 // No session — this matches the page-level token-gating model.
 
+import { timingSafeEqual } from "node:crypto";
 import { revalidatePath } from "next/cache";
 import { eq } from "drizzle-orm";
 import { db } from "@/db/client";
-import { carriers } from "@/db/schema";
+import { carriers, partnerApplicationStages } from "@/db/schema";
 import {
   promotePendingCarrier,
   rejectPendingCarrier,
@@ -20,10 +21,20 @@ interface ActionResult {
   message: string;
 }
 
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 function checkToken(token: FormDataEntryValue | null): boolean {
   const expected = process.env.ADMIN_TOKEN;
   if (!expected || expected.length < 16) return false;
-  return typeof token === "string" && token === expected;
+  if (typeof token !== "string") return false;
+  // Constant-time compare. Length-mismatch short-circuits (the lengths
+  // themselves aren't secret); equal-length inputs go through
+  // timingSafeEqual so a correct-length guess can't be timed byte-by-byte.
+  const a = Buffer.from(token);
+  const b = Buffer.from(expected);
+  if (a.length !== b.length) return false;
+  return timingSafeEqual(a, b);
 }
 
 export async function approvePendingCarrierAction(
@@ -60,6 +71,33 @@ export async function approvePendingCarrierAction(
 }
 
 /**
+ * True if the carrier is a legitimate handoff-config target — i.e. it
+ * already declares an anderson_quickbase handoff OR has at least one
+ * partner_application_stages row pointing at it. This is the SAME
+ * candidate predicate getCarrierHandoffDrift uses, so the only carriers
+ * the editor will write to are exactly the ones it surfaces. Without
+ * this, a stray/forged carrierId could stamp an anderson_quickbase
+ * config onto an unrelated Tier-2 / Tenstreet carrier and pull it into
+ * the QuickBase push path.
+ */
+async function isHandoffCarrier(
+  carrierId: string,
+  existingConfig: unknown,
+): Promise<boolean> {
+  const declaresAnderson =
+    !!existingConfig &&
+    typeof existingConfig === "object" &&
+    (existingConfig as Record<string, unknown>).handoff_type ===
+      "anderson_quickbase";
+  if (declaresAnderson) return true;
+  const stage = await db.query.partnerApplicationStages.findFirst({
+    where: eq(partnerApplicationStages.carrierId, carrierId),
+    columns: { id: true },
+  });
+  return !!stage;
+}
+
+/**
  * Repair a carrier's drifted partner_handoff_config straight from the
  * admin drift card — no SQL / Drizzle Studio round-trip. Builds an
  * anderson_quickbase config from the four submitted fields, runs it
@@ -67,9 +105,12 @@ export async function approvePendingCarrierAction(
  * if it validates. So a save here is, by construction, a config the
  * sweeper will accept on its next pass — the drift row clears.
  *
- * Writes the normalized v.config (not the raw input): extra keys are
- * dropped, the shape is canonical. updatedAt bumps so the change is
- * visible in audits.
+ * MERGES into the existing config rather than replacing it: a handoff
+ * config can carry sibling keys the editor doesn't expose (IntelliApp
+ * URL, source identifiers, *_secret_ref — see schema.ts:partnerHandoff-
+ * Config). A wholesale overwrite would silently wipe those while
+ * "repairing" one field. We preserve unknown top-level + quickbase
+ * keys and only set the four the operator edited.
  */
 export async function updateCarrierHandoffConfigAction(
   formData: FormData,
@@ -78,8 +119,8 @@ export async function updateCarrierHandoffConfigAction(
     return { ok: false, message: "invalid token" };
   }
   const carrierId = formData.get("carrierId");
-  if (typeof carrierId !== "string" || !carrierId) {
-    return { ok: false, message: "missing carrierId" };
+  if (typeof carrierId !== "string" || !UUID_RE.test(carrierId)) {
+    return { ok: false, message: "missing or malformed carrierId" };
   }
 
   const field = (name: string): string => {
@@ -91,39 +132,67 @@ export async function updateCarrierHandoffConfigAction(
   const tableId = field("tableId");
   const defaultRecruiterName = field("defaultRecruiterName");
 
-  const config = {
-    handoff_type: "anderson_quickbase" as const,
-    quickbase: {
+  try {
+    const carrier = await db.query.carriers.findFirst({
+      where: eq(carriers.id, carrierId),
+      columns: { id: true, name: true, partnerHandoffConfig: true },
+    });
+    if (!carrier) {
+      return { ok: false, message: "carrier not found" };
+    }
+    if (!(await isHandoffCarrier(carrierId, carrier.partnerHandoffConfig))) {
+      return {
+        ok: false,
+        message:
+          "Not a handoff carrier — refusing to write anderson_quickbase config here.",
+      };
+    }
+
+    // Merge: preserve sibling keys the editor doesn't expose, set the
+    // four it does. default_recruiter_name is removed when cleared.
+    const existing =
+      carrier.partnerHandoffConfig &&
+      typeof carrier.partnerHandoffConfig === "object"
+        ? (carrier.partnerHandoffConfig as Record<string, unknown>)
+        : {};
+    const existingQb =
+      existing.quickbase && typeof existing.quickbase === "object"
+        ? (existing.quickbase as Record<string, unknown>)
+        : {};
+    const mergedQb: Record<string, unknown> = {
+      ...existingQb,
       realm_hostname: realmHostname,
       app_id: appId,
       table_id: tableId,
-      ...(defaultRecruiterName
-        ? { default_recruiter_name: defaultRecruiterName }
-        : {}),
-    },
-  };
-
-  // Validate BEFORE writing — never persist a config the sweeper would
-  // reject. The validator's reason string doubles as the operator's
-  // error message.
-  const v = validateAndersonQuickbaseConfig(config);
-  if (!v.ok) {
-    return { ok: false, message: v.reason };
-  }
-
-  try {
-    const updated = await db
-      .update(carriers)
-      .set({ partnerHandoffConfig: v.config, updatedAt: new Date() })
-      .where(eq(carriers.id, carrierId))
-      .returning({ id: carriers.id, name: carriers.name });
-    if (updated.length === 0) {
-      return { ok: false, message: "carrier not found" };
+    };
+    if (defaultRecruiterName) {
+      mergedQb.default_recruiter_name = defaultRecruiterName;
+    } else {
+      delete mergedQb.default_recruiter_name;
     }
+    const merged = {
+      ...existing,
+      handoff_type: "anderson_quickbase",
+      quickbase: mergedQb,
+    };
+
+    // Validate the MERGED result before writing — never persist a
+    // config the sweeper would reject. Validation is a gate only; we
+    // write `merged` (not the validator's narrowed output) so the
+    // preserved sibling keys survive.
+    const v = validateAndersonQuickbaseConfig(merged);
+    if (!v.ok) {
+      return { ok: false, message: v.reason };
+    }
+
+    await db
+      .update(carriers)
+      .set({ partnerHandoffConfig: merged, updatedAt: new Date() })
+      .where(eq(carriers.id, carrierId));
     revalidatePath("/admin");
     return {
       ok: true,
-      message: `Saved. ${updated[0].name} now validates for anderson_quickbase — the drift row clears on refresh.`,
+      message: `Saved. ${carrier.name} now validates for anderson_quickbase — the drift row clears on refresh.`,
     };
   } catch (err) {
     console.error("[admin/update-handoff-config] failed:", err);

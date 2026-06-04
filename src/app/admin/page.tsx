@@ -296,9 +296,9 @@ export default async function AdminPage({ searchParams }: PageProps) {
                   small
                 />
                 <CountCard
-                  label="Avg cards shown"
+                  label="Avg cards / view"
                   value={funnelEvents.avgMatchCount}
-                  sub="internal + external"
+                  sub="per view (incl. refreshes)"
                   small
                 />
                 <CountCard
@@ -316,7 +316,7 @@ export default async function AdminPage({ searchParams }: PageProps) {
                   value={funnelEvents.viewedThenConsented}
                   sub={
                     funnelEvents.uniqueDriversViewed > 0
-                      ? `${((100 * funnelEvents.viewedThenConsented) / funnelEvents.uniqueDriversViewed).toFixed(1)}% of viewers (state)`
+                      ? `${((100 * funnelEvents.viewedThenConsented) / funnelEvents.uniqueDriversViewed).toFixed(1)}% of viewers`
                       : "—"
                   }
                   small
@@ -324,11 +324,7 @@ export default async function AdminPage({ searchParams }: PageProps) {
                 <CountCard
                   label="Consents (events)"
                   value={funnelEvents.consentEvents}
-                  sub={
-                    funnelEvents.uniqueDriversViewed > 0
-                      ? `${((100 * funnelEvents.uniqueDriversConsented) / funnelEvents.uniqueDriversViewed).toFixed(1)}% view→consent (events)`
-                      : `${funnelEvents.uniqueDriversConsented} unique drivers`
-                  }
+                  sub={`${funnelEvents.uniqueDriversConsented} unique drivers`}
                   small
                 />
               </div>

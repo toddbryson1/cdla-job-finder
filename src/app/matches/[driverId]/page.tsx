@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import { after } from "next/server";
 import { cookies } from "next/headers";
 import { eq } from "drizzle-orm";
 import { db } from "@/db/client";
@@ -141,20 +142,24 @@ export default async function MatchesPage({ params }: PageProps) {
   }
 
   // Best-effort funnel event: this driver landed on /matches and saw
-  // this many cards at this moment. Fire-and-forget — the analytics
-  // write must never block or break the render. matchCount is the TOTAL
-  // the driver actually sees (internal + external top-ups); the split
-  // is in metadata for drop-off analysis by supply source.
-  void recordFunnelEvent({
-    eventType: "matches_viewed",
-    driverId,
-    matchCount: visibleMatches.length + externalMatches.length,
-    metadata: {
-      internal: visibleMatches.length,
-      external: externalMatches.length,
-      truncated: result.truncated,
-    },
-  });
+  // this many cards at this moment. Runs via after() so the INSERT is
+  // guaranteed to execute even on a serverless runtime that freezes the
+  // function once the response flushes — a bare `void` here can drop the
+  // write post-response. matchCount is the TOTAL the driver actually
+  // sees (internal + external top-ups); the split is in metadata for
+  // drop-off analysis by supply source.
+  after(() =>
+    recordFunnelEvent({
+      eventType: "matches_viewed",
+      driverId,
+      matchCount: visibleMatches.length + externalMatches.length,
+      metadata: {
+        internal: visibleMatches.length,
+        external: externalMatches.length,
+        truncated: result.truncated,
+      },
+    }),
+  );
 
   // Look up which (driver, job) pairs the driver has already pursued
   // (consented through the Stage 2 flow). Used to badge the carrier card
