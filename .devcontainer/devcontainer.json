@@ -4,6 +4,11 @@
   "service": "app",
   "workspaceFolder": "/workspaces/${localWorkspaceFolderBasename}",
 
+  // SSH server so `gh codespace ssh` works — the base image doesn't ship one.
+  "features": {
+    "ghcr.io/devcontainers/features/sshd:1": {}
+  },
+
   // Heavy-lifting machine. Sets the MINIMUM Codespace size, so GitHub defaults
   // to (and only offers) 4-core/16GB or larger — comfortable for Next 16 +
   // Postgres + several projects open at once.
