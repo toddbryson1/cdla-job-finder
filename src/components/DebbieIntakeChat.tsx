@@ -798,7 +798,7 @@ export function DebbieIntakeChat({
                 // server-side via mammoth before going to Anthropic.
                 // capture="environment" hint lets the picker offer the
                 // camera as an option on mobile.
-                accept="application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain,image/jpeg,image/png,image/webp,.pdf,.docx,.txt,.jpg,.jpeg,.png,.webp"
+                accept="application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain,image/jpeg,image/png,image/webp,image/heic,image/heif,.pdf,.docx,.txt,.jpg,.jpeg,.png,.webp,.heic,.heif"
                 capture="environment"
                 onChange={(e) => {
                   const f = e.target.files?.[0];

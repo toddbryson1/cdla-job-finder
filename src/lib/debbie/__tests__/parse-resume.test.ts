@@ -34,12 +34,10 @@ describe("isMimeAccepted", () => {
     ).toBe(true);
   });
 
-  it("still rejects formats deferred to a later session", () => {
-    // HEIC is iOS-only and adds complexity (Anthropic doesn't accept it
-    // directly — would need to convert to JPEG first). Drivers can take
-    // a screenshot to convert.
-    expect(isMimeAccepted("image/heic")).toBe(false);
-    expect(isMimeAccepted("image/heif")).toBe(false);
+  it("accepts HEIC / HEIF (iPhone default — transcoded to JPEG server-side via heic-convert)", () => {
+    expect(isMimeAccepted("image/heic")).toBe(true);
+    expect(isMimeAccepted("image/heif")).toBe(true);
+    expect(isMimeAccepted("IMAGE/HEIC")).toBe(true);
   });
 
   it("rejects arbitrary octet-stream + GIFs (vision API doesn't support GIF input)", () => {
@@ -188,6 +186,23 @@ describe("parseResume — feature flag + size gates", () => {
       expect(r.code).toBe("file_unsupported");
       // Driver-visible hint should point them at PDF as the fallback.
       expect(r.error.toLowerCase()).toContain("pdf");
+    }
+  });
+
+  it("returns file_unsupported when HEIC bytes aren't a real HEIC (transcode fails before any Anthropic call)", async () => {
+    // heic-convert's libheif WASM throws on a buffer that isn't a HEIC
+    // container. We catch it and surface file_unsupported with the
+    // screenshot workaround — no network call fires, so this is fully
+    // deterministic without a real .heic fixture (which can't be
+    // produced here: no HEVC encoder is available locally).
+    process.env.ANTHROPIC_API_KEY = "sk-fake";
+    process.env.DEBBIE_RESUME_ENABLED = "true";
+    const r = await parseResume(Buffer.alloc(2048), "image/heic");
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.code).toBe("file_unsupported");
+      // Driver-visible hint should point them at the screenshot path.
+      expect(r.error.toLowerCase()).toContain("screenshot");
     }
   });
 

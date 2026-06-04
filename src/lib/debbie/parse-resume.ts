@@ -40,9 +40,11 @@ export const MIN_RESUME_BYTES = 200;
 // Supported in v1:
 //   - PDF, TXT, image formats — sent directly to Anthropic
 //   - DOCX — transcoded to plain text via mammoth and sent as text
-//
-// Still deferred: HEIC (iOS-only; users can take a screenshot or
-// change camera settings to JPEG to work around).
+//   - HEIC/HEIF — transcoded to JPEG via heic-convert (pure JS +
+//     libheif WASM, no native binary) and sent as an image block.
+//     iPhones shoot HEIC by default, so a driver photographing a
+//     paper resume on iOS hits this path unless they've switched the
+//     camera to "Most Compatible."
 const DOCX_MIME =
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
 
@@ -52,14 +54,29 @@ const ACCEPTED_MIMES = [
   "image/jpeg",
   "image/png",
   "image/webp",
+  "image/heic",
+  "image/heif",
   DOCX_MIME,
 ] as const;
 
 type ImageMime = "image/jpeg" | "image/png" | "image/webp";
 
+// JPEG-encode quality for the HEIC→JPEG transcode. 0.8 keeps the
+// output comfortably under Anthropic's 5 MB image limit for typical
+// phone photos while staying legible enough for field extraction.
+const HEIC_JPEG_QUALITY = 0.8;
+
 function isImageMime(mime: string): mime is ImageMime {
   const m = mime.toLowerCase();
   return m === "image/jpeg" || m === "image/png" || m === "image/webp";
+}
+
+// HEIC and HEIF share the libheif decode path. Anthropic's vision
+// input does NOT accept them directly, so these always route through
+// the transcode step before becoming an image block.
+function isHeicMime(mime: string): boolean {
+  const m = mime.toLowerCase();
+  return m === "image/heic" || m === "image/heif";
 }
 
 export function isResumeEnabled(): boolean {
@@ -174,7 +191,7 @@ export async function parseResume(
     return {
       ok: false,
       code: "file_unsupported",
-      error: `Only PDF and plain text resumes are supported in v1; got "${mimeType}".`,
+      error: `Unsupported file type "${mimeType}". Upload a PDF, DOCX, TXT, or a photo (JPEG/PNG/WebP/HEIC).`,
     };
   }
 
@@ -216,6 +233,19 @@ export async function parseResume(
         type: "base64",
         media_type: "application/pdf",
         data: buf.toString("base64"),
+      },
+    };
+  } else if (isHeicMime(mimeLower)) {
+    // iPhone HEIC/HEIF — Anthropic vision can't read it, so transcode
+    // to JPEG first, then hand off through the normal image path.
+    const transcoded = await transcodeHeicToJpeg(buf);
+    if (!transcoded.ok) return transcoded;
+    payloadBlock = {
+      type: "image",
+      source: {
+        type: "base64",
+        media_type: "image/jpeg",
+        data: transcoded.jpeg.toString("base64"),
       },
     };
   } else if (isImageMime(mimeLower)) {
@@ -380,4 +410,55 @@ async function transcodeDocxToText(
       error: `DOCX could not be read (${err instanceof Error ? err.message : String(err)}). Try saving as PDF instead.`,
     };
   }
+}
+
+/**
+ * HEIC/HEIF → JPEG via heic-convert (pure JS wrapper over libheif's
+ * WASM build — no native binary, so it survives Vercel's serverless
+ * runtime where sharp's HEIC support is unreliable; sharp's prebuilt
+ * binaries dropped HEVC/HEIC over libheif licensing).
+ *
+ * Dynamic import keeps the WASM module (~a few MB) off the cold-start
+ * path for every other resume type — only HEIC uploads pay for it.
+ *
+ * Two failure modes, both surfaced as file_unsupported with the
+ * screenshot workaround:
+ *   - decode throws (corrupt / not-really-HEIC / unsupported variant)
+ *   - the transcoded JPEG exceeds Anthropic's 5 MB image input limit.
+ *     A 5 MB HEIC can decode to a much larger JPEG; we cap rather than
+ *     ship an oversize image the API will reject. The driver can take
+ *     a screenshot (which iOS saves as a smaller PNG/JPEG) instead.
+ */
+async function transcodeHeicToJpeg(
+  buf: Buffer,
+): Promise<
+  | { ok: true; jpeg: Buffer }
+  | { ok: false; code: "file_unsupported" | "file_too_large"; error: string }
+> {
+  let jpeg: Buffer;
+  try {
+    const { default: convert } = await import("heic-convert");
+    const out = await convert({
+      buffer: new Uint8Array(buf),
+      format: "JPEG",
+      quality: HEIC_JPEG_QUALITY,
+    });
+    jpeg = Buffer.from(out);
+  } catch (err) {
+    return {
+      ok: false,
+      code: "file_unsupported",
+      error: `HEIC image could not be read (${err instanceof Error ? err.message : String(err)}). Take a screenshot of the resume and upload that instead.`,
+    };
+  }
+
+  if (jpeg.byteLength > MAX_RESUME_BYTES) {
+    return {
+      ok: false,
+      code: "file_too_large",
+      error: `That HEIC photo is too large once converted (${(jpeg.byteLength / 1024 / 1024).toFixed(1)}MB). Take a screenshot of the resume and upload that instead.`,
+    };
+  }
+
+  return { ok: true, jpeg };
 }
