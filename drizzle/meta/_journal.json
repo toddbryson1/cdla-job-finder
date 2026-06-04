@@ -232,6 +232,13 @@
       "when": 1782900000000,
       "tag": "0032_driver_carrier_dismissals",
       "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1783000000000,
+      "tag": "0033_funnel_events",
+      "breakpoints": true
     }
   ]
 }

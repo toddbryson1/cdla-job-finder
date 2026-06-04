@@ -14,6 +14,7 @@ import {
 import { getSessionState } from "@/lib/stytch/session";
 import { MatchCard } from "@/components/MatchCard";
 import { getDismissedCarrierIds } from "@/lib/dismissals";
+import { recordFunnelEvent } from "@/lib/funnel-events";
 import { dismissCarrierAction } from "./actions";
 import { ExternalJobCard } from "@/components/ExternalJobCard";
 import { EmptyMatches } from "@/components/EmptyMatches";
@@ -138,6 +139,22 @@ export default async function MatchesPage({ params }: PageProps) {
   if (externalMatches.length > 0) {
     void recordExternalImpressions(driverId, externalMatches);
   }
+
+  // Best-effort funnel event: this driver landed on /matches and saw
+  // this many cards at this moment. Fire-and-forget — the analytics
+  // write must never block or break the render. matchCount is the TOTAL
+  // the driver actually sees (internal + external top-ups); the split
+  // is in metadata for drop-off analysis by supply source.
+  void recordFunnelEvent({
+    eventType: "matches_viewed",
+    driverId,
+    matchCount: visibleMatches.length + externalMatches.length,
+    metadata: {
+      internal: visibleMatches.length,
+      external: externalMatches.length,
+      truncated: result.truncated,
+    },
+  });
 
   // Look up which (driver, job) pairs the driver has already pursued
   // (consented through the Stage 2 flow). Used to badge the carrier card

@@ -312,6 +312,78 @@ export async function getDriverFunnel30d(): Promise<DriverFunnel30d> {
   };
 }
 
+export interface FunnelEventStats {
+  /** matches_viewed events in the window. */
+  matchesViewed: number;
+  /** Distinct drivers who hit /matches in the window. */
+  uniqueDriversViewed: number;
+  /** matches_viewed events where the driver saw ZERO cards — the
+   *  hardest dead-end in the funnel. */
+  zeroMatchViews: number;
+  /** Average match_count across matches_viewed events, 1 decimal. */
+  avgMatchCount: number;
+  /** Of the distinct drivers who viewed, how many later have at least
+   *  one consent on record. The view→consent conversion the
+   *  state-only funnel can't isolate to actual page views. */
+  viewedThenConsented: number;
+  /** Most recent matches_viewed event, or null if none yet. */
+  latestViewAt: Date | null;
+}
+
+/**
+ * Event-log view of the matches funnel for the last `days` days. Reads
+ * funnel_events (migration 0033) rather than reconstructing from state
+ * tables, so it answers page-view questions: how many drivers actually
+ * landed on /matches, how many saw a dead end (0 cards), and how many
+ * of the viewers went on to consent.
+ *
+ * Empty/zero everywhere until matches_viewed events accumulate — the
+ * table starts empty on deploy. The admin panel says so explicitly so
+ * a fresh zero doesn't read as "the funnel is broken."
+ */
+export async function getFunnelEventStats(
+  days = 30,
+): Promise<FunnelEventStats> {
+  const [row] = (await db.execute(sql`
+    WITH views AS (
+      SELECT driver_id, match_count, created_at
+      FROM funnel_events
+      WHERE event_type = 'matches_viewed'
+        AND created_at >= NOW() - (${days} * INTERVAL '1 day')
+    ),
+    viewer_drivers AS (
+      SELECT DISTINCT driver_id FROM views WHERE driver_id IS NOT NULL
+    )
+    SELECT
+      (SELECT COUNT(*)::int FROM views) AS matches_viewed,
+      (SELECT COUNT(*)::int FROM viewer_drivers) AS unique_drivers_viewed,
+      (SELECT COUNT(*)::int FROM views WHERE match_count = 0) AS zero_match_views,
+      (SELECT COALESCE(ROUND(AVG(match_count)::numeric, 1), 0) FROM views) AS avg_match_count,
+      (SELECT COUNT(*)::int FROM viewer_drivers vd
+        WHERE EXISTS (
+          SELECT 1 FROM driver_carrier_applications a
+          WHERE a.driver_id = vd.driver_id
+        )) AS viewed_then_consented,
+      (SELECT MAX(created_at) FROM views) AS latest_view_at
+  `)) as unknown as Array<{
+    matches_viewed: number;
+    unique_drivers_viewed: number;
+    zero_match_views: number;
+    avg_match_count: string | number;
+    viewed_then_consented: number;
+    latest_view_at: Date | string | null;
+  }>;
+
+  return {
+    matchesViewed: row.matches_viewed,
+    uniqueDriversViewed: row.unique_drivers_viewed,
+    zeroMatchViews: row.zero_match_views,
+    avgMatchCount: Number(row.avg_match_count),
+    viewedThenConsented: row.viewed_then_consented,
+    latestViewAt: row.latest_view_at ? new Date(row.latest_view_at) : null,
+  };
+}
+
 export interface CarrierPerformanceRow {
   carrier: string;
   kind: string;

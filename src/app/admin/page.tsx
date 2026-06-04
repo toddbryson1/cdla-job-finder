@@ -20,6 +20,7 @@ import {
   getCyclesExpiringSoon,
   getDashboardCounts,
   getDriverFunnel30d,
+  getFunnelEventStats,
   getPartnerHandoffFunnel,
   getPendingCarriersReviewQueue,
   getRecentActivity,
@@ -72,6 +73,7 @@ export default async function AdminPage({ searchParams }: PageProps) {
     handoffDrift,
     nudgeStats,
     unsubscribeStats,
+    funnelEvents,
   ] = await Promise.all([
     getDashboardCounts(),
     getCarrierBreakdown(),
@@ -87,6 +89,7 @@ export default async function AdminPage({ searchParams }: PageProps) {
     getCarrierHandoffDrift(),
     getApplicationNudgeStats(),
     getUnsubscribeStats(),
+    getFunnelEventStats(30),
   ]);
 
   const minimalTotal = breakdown.reduce(
@@ -257,6 +260,58 @@ export default async function AdminPage({ searchParams }: PageProps) {
               small
             />
           </div>
+        </Section>
+
+        {/* MATCHES PAGE VIEWS — event-log funnel (migration 0033). The
+            section above reconstructs conversion from state tables;
+            this reads actual /matches page-view events so drop-off at
+            the view step (and 0-card dead-ends) is visible. */}
+        <Section title="Matches page views — last 30 days">
+          {funnelEvents.matchesViewed === 0 ? (
+            <Empty>
+              No matches_viewed events yet. The funnel_events table starts
+              empty on deploy and fills as drivers load /matches — a fresh
+              zero here means &ldquo;no views logged since the table
+              shipped,&rdquo; not a broken funnel.
+            </Empty>
+          ) : (
+            <>
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                <CountCard
+                  label="Page views"
+                  value={funnelEvents.matchesViewed}
+                  sub={`${funnelEvents.uniqueDriversViewed} unique drivers`}
+                  small
+                />
+                <CountCard
+                  label="Avg cards shown"
+                  value={funnelEvents.avgMatchCount}
+                  sub="internal + external"
+                  small
+                />
+                <CountCard
+                  label="Zero-card views"
+                  value={funnelEvents.zeroMatchViews}
+                  sub={
+                    funnelEvents.matchesViewed > 0
+                      ? `${((100 * funnelEvents.zeroMatchViews) / funnelEvents.matchesViewed).toFixed(1)}% dead-ends`
+                      : "—"
+                  }
+                  small
+                />
+                <CountCard
+                  label="Viewed → consented"
+                  value={funnelEvents.viewedThenConsented}
+                  sub={
+                    funnelEvents.uniqueDriversViewed > 0
+                      ? `${((100 * funnelEvents.viewedThenConsented) / funnelEvents.uniqueDriversViewed).toFixed(1)}% of viewers`
+                      : "—"
+                  }
+                  small
+                />
+              </div>
+            </>
+          )}
         </Section>
 
         {/* PARTNER HANDOFF FUNNEL — Anderson / Sterling QuickBase (spec §B7) */}

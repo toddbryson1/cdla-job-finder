@@ -1182,3 +1182,50 @@ export const driverExternalJobImpressions = pgTable(
     ),
   ],
 );
+
+// Append-only funnel event log. Complements the state-derived funnel
+// counts in admin/dashboard-queries.ts: those reconstruct conversion
+// from the durable tables (applications, matches, stages), but they
+// can't answer time-ordered drop-off questions like "a driver hit
+// /matches with N matches at T and never consented." This table
+// captures those moments as discrete, timestamped events.
+//
+// Carries NO PII (driver_id + counts + a small metadata bag only), so
+// it survives the CCPA soft-delete anonymization the same way matches
+// and applications do — the anonymized driver row keeps the FK intact
+// for aggregate analysis. onDelete: set null is belt-and-suspenders
+// for any future HARD delete; today drivers are only soft-deleted.
+//
+// event_type is an open text column on purpose — new call sites add
+// values without a migration. The emitted-today set is pinned by the
+// FunnelEventType union in src/lib/funnel-events. Migration 0033.
+export const funnelEvents = pgTable(
+  "funnel_events",
+  {
+    id: uuid("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    driverId: uuid("driver_id").references(() => drivers.id, {
+      onDelete: "set null",
+    }),
+    eventType: text("event_type").notNull(),
+    // Set on view-style events (e.g. matches_viewed) — how many cards
+    // the driver actually saw. Null for events where it's meaningless.
+    matchCount: integer("match_count"),
+    // Set on carrier-scoped events (e.g. apply_clicked). Null otherwise.
+    carrierId: uuid("carrier_id").references(() => carriers.id, {
+      onDelete: "set null",
+    }),
+    // Small free-form bag for event-specific detail (e.g. internal vs
+    // external split). Keep it shallow — this is for analysis, not a
+    // second source of truth.
+    metadata: jsonb("metadata"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (t) => [
+    index("funnel_events_type_created_idx").on(t.eventType, t.createdAt),
+    index("funnel_events_driver_idx").on(t.driverId, t.createdAt),
+  ],
+);
