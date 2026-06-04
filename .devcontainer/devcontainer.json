@@ -19,9 +19,9 @@
     "3000": { "label": "Next dev", "onAutoForward": "openPreview" }
   },
 
-  // Runs once when the Codespace is created (and on rebuild):
-  // install deps, apply Drizzle migrations, seed example carriers.
-  "postCreateCommand": "npm install && npm run db:migrate && npm run db:seed",
+  // Runs once when the Codespace is created (and on rebuild): install deps,
+  // the Claude Code CLI, apply Drizzle migrations, seed example carriers.
+  "postCreateCommand": "npm install && npm install -g @anthropic-ai/claude-code && npm run db:migrate && npm run db:seed",
 
   "customizations": {
     "vscode": {

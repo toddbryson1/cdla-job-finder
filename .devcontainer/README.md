@@ -9,7 +9,8 @@ hardware; your Mac only runs the editor and a browser tab.
 - **Node 20** app container + **Postgres 16** container (`db` service)
 - `DATABASE_URL` is preset to the in-container DB:
   `postgres://postgres:postgres@db:5432/cdla_dev`
-- On create: `npm install` → `npm run db:migrate` → `npm run db:seed`
+- On create: `npm install` → **Claude Code CLI** → `npm run db:migrate` → `npm run db:seed`
+- **Run `claude` in the terminal** to drive the build from inside the Codespace (cloud compute, not your Mac)
 
 You only need to start the dev server:
 
