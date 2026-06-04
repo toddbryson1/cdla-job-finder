@@ -602,6 +602,41 @@ export interface CarrierHandoffDriftRow {
    *  historical evidence — useful when triaging a freshly-noticed
    *  drift to see how long it's been bleeding. */
   historicalDriftRows: number;
+  /** Best-effort extraction of whatever quickbase fields are present
+   *  in the (drifted) config today, so the admin inline editor can
+   *  pre-fill rather than start blank. Empty strings where a field is
+   *  absent or non-string — the config is drifted, so any subset may
+   *  be missing. */
+  currentConfig: HandoffConfigPrefill;
+}
+
+export interface HandoffConfigPrefill {
+  realmHostname: string;
+  appId: string;
+  tableId: string;
+  defaultRecruiterName: string;
+}
+
+/**
+ * Pull the quickbase fields out of a (possibly malformed) handoff
+ * config for editor pre-fill. Never throws — coerces anything
+ * non-string to "" so the form always renders.
+ */
+function extractHandoffPrefill(cfg: unknown): HandoffConfigPrefill {
+  const obj = (cfg && typeof cfg === "object" ? cfg : {}) as Record<
+    string,
+    unknown
+  >;
+  const qb = (obj.quickbase && typeof obj.quickbase === "object"
+    ? obj.quickbase
+    : {}) as Record<string, unknown>;
+  const str = (v: unknown): string => (typeof v === "string" ? v : "");
+  return {
+    realmHostname: str(qb.realm_hostname),
+    appId: str(qb.app_id),
+    tableId: str(qb.table_id),
+    defaultRecruiterName: str(qb.default_recruiter_name),
+  };
 }
 
 export interface CarrierHandoffDrift {
@@ -700,6 +735,7 @@ export async function getCarrierHandoffDrift(): Promise<CarrierHandoffDrift> {
       reason: v.reason,
       pendingRows: c.pending_rows,
       historicalDriftRows: c.historical_drift_rows,
+      currentConfig: extractHandoffPrefill(c.cfg),
     });
     totalPendingDoomed += c.pending_rows;
     totalHistoricalDriftRows += c.historical_drift_rows;

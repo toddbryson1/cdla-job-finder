@@ -9,6 +9,7 @@
 // Vercel logs: per-carrier breakdown, recent activity, cycles about
 // to expire, TA unresolved openings, recently archived jobs.
 
+import { Fragment } from "react";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import {
@@ -28,6 +29,7 @@ import {
   getUnsubscribeStats,
 } from "@/lib/admin/dashboard-queries";
 import { PendingCarrierActions } from "./PendingCarrierActions";
+import { CarrierHandoffConfigEditor } from "./CarrierHandoffConfigEditor";
 
 export const dynamic = "force-dynamic"; // never cache
 export const revalidate = 0;
@@ -395,37 +397,51 @@ export default async function AdminPage({ searchParams }: PageProps) {
                   </thead>
                   <tbody className="divide-y divide-brand-rule">
                     {handoffDrift.drifted.map((r) => (
-                      <tr key={r.carrierId} className="text-sm">
-                        <td className="px-3 py-2 font-medium text-brand-ink">
-                          {r.carrierName}
-                        </td>
-                        <td className="px-3 py-2 text-brand-muted">
-                          <code className="text-xs">{r.code}</code>
-                          <div className="text-xs">{r.reason}</div>
-                        </td>
-                        <td className="px-3 py-2 text-right">
-                          {r.pendingRows > 0 ? (
-                            <span className="font-semibold text-brand-deep">
-                              {r.pendingRows}
-                            </span>
-                          ) : (
-                            <span className="text-brand-muted">0</span>
-                          )}
-                        </td>
-                        <td className="px-3 py-2 text-right text-brand-muted">
-                          {r.historicalDriftRows}
-                        </td>
-                      </tr>
+                      <Fragment key={r.carrierId}>
+                        <tr className="text-sm">
+                          <td className="px-3 py-2 font-medium text-brand-ink">
+                            {r.carrierName}
+                          </td>
+                          <td className="px-3 py-2 text-brand-muted">
+                            <code className="text-xs">{r.code}</code>
+                            <div className="text-xs">{r.reason}</div>
+                          </td>
+                          <td className="px-3 py-2 text-right">
+                            {r.pendingRows > 0 ? (
+                              <span className="font-semibold text-brand-deep">
+                                {r.pendingRows}
+                              </span>
+                            ) : (
+                              <span className="text-brand-muted">0</span>
+                            )}
+                          </td>
+                          <td className="px-3 py-2 text-right text-brand-muted">
+                            {r.historicalDriftRows}
+                          </td>
+                        </tr>
+                        <tr>
+                          <td colSpan={4} className="px-3 pb-3">
+                            <CarrierHandoffConfigEditor
+                              carrierId={r.carrierId}
+                              carrierName={r.carrierName}
+                              current={r.currentConfig}
+                              token={key ?? ""}
+                            />
+                          </td>
+                        </tr>
+                      </Fragment>
                     ))}
                   </tbody>
                 </Table>
               </div>
               <p className="mt-2 text-xs text-brand-muted">
-                Fix: update <code>carriers.partner_handoff_config</code> for
-                the affected carrier so it includes a valid{" "}
+                Fix inline: each row has an{" "}
+                <strong>Edit config</strong> form that writes a valid{" "}
                 <code>quickbase</code> block (<code>realm_hostname</code>,{" "}
                 <code>app_id</code>, <code>table_id</code>) under{" "}
-                <code>handoff_type = &quot;anderson_quickbase&quot;</code>.
+                <code>handoff_type = &quot;anderson_quickbase&quot;</code>. The
+                save is validated with the same predicate the retry sweeper
+                uses, so a successful save clears the drift on refresh.
               </p>
             </>
           )}
