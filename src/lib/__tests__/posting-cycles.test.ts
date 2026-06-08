@@ -182,23 +182,31 @@ describe("posting-cycles.spawnPostingCycles", () => {
   it("expires active cycles past their expires_at", async () => {
     const job = await insertTestJob();
     // Manually insert an already-expired cycle
-    await db.insert(jobPostingCycles).values({
-      jobId: job.id,
-      city: "Phoenix",
-      state: "AZ",
-      cycleIndex: 1,
-      variantIndex: 0,
-      isPrimary: true,
-      postedAt: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000),
-      expiresAt: new Date(Date.now() - 24 * 60 * 60 * 1000), // expired 1 day ago
-      status: "active",
-    });
+    const [seeded] = await db
+      .insert(jobPostingCycles)
+      .values({
+        jobId: job.id,
+        city: "Phoenix",
+        state: "AZ",
+        cycleIndex: 1,
+        variantIndex: 0,
+        isPrimary: true,
+        postedAt: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000),
+        expiresAt: new Date(Date.now() - 24 * 60 * 60 * 1000), // expired 1 day ago
+        status: "active",
+      })
+      .returning({ id: jobPostingCycles.id });
 
     const result = await spawnPostingCycles(db);
     expect(result.expired).toBeGreaterThanOrEqual(1);
 
+    // Assert against the cycle we seeded by id. spawnPostingCycles also
+    // reposts: once this cycle expires the job has 0 active cycles and the
+    // most-recent cycle is 30 days old (past the 3-day cool-down), so step
+    // 2+3 spawns a fresh ACTIVE cycle for the same job. A findFirst keyed on
+    // jobId alone can return either row — assert on the seeded id instead.
     const cycle = await db.query.jobPostingCycles.findFirst({
-      where: eq(jobPostingCycles.jobId, job.id),
+      where: eq(jobPostingCycles.id, seeded.id),
     });
     expect(cycle?.status).toBe("expired");
   });
