@@ -24,49 +24,70 @@ When changing copy on the landing pages or video scripts, update these `.docx` f
 
 ## Current State
 
-Two slices working end-to-end against a real Postgres DB:
+Most of the original roadmap is built and running against a real Postgres DB. The slices below are
+in production; see "What to Build Next" for the remaining gaps.
 
-**Driver-facing landing pages** (`/jobs/[region-equipment]`)
-- `src/app/jobs/[slug]/page.tsx` — dynamic route, slug is `<region>-<equipment>` (e.g. `atlanta-reefer`)
-- `src/components/JobsLandingPage.tsx` — Hero / Trust signals / How it works / Pay / FAQ / Final CTA / Footer
-- `src/lib/slugs.ts` — region and equipment slug maps + `parseJobSlug`
-- `src/lib/page-data.ts` — resolves all template variables (Section 2.4 of the landing-page doc) via Drizzle queries against `carriers`, `carrier_hiring_rules`, and `drivers`
-- ISR via `export const revalidate = 900` (15 minutes — per template doc)
-- `generateStaticParams` prerenders the (region, equipment) combos that actually have hiring rules in the DB
+**Driver-facing landing pages** (`/jobs/[slug]`, `/carriers/[slug]`, `/articles/[slug]`)
+- `src/app/jobs/[slug]/page.tsx` — dynamic per-job landing page; `src/components/JobsLandingPage.tsx` is the homepage layout
+- `src/lib/page-data.ts`, `src/lib/slugs.ts`, `src/lib/regions.ts` — slug/region resolution + SEO metadata
+- ISR per the template doc; `generateStaticParams` prerenders combos with live jobs
 
-**Driver intake** (`/intake` → `/api/intake` → `/intake/done`)
-- 4-step form in `src/components/IntakeForm.tsx` (client component)
-- Zod schema in `src/lib/intake-schema.ts` shared between client and server
-- API route validates with Zod and inserts into `drivers`
-- 6 mandatory safety questions verbatim from pitch deck slide 6
+**Driver intake — "Debbie" conversational AI** (`/intake` → `/api/debbie/*`)
+- `src/components/DebbieIntakeChat.tsx` + `src/lib/debbie/` — multi-turn Claude chat replaces the old static form
+- Resume parsing (`parse-resume.ts`): PDF/DOCX/TXT/JPEG/PNG/WebP + HEIC/HEIF (transcoded to JPEG server-side)
+- Audio transcription via Whisper (`transcribe.ts`); zod schemas in `src/lib/intake-schema.ts`
+- 6 mandatory safety questions still verbatim from pitch deck slide 6
 
-Not yet built: matching engine, carrier portal, Tenstreet integration, auth, video script generator. The pitch-deck outline is a content asset.
+**Matching engine** (`src/lib/matching/`) — hard filters (CDL state, experience paths, OTR invariant,
+equipment, home-time, endorsements, pay, SAP, DUI/felony, PostGIS polygon hiring areas), soft-rank
+scoring, Tier-1 exclusivity gates. Has unit tests.
+
+**Matches + application handoff** — `/matches/[driverId]`, `/match/[driverId]/[jobId]/apply` (Stage 2
+consent + TCPA opt-in), persisted in `driver_carrier_matches` / `driver_carrier_applications`. Partner
+handoff to Anderson/Sterling via QuickBase (`src/lib/quickbase/`) with a retry sweeper.
+
+**Auth** — Stytch passwordless (email/SMS OTP), `src/lib/stytch/`, `/login`, `/me` driver dashboard.
+
+**Carrier-facing** — `/carriers`, `/carriers/[slug]`, `/partners/*` (brief intake, integration docs, exclusivity).
+
+**Growth/ops systems** — content machine (auto article generation + GSC/IndexNow, `src/lib/content-machine/`),
+external jobs via Adzuna (`src/lib/external-jobs/`), Transport America sheet sync (`src/lib/transport-america/`),
+GHL email (nurture / reverse-match / nudge sequences), funnel analytics (`src/lib/funnel-events/`),
+CAN-SPAM unsubscribe, CCPA delete flow, and an admin dashboard at `/admin`.
+
+Cron entrypoints live under `src/app/api/cron/*` (daily orchestrator, nurture, reverse-matches, qb-retry, sync-swift).
 
 ## Database
 
-Local Postgres 16 via Homebrew. Drizzle ORM, postgres-js driver.
+Postgres 16, Drizzle ORM, postgres-js driver. 34 migrations applied (`drizzle/`, 0000–0033).
 
 ```bash
-brew services start postgresql@16   # if not already running
-npm run db:generate                 # generate migration after schema change
+npm run db:generate                 # generate migration after schema change (see caveat below)
 npm run db:migrate                  # apply pending migrations
 npm run db:seed                     # wipe + insert composite example carriers
 npm run db:studio                   # browse with Drizzle Studio
 ```
 
-`DATABASE_URL` lives in `.env.local` (gitignored). Default: `postgres://toddbryson@localhost:5432/cdla_dev`.
+> **Codespace caveat:** `npm run db:generate` fails in the Codespace (no TTY). Hand-author the SQL
+> migration + journal entry instead. See `scripts/` helpers and memory `migration-workflow`.
 
-Schema (`src/db/schema.ts`):
+`DATABASE_URL` lives in `.env.local` (gitignored).
 
-| Table                  | Purpose                                                        |
-| ---------------------- | -------------------------------------------------------------- |
-| `carriers`             | Each carrier we work with. `kind` = `partner` \| `prospect`, `tier` = `tier_1` \| `tier_2`. |
-| `carrier_hiring_rules` | One row per (carrier, region, equipment) the carrier hires for, plus pay range, home time, and what they tolerate (DUI/felony/failed DOT). |
-| `drivers`              | One row per intake submission. All 6 safety questions, consent flags, full preferences. |
+Schema (`src/db/schema.ts`) — ~30 tables. The core ones:
 
-Stat proxies (until more data is captured):
-- `driver_count_in_region` uses `cdl_state` as a proxy for `address_state` (intake doesn't collect home address)
-- `avg_match_count` and `recent_hire_count` are 0 until the matching engine + hire tracking land
+| Table                        | Purpose                                                        |
+| ---------------------------- | -------------------------------------------------------------- |
+| `carriers`                   | Carrier master. `kind` = `partner` \| `prospect` \| `subscription`; `tier` = `tier_1` \| `tier_2`. Holds `partner_handoff_config` (Anderson QuickBase). |
+| `carrier_jobs`               | Active job postings: hard filters, soft prefs, application surface, geospatial (lat/lng + PostGIS polygon), external/Tenstreet IDs. (Replaced the old `carrier_hiring_rules`.) |
+| `drivers`                    | One row per intake. 6 safety questions, consent flags, preferences, address, last-seen/deleted-at. |
+| `driver_carrier_matches`     | Persisted match record (soft-rank score, distance, first-seen). |
+| `driver_carrier_applications`| Stage 2 consent per (driver, job) with TCPA opt-in. |
+| `partner_application_stages` | State machine for the Anderson/Sterling QuickBase handoff. |
+| `funnel_events`              | Append-only analytics log (intake_completed, matches_viewed, consent_submitted). |
+
+Plus: nurture/nudge/reverse-match send tracking, content-machine tables (articles/topics/regions/runs),
+external jobs (Adzuna cache + impressions), pending-carrier ingestion, posting cycles, zip codes,
+dismissals, and Transport America sync mappings.
 
 ## Stack
 
@@ -106,11 +127,19 @@ npm run lint
 
 ## What to Build Next
 
-In rough order, matching the docs:
+The original roadmap (matching engine, carrier pages, match tracking, auth) is **done**. Remaining work:
 
-1. **Matching engine** — given a driver row, return the carrier hiring rules that fit. Drives the "X drivers match Y carriers" stats and unblocks the matched-leads email.
-2. **Carrier-facing pages** — `/carriers` with the Tier comparison from the pitch deck (B2B voice, not driver voice).
-3. **Match tracking** — `driver_carrier_matches` table so `avg_match_count` and `recent_hire_count` stats are real.
-4. **Tenstreet integration** — partner-confirmation flow + lead submission. Doc covers the spec.
-5. **Video script generator** — tool that renders the 6 templates from `docs/CDLAjobs_Video_Script_Template.docx` against real DB values. CLI for now, not a UI feature.
-6. **Auth** — driver login to see their matches, carrier login to manage hiring rules.
+**Launch-blocking**
+1. **Anderson/Sterling QuickBase handoff is on placeholders.** `src/lib/quickbase/client.ts` has two
+   spec-referenced TODOs: experience-level dropdown values (§B10 Q3) and the field-id-keyed payload map
+   (§B5.2). Both await Sterling confirmation; records won't land correctly in their system until then.
+2. **Rate limiting before launch** — magic-link send (`src/app/login/actions.ts`) and the carrier-lead
+   endpoint (`src/app/api/carrier-lead/route.ts`) are flagged abuse vectors with no limits yet.
+
+**Deferred / not started**
+3. **Video script generator** — render the 6 templates from `docs/CDLAjobs_Video_Script_Template.docx`
+   against real DB values. CLI, not a UI feature. Never built.
+4. **Tenstreet feed ingestion** — handoff/IntelliApp linking works; the inbound feed sync runner does not exist (schema is prepped).
+5. **Content-machine GSC URL inspection** — stubbed until the cdla.jobs property is verified in Search Console (`src/lib/content-machine/gsc.ts`).
+6. Smaller TODOs: step-up verification before Stage 2 consent, partner pitch-deck PDF export + calendar
+   booking on `/partners/integration`, split contact addresses (drivers@/partners@/press@).
