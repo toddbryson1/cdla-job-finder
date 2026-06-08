@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { PARTNER_BOOKING_URL } from "@/lib/partners";
 import { PrintButton } from "./PrintButton";
 
 // Printable carrier brief. Copy is VERBATIM from
@@ -212,8 +213,15 @@ export default function CarrierBriefOnePager() {
               </a>
             </li>
             <li>
-              <strong>Schedule a 30-minute call:</strong> request via email and
-              we&rsquo;ll send a calendar link
+              <strong>Schedule a 30-minute call:</strong>{" "}
+              <a
+                href={PARTNER_BOOKING_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-brand-medium underline"
+              >
+                book a time
+              </a>
             </li>
             <li>
               <strong>Web:</strong> https://cdla.jobs/partners
