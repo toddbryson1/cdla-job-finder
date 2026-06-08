@@ -14,6 +14,10 @@ export type SessionState =
       kind: "ok";
       email: string;
       userId: string;
+      // True once an SMS OTP factor has been added to this session via
+      // step-up (src/lib/stytch/step-up.ts). A plain magic-link session
+      // is false. Used to gate Stage 2 consent when STEP_UP_OTP_ENABLED.
+      stepUp: boolean;
     };
 
 // Server-side session verification. Hits Stytch's API on every call so that
@@ -34,10 +38,15 @@ export async function getSessionState(): Promise<SessionState> {
     });
     const verified = res.user.emails.find((e) => e.verified) ?? res.user.emails[0];
     if (!verified?.email) return { kind: "invalid" };
+    // An SMS OTP factor on the session marks it as stepped-up. Stytch
+    // tags the factor with delivery_method "sms".
+    const factors = res.session?.authentication_factors ?? [];
+    const stepUp = factors.some((f) => f.delivery_method === "sms");
     return {
       kind: "ok",
       email: verified.email.toLowerCase(),
       userId: res.user.user_id,
+      stepUp,
     };
   } catch (err) {
     console.error("[session] stytch sessions.authenticate failed:", err);

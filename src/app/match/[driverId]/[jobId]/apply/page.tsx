@@ -12,6 +12,8 @@ import {
   drivers,
 } from "@/db/schema";
 import { getSessionState } from "@/lib/stytch/session";
+import { isStepUpEnabled } from "@/lib/stytch/client";
+import { maskPhone, toE164US } from "@/lib/stytch/step-up";
 import { qualifyDriverForCarrier } from "@/lib/matching";
 import {
   recordAndersonHandoff,
@@ -21,6 +23,7 @@ import {
 import { STAGE_2_CONSENT_TEXT_VERSION } from "./constants";
 import { QuestionsForm } from "./QuestionsForm";
 import { IdentityCaptureForm } from "./IdentityCaptureForm";
+import { StepUpForm } from "./StepUpForm";
 import {
   parseResultPageCopyOverrides,
   type ResultPageCopyOverrides,
@@ -30,9 +33,11 @@ import {
   type NextMatchSuggestion,
 } from "@/lib/apply/pick-next-match";
 
-// TODO: add step-up verification before Stage 2 consent
-// (attorney addendum Q10 — magic-link session is "limited"; a step-up SMS
-// OTP gate belongs in front of this screen before sensitive submissions.)
+// Step-up SMS OTP before Stage 2 consent (attorney addendum Q10). When
+// STEP_UP_OTP_ENABLED is set, an email-session driver must add an SMS
+// factor (StepUpForm) before the consent screen renders; submitConsent
+// enforces the same gate server-side. Off by default — see
+// src/lib/stytch/step-up.ts.
 
 export const metadata: Metadata = {
   title: "Apply to this carrier",
@@ -151,15 +156,37 @@ export default async function ApplyPage({ params, searchParams }: PageProps) {
     redirect(`/match/${driverId}/${jobId}/apply?step=consent`);
   }
 
+  // Step-up gate (attorney addendum Q10): when enabled, an email-session
+  // driver must add an SMS factor before the consent screen. Cookie-path
+  // viewers have no Stytch session and are left untouched (per product
+  // decision: email-session only). submitConsent enforces this too.
+  let stepUpRequired = false;
+  if (isStepUpEnabled() && step === "consent") {
+    const session = await getSessionState();
+    stepUpRequired = session.kind === "ok" && !session.stepUp;
+  }
+  const maskedPhone = (() => {
+    const e164 = toE164US(driver.phone);
+    return e164 ? maskPhone(e164) : "your phone on file";
+  })();
+
   return (
     <Shell>
       <StepHeader driverId={driverId} step={step} />
       {step === "consent" ? (
-        <ConsentScreen
-          driverId={driverId}
-          jobId={jobId}
-          carrierName={carrier.name}
-        />
+        stepUpRequired ? (
+          <StepUpForm
+            driverId={driverId}
+            jobId={jobId}
+            maskedPhone={maskedPhone}
+          />
+        ) : (
+          <ConsentScreen
+            driverId={driverId}
+            jobId={jobId}
+            carrierName={carrier.name}
+          />
+        )
       ) : null}
       {step === "questions" ? (
         <QuestionsScreen
