@@ -1258,3 +1258,58 @@ export const rateLimitCounters = pgTable(
     index("rate_limit_counters_window_idx").on(t.windowStart),
   ],
 );
+
+// Generated video scripts (docs/CDLAjobs_Video_Script_Template.docx §14).
+//
+// One row per (target slug, template). The generator CLI upserts the
+// rendered script here so we can track which scripts exist, which have
+// been produced into video, and — later — which drove intakes. Re-running
+// the generator refreshes the body/variables (pay numbers drift over
+// time) but PRESERVES production status, so marking a script "produced"
+// isn't undone by the next generation.
+//
+// Conversion attribution (which script drove the most intakes — §14) is a
+// follow-up: it needs a tracking param threaded short_url → intake. The
+// columns here are the storage foundation for it. Migration 0035.
+export const videoScriptStatus = pgEnum("video_script_status", [
+  "generated",
+  "in_production",
+  "published",
+  "archived",
+]);
+
+export const videoScripts = pgTable(
+  "video_scripts",
+  {
+    id: uuid("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    // Target landing-page slug, e.g. "atlanta-reefer".
+    slug: text("slug").notNull(),
+    // Denormalized from the slug for reporting/filtering.
+    region: text("region").notNull(),
+    equipment: text("equipment").notNull(),
+    templateKey: text("template_key").notNull(),
+    // The rendered script body (voiceover + on-screen annotations).
+    body: text("body").notNull(),
+    // Snapshot of the resolved variables (pay numbers, counts) at
+    // generation time — so a produced video can be traced to its data.
+    variables: jsonb("variables"),
+    // Human-review flags carried from rendering (e.g. pay outliers).
+    warnings: jsonb("warnings"),
+    status: videoScriptStatus("status").notNull().default("generated"),
+    // Set when a script is produced + posted.
+    producedVideoUrl: text("produced_video_url"),
+    generatedAt: timestamp("generated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (t) => [
+    // One row per target+template; the generator upserts on this.
+    uniqueIndex("video_scripts_slug_template_idx").on(t.slug, t.templateKey),
+    index("video_scripts_status_idx").on(t.status),
+  ],
+);

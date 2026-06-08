@@ -34,12 +34,18 @@ import {
   getTemplate,
   VIDEO_SCRIPT_TEMPLATES,
 } from "../src/lib/video-scripts";
+import {
+  listVideoScripts,
+  saveGeneratedScript,
+} from "../src/lib/video-scripts/store";
 
 interface Args {
   slugs: string[];
   all: boolean;
   template: string | null;
   write: boolean;
+  save: boolean;
+  list: boolean;
   outDir: string;
 }
 
@@ -49,12 +55,16 @@ function parseArgs(argv: string[]): Args {
     all: false,
     template: null,
     write: false,
+    save: false,
+    list: false,
     outDir: "generated/video-scripts",
   };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === "--all") out.all = true;
     else if (a === "--write") out.write = true;
+    else if (a === "--save") out.save = true;
+    else if (a === "--list") out.list = true;
     else if (a === "--template") out.template = argv[++i] ?? null;
     else if (a === "--out") out.outDir = argv[++i] ?? out.outDir;
     else if (a.startsWith("--")) {
@@ -67,6 +77,23 @@ function parseArgs(argv: string[]): Args {
 
 async function main() {
   const args = parseArgs(process.argv.slice(2));
+
+  // --list: show what's already tracked in the DB and exit.
+  if (args.list) {
+    const rows = await listVideoScripts();
+    if (rows.length === 0) {
+      console.log("No tracked video scripts yet. Generate with --save.");
+    } else {
+      console.log(`${rows.length} tracked video scripts:\n`);
+      for (const r of rows) {
+        const produced = r.producedVideoUrl ? ` -> ${r.producedVideoUrl}` : "";
+        console.log(
+          `  [${r.status}] ${r.slug} / ${r.templateKey}${produced}`,
+        );
+      }
+    }
+    process.exit(0);
+  }
 
   if (args.template && !getTemplate(args.template)) {
     console.error(`Unknown template: ${args.template}`);
@@ -91,6 +118,7 @@ async function main() {
   let rendered = 0;
   let skipped = 0;
   let written = 0;
+  let saved = 0;
 
   for (const slug of slugs) {
     const parsed = parseJobSlug(slug);
@@ -132,15 +160,25 @@ async function main() {
         await writeFile(file, header + script.body, "utf-8");
         written++;
         console.log(`  wrote ${file}`);
-      } else {
+      } else if (!args.save) {
         console.log("\n" + script.body);
+      }
+      if (args.save) {
+        // Upsert into the tracking table (preserves production status).
+        await saveGeneratedScript(script);
+        saved++;
+        console.log(`  saved ${slug} / ${script.templateKey}`);
       }
     }
   }
 
+  const tail = [
+    args.write ? `${written} files written to ${args.outDir}` : null,
+    args.save ? `${saved} saved to tracking table` : null,
+  ].filter(Boolean);
   console.log(
     `\nDone. ${rendered} rendered, ${skipped} skipped${
-      args.write ? `, ${written} files written to ${args.outDir}` : " (dry-run; pass --write to save)"
+      tail.length ? `, ${tail.join(", ")}` : " (dry-run; pass --write and/or --save)"
     }.`,
   );
   process.exit(0);
