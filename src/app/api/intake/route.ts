@@ -1,4 +1,5 @@
 import { NextResponse, after } from "next/server";
+import { cookies } from "next/headers";
 import { eq } from "drizzle-orm";
 import { intakeSchema } from "@/lib/intake-schema";
 import { db } from "@/db/client";
@@ -144,11 +145,16 @@ export async function POST(request: Request) {
     // unique-driver total.
     if (row?.id) {
       const driverId = row.id;
+      // Video-script conversion attribution (docs §14): the proxy stashed
+      // the first-touch vsrc (<slug>__<template>) from the video CTA. Record
+      // it on the event so videoScriptConversions() can tie this intake back
+      // to the script that drove it. Null for non-video traffic.
+      const vsrc = (await cookies()).get("cdla_vsrc")?.value ?? null;
       after(() =>
         recordFunnelEvent({
           eventType: "intake_completed",
           driverId,
-          metadata: { anonymous: isAnonymousIntake },
+          metadata: { anonymous: isAnonymousIntake, ...(vsrc ? { vsrc } : {}) },
         }),
       );
     }

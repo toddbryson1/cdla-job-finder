@@ -3,9 +3,9 @@
 // team can track which scripts exist and which have been produced into
 // video. See docs/CDLAjobs_Video_Script_Template.docx §14.
 
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, sql } from "drizzle-orm";
 import { db } from "@/db/client";
-import { videoScripts } from "@/db/schema";
+import { funnelEvents, videoScripts } from "@/db/schema";
 import type { RenderedScript } from "./index";
 
 export type VideoScriptStatus =
@@ -96,4 +96,48 @@ export async function markVideoScriptStatus(
     .where(eq(videoScripts.id, id))
     .returning({ id: videoScripts.id });
   return rows.length > 0;
+}
+
+export interface VideoScriptConversion {
+  slug: string;
+  templateKey: string;
+  status: string;
+  /** Distinct drivers who completed intake after a click on this script. */
+  intakes: number;
+}
+
+/**
+ * Per-script intake conversions (docs §14). Joins each tracked script to
+ * intake_completed funnel events tagged with its vsrc (<slug>__<template>,
+ * captured first-touch by the proxy). Counts DISTINCT drivers so re-submits
+ * don't inflate. Ordered most-converting first. Scripts with zero intakes
+ * are included (intakes = 0).
+ */
+export async function videoScriptConversions(): Promise<
+  VideoScriptConversion[]
+> {
+  const rows = (await db.execute(sql`
+    SELECT
+      vs.slug AS slug,
+      vs.template_key AS template_key,
+      vs.status AS status,
+      COUNT(DISTINCT fe.driver_id)::int AS intakes
+    FROM ${videoScripts} vs
+    LEFT JOIN ${funnelEvents} fe
+      ON fe.event_type = 'intake_completed'
+     AND fe.metadata->>'vsrc' = vs.slug || '__' || vs.template_key
+    GROUP BY vs.slug, vs.template_key, vs.status
+    ORDER BY intakes DESC, vs.slug, vs.template_key
+  `)) as unknown as Array<{
+    slug: string;
+    template_key: string;
+    status: string;
+    intakes: number;
+  }>;
+  return rows.map((r) => ({
+    slug: r.slug,
+    templateKey: r.template_key,
+    status: r.status,
+    intakes: r.intakes,
+  }));
 }

@@ -62,6 +62,8 @@ describe("renderTemplate", () => {
         "Reefer drivers in Atlanta are making $1,300 to $1,900 a week",
       );
       expect(r.script.body).toContain("cdla.jobs/jobs/atlanta-reefer");
+      // CTA carries the per-template vsrc attribution param.
+      expect(r.script.body).toContain("?vsrc=atlanta-reefer__pay-focused");
       // No unresolved tokens left.
       expect(r.script.body).not.toMatch(/\[\[/);
     }
