@@ -167,7 +167,14 @@ export function renderTemplate(
   resolved: ResolvedVariables,
   meta: { slug: string; region: string; equipment: string },
 ): RenderResult {
-  const { vars, warnings } = resolved;
+  const { warnings } = resolved;
+  // Clone per-template so the vsrc attribution param (which depends on the
+  // template) doesn't leak across templates sharing the resolved set.
+  const vars = { ...resolved.vars };
+  if (vars.short_url) {
+    const sep = vars.short_url.includes("?") ? "&" : "?";
+    vars.short_url = `${vars.short_url}${sep}vsrc=${meta.slug}__${template.key}`;
+  }
 
   const missingRequired = template.requiredVars.filter(
     (k) => vars[k] == null,

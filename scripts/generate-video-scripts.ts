@@ -37,6 +37,7 @@ import {
 import {
   listVideoScripts,
   saveGeneratedScript,
+  videoScriptConversions,
 } from "../src/lib/video-scripts/store";
 
 interface Args {
@@ -78,17 +79,22 @@ function parseArgs(argv: string[]): Args {
 async function main() {
   const args = parseArgs(process.argv.slice(2));
 
-  // --list: show what's already tracked in the DB and exit.
+  // --list: show what's tracked in the DB, with intake conversions, and exit.
   if (args.list) {
     const rows = await listVideoScripts();
     if (rows.length === 0) {
       console.log("No tracked video scripts yet. Generate with --save.");
     } else {
+      const conversions = await videoScriptConversions();
+      const intakesByKey = new Map(
+        conversions.map((c) => [`${c.slug}__${c.templateKey}`, c.intakes]),
+      );
       console.log(`${rows.length} tracked video scripts:\n`);
       for (const r of rows) {
+        const intakes = intakesByKey.get(`${r.slug}__${r.templateKey}`) ?? 0;
         const produced = r.producedVideoUrl ? ` -> ${r.producedVideoUrl}` : "";
         console.log(
-          `  [${r.status}] ${r.slug} / ${r.templateKey}${produced}`,
+          `  [${r.status}] ${r.slug} / ${r.templateKey} — ${intakes} intakes${produced}`,
         );
       }
     }

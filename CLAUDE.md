@@ -144,9 +144,11 @@ The original roadmap (matching engine, carrier pages, match tracking, auth) is *
 **Deferred / not started**
 2. **Tenstreet feed ingestion** — handoff/IntelliApp linking works; the inbound feed sync runner does not exist (schema is prepped).
 3. **Content-machine GSC URL inspection** — implemented (`src/lib/content-machine/gsc.ts`, shared auth in `src/lib/google-auth.ts`). Dormant until you verify the cdla.jobs property in Search Console, grant the service account access, and set `GSC_INTEGRATION_ENABLED=true`.
-4. **Video-script conversion attribution** — the `video_scripts` tracking table exists (`gen:video-scripts --save`
-   upserts; `--list` views; status via `markVideoScriptStatus`). Still open per docs §14: attributing intakes
-   back to the script that drove them (needs a tracking param threaded short_url → intake → funnel_events).
+4. **Video-script pipeline is complete** (docs §14): generator (`gen:video-scripts`), tracking table
+   (`--save`/`--list`, status via `markVideoScriptStatus`), and conversion attribution — video CTAs carry
+   `?vsrc=<slug>__<template>`, the proxy (`src/proxy.ts`) captures it first-touch, the intake route records
+   it on `intake_completed`, and `videoScriptConversions()` reports intakes per script. Producing the actual
+   videos is the only remaining (non-code) step.
 5. Smaller TODOs: calendar booking on `/partners/integration` (needs a chosen tool — currently `mailto`),
    split contact addresses (drivers@/partners@/press@ — needs the mailboxes). The carrier brief now
    renders as a print-to-PDF one-pager at `/partners/brief/one-pager`.

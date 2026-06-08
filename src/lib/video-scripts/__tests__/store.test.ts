@@ -3,17 +3,19 @@
 // funnel-events.test.ts — runs only where a database is reachable.
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { like } from "drizzle-orm";
+import { eq, like, sql } from "drizzle-orm";
 import { db } from "@/db/client";
-import { videoScripts } from "@/db/schema";
+import { drivers, funnelEvents, videoScripts } from "@/db/schema";
 import {
   listVideoScripts,
   markVideoScriptStatus,
   saveGeneratedScript,
+  videoScriptConversions,
 } from "@/lib/video-scripts/store";
 import type { RenderedScript } from "@/lib/video-scripts";
 
 const SLUG = "test-region-reefer";
+const TEST_EMAIL = "vsrc-store-test@example.com";
 
 function makeScript(over: Partial<RenderedScript> = {}): RenderedScript {
   return {
@@ -31,6 +33,11 @@ function makeScript(over: Partial<RenderedScript> = {}): RenderedScript {
 
 async function cleanup() {
   await db.delete(videoScripts).where(like(videoScripts.slug, "test-region-%"));
+  // Conversion-test fixtures: funnel events tagged with our test vsrc + the driver.
+  await db
+    .delete(funnelEvents)
+    .where(sql`${funnelEvents.metadata}->>'vsrc' LIKE 'test-region-%'`);
+  await db.delete(drivers).where(eq(drivers.email, TEST_EMAIL));
 }
 
 beforeEach(cleanup);
@@ -88,6 +95,57 @@ describe("markVideoScriptStatus", () => {
       "archived",
     );
     expect(ok).toBe(false);
+  });
+});
+
+describe("videoScriptConversions", () => {
+  it("counts distinct intakes attributed to a script via vsrc", async () => {
+    await saveGeneratedScript(makeScript({ templateKey: "pay-focused" }));
+
+    // A driver who completed intake after clicking this script's CTA.
+    const [driver] = await db
+      .insert(drivers)
+      .values({
+        firstName: "Vee",
+        lastName: "Source",
+        email: TEST_EMAIL,
+        phone: "555-555-2222",
+        homeZip: "75001",
+        cdlState: "TX",
+        yearsHeld: "3",
+        otrYears: "2",
+        equipmentRun: ["reefer"],
+        desiredEquipment: ["reefer"],
+        desiredRegions: ["any"],
+        homeTime: ["otr"],
+        terminatedFromAnyOfLast3Employers: false,
+        failedDotTest: false,
+        attestAccurate: true,
+        consentToShare: true,
+      })
+      .returning({ id: drivers.id });
+
+    await db.insert(funnelEvents).values({
+      eventType: "intake_completed",
+      driverId: driver!.id,
+      metadata: { anonymous: false, vsrc: `${SLUG}__pay-focused` },
+    });
+
+    const conv = await videoScriptConversions();
+    const row = conv.find(
+      (c) => c.slug === SLUG && c.templateKey === "pay-focused",
+    );
+    expect(row).toBeTruthy();
+    expect(row!.intakes).toBe(1);
+  });
+
+  it("reports zero intakes for a script no one converted on", async () => {
+    await saveGeneratedScript(makeScript({ templateKey: "compliance" }));
+    const conv = await videoScriptConversions();
+    const row = conv.find(
+      (c) => c.slug === SLUG && c.templateKey === "compliance",
+    );
+    expect(row?.intakes).toBe(0);
   });
 });
 
