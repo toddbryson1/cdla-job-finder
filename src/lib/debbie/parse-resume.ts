@@ -40,9 +40,11 @@ export const MIN_RESUME_BYTES = 200;
 // Supported in v1:
 //   - PDF, TXT, image formats — sent directly to Anthropic
 //   - DOCX — transcoded to plain text via mammoth and sent as text
-//
-// Still deferred: HEIC (iOS-only; users can take a screenshot or
-// change camera settings to JPEG to work around).
+//   - HEIC/HEIF — transcoded to JPEG via heic-convert (pure JS +
+//     libheif WASM, no native binary) and sent as an image block.
+//     iPhones shoot HEIC by default, so a driver photographing a
+//     paper resume on iOS hits this path unless they've switched the
+//     camera to "Most Compatible."
 const DOCX_MIME =
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
 
@@ -52,14 +54,38 @@ const ACCEPTED_MIMES = [
   "image/jpeg",
   "image/png",
   "image/webp",
+  "image/heic",
+  "image/heif",
   DOCX_MIME,
 ] as const;
 
 type ImageMime = "image/jpeg" | "image/png" | "image/webp";
 
+// JPEG-encode quality for the HEIC→JPEG transcode. 0.8 keeps the
+// output comfortably under Anthropic's 5 MB image limit for typical
+// phone photos while staying legible enough for field extraction.
+const HEIC_JPEG_QUALITY = 0.8;
+
+// Upper bound on decoded HEIC resolution. HEIC is so space-efficient
+// that a 5 MB file (our byte cap) can encode a 100+ megapixel image,
+// which libheif decodes to width*height*4 bytes of RGBA in WASM memory
+// — enough to OOM-kill a serverless function BEFORE the post-transcode
+// byte check ever runs. We read the pixel dimensions from the file
+// header (cheap) and refuse anything absurd up front. 60 MP leaves
+// generous headroom over real phone photos (iPhone tops out ~48 MP).
+const MAX_HEIC_PIXELS = 60_000_000;
+
 function isImageMime(mime: string): mime is ImageMime {
   const m = mime.toLowerCase();
   return m === "image/jpeg" || m === "image/png" || m === "image/webp";
+}
+
+// HEIC and HEIF share the libheif decode path. Anthropic's vision
+// input does NOT accept them directly, so these always route through
+// the transcode step before becoming an image block.
+function isHeicMime(mime: string): boolean {
+  const m = mime.toLowerCase();
+  return m === "image/heic" || m === "image/heif";
 }
 
 export function isResumeEnabled(): boolean {
@@ -170,15 +196,28 @@ export async function parseResume(
     };
   }
 
-  if (!isMimeAccepted(mimeType)) {
+  const buf = fileBuffer instanceof ArrayBuffer ? Buffer.from(fileBuffer) : fileBuffer;
+
+  // iOS frequently uploads HEIC photos with an empty or octet-stream
+  // MIME type (the browser doesn't recognize the format). Sniff the
+  // ISOBMFF ftyp brand so the headline iPhone-photo case isn't rejected
+  // as "unsupported" purely because the type header was blank.
+  let effectiveMime = mimeType.toLowerCase();
+  if (
+    (effectiveMime === "" || effectiveMime === "application/octet-stream") &&
+    looksLikeHeic(buf)
+  ) {
+    effectiveMime = "image/heic";
+  }
+
+  if (!isMimeAccepted(effectiveMime)) {
     return {
       ok: false,
       code: "file_unsupported",
-      error: `Only PDF and plain text resumes are supported in v1; got "${mimeType}".`,
+      error: `Unsupported file type "${mimeType}". Upload a PDF, DOCX, TXT, or a photo (JPEG/PNG/WebP/HEIC).`,
     };
   }
 
-  const buf = fileBuffer instanceof ArrayBuffer ? Buffer.from(fileBuffer) : fileBuffer;
   if (buf.byteLength > MAX_RESUME_BYTES) {
     return {
       ok: false,
@@ -207,7 +246,7 @@ export async function parseResume(
   //     what we want for field extraction (the LLM doesn't care
   //     about heading styles).
   //   - Text → plain `text` block.
-  const mimeLower = mimeType.toLowerCase();
+  const mimeLower = effectiveMime;
   let payloadBlock: Anthropic.ContentBlockParam;
   if (mimeLower === "application/pdf") {
     payloadBlock = {
@@ -216,6 +255,19 @@ export async function parseResume(
         type: "base64",
         media_type: "application/pdf",
         data: buf.toString("base64"),
+      },
+    };
+  } else if (isHeicMime(mimeLower)) {
+    // iPhone HEIC/HEIF — Anthropic vision can't read it, so transcode
+    // to JPEG first, then hand off through the normal image path.
+    const transcoded = await transcodeHeicToJpeg(buf);
+    if (!transcoded.ok) return transcoded;
+    payloadBlock = {
+      type: "image",
+      source: {
+        type: "base64",
+        media_type: "image/jpeg",
+        data: transcoded.jpeg.toString("base64"),
       },
     };
   } else if (isImageMime(mimeLower)) {
@@ -380,4 +432,142 @@ async function transcodeDocxToText(
       error: `DOCX could not be read (${err instanceof Error ? err.message : String(err)}). Try saving as PDF instead.`,
     };
   }
+}
+
+/**
+ * HEIC/HEIF → JPEG via heic-convert (pure JS wrapper over libheif's
+ * WASM build — no native binary, so it survives Vercel's serverless
+ * runtime where sharp's HEIC support is unreliable; sharp's prebuilt
+ * binaries dropped HEVC/HEIC over libheif licensing).
+ *
+ * Dynamic import keeps the WASM module (~a few MB) off the cold-start
+ * path for every other resume type — only HEIC uploads pay for it.
+ *
+ * Two failure modes, both surfaced as file_unsupported with the
+ * screenshot workaround:
+ *   - decode throws (corrupt / not-really-HEIC / unsupported variant)
+ *   - the transcoded JPEG exceeds Anthropic's 5 MB image input limit.
+ *     A 5 MB HEIC can decode to a much larger JPEG; we cap rather than
+ *     ship an oversize image the API will reject. The driver can take
+ *     a screenshot (which iOS saves as a smaller PNG/JPEG) instead.
+ */
+async function transcodeHeicToJpeg(
+  buf: Buffer,
+): Promise<
+  | { ok: true; jpeg: Buffer }
+  | { ok: false; code: "file_unsupported" | "file_too_large"; error: string }
+> {
+  // Dimension guard BEFORE decode — a huge HEIC would OOM the function
+  // mid-decode, well before the post-transcode byte check. When the
+  // dimensions can't be read (non-standard file with no ispe box), we
+  // proceed: the decode try/catch still contains crashes, and we don't
+  // want to false-reject a real photo we simply couldn't measure.
+  const pixels = readMaxHeicPixels(buf);
+  if (pixels !== null && pixels > MAX_HEIC_PIXELS) {
+    return {
+      ok: false,
+      code: "file_too_large",
+      error: `That HEIC photo is too high-resolution (${(pixels / 1_000_000).toFixed(0)} megapixels). Take a screenshot of the resume and upload that instead.`,
+    };
+  }
+
+  let jpeg: Buffer;
+  try {
+    const { default: convert } = await import("heic-convert");
+    const out = await convert({
+      buffer: new Uint8Array(buf),
+      format: "JPEG",
+      quality: HEIC_JPEG_QUALITY,
+    });
+    jpeg = Buffer.from(out);
+  } catch (err) {
+    return {
+      ok: false,
+      code: "file_unsupported",
+      error: `HEIC image could not be read (${err instanceof Error ? err.message : String(err)}). Take a screenshot of the resume and upload that instead.`,
+    };
+  }
+
+  if (jpeg.byteLength > MAX_RESUME_BYTES) {
+    return {
+      ok: false,
+      code: "file_too_large",
+      error: `That HEIC photo is too large once converted (${(jpeg.byteLength / 1024 / 1024).toFixed(1)}MB). Take a screenshot of the resume and upload that instead.`,
+    };
+  }
+
+  return { ok: true, jpeg };
+}
+
+// HEIC/HEIF brands that appear as the ISOBMFF major brand (bytes 8-12)
+// or in the compatible-brands list that follows. iPhones use heic/heix
+// /mif1; the broader set covers other encoders.
+const HEIF_BRANDS = new Set([
+  "heic",
+  "heix",
+  "heim",
+  "heis",
+  "hevc",
+  "hevx",
+  "hevm",
+  "hevs",
+  "mif1",
+  "msf1",
+  "heif",
+]);
+
+/**
+ * Best-effort ISOBMFF sniff: true if the buffer's ftyp box advertises a
+ * HEIF/HEIC brand. Used only to recover the type when the browser sent
+ * an empty / octet-stream MIME (common for iOS HEIC uploads) — the real
+ * gate is still isMimeAccepted + the decoder. Never throws.
+ */
+export function looksLikeHeic(buf: Buffer): boolean {
+  // Layout: [4 bytes box size][4 bytes "ftyp"][4 bytes major brand]
+  // [4 bytes minor version][compatible brands...]. Need at least the
+  // major brand to decide.
+  if (buf.length < 12) return false;
+  if (buf.toString("ascii", 4, 8) !== "ftyp") return false;
+  if (HEIF_BRANDS.has(buf.toString("ascii", 8, 12))) return true;
+  // Scan the compatible-brands list (4-byte chunks from offset 16 up to
+  // the ftyp box size, capped so a bogus size can't run us off the end).
+  const declaredSize = buf.readUInt32BE(0);
+  const end = Math.min(buf.length, declaredSize > 0 ? declaredSize : 64, 64);
+  for (let i = 16; i + 4 <= end; i += 4) {
+    if (HEIF_BRANDS.has(buf.toString("ascii", i, i + 4))) return true;
+  }
+  return false;
+}
+
+/**
+ * Read the largest image's pixel count from the HEIC `ispe` (image
+ * spatial extent) boxes without decoding pixels. Returns width*height
+ * of the biggest ispe, or null if none is found (then the caller
+ * proceeds without the guard). Scans all occurrences because a file
+ * carries one ispe per image (primary + any thumbnails); the primary
+ * is the largest. Never throws.
+ *
+ * ispe payload: ["ispe"][1 byte version][3 bytes flags][4 bytes width]
+ * [4 bytes height], all big-endian.
+ */
+export function readMaxHeicPixels(buf: Buffer): number | null {
+  let max: number | null = null;
+  let from = 0;
+  // "ispe" as bytes.
+  const needle = Buffer.from("ispe", "ascii");
+  for (;;) {
+    const idx = buf.indexOf(needle, from);
+    if (idx < 0) break;
+    from = idx + 4;
+    // Need version/flags (4) + width (4) + height (4) after the tag.
+    const wOff = idx + 8;
+    if (wOff + 8 > buf.length) continue;
+    const width = buf.readUInt32BE(wOff);
+    const height = buf.readUInt32BE(wOff + 4);
+    if (width > 0 && height > 0) {
+      const pixels = width * height;
+      if (max === null || pixels > max) max = pixels;
+    }
+  }
+  return max;
 }

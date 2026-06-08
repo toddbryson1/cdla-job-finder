@@ -2,6 +2,7 @@
 
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
+import { after } from "next/server";
 import { eq, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db/client";
@@ -24,6 +25,7 @@ import {
   MAGIC_LINK_EXPIRATION_MINUTES,
 } from "@/lib/stytch/client";
 import { getSessionState } from "@/lib/stytch/session";
+import { recordFunnelEvent } from "@/lib/funnel-events";
 import { STAGE_2_CONSENT_TEXT_VERSION } from "./constants";
 
 const UUID_RE =
@@ -109,6 +111,21 @@ export async function submitConsent(
         tcpaOptIn: parsed.tcpa,
       },
     });
+
+  // Best-effort funnel event: this driver completed Stage 2 consent for
+  // this carrier. Pairs with matches_viewed to give a view→consent
+  // funnel from the event log. Scheduled via after() so it survives the
+  // redirect() this action issues moments later (a bare `void` would be
+  // abandoned when the NEXT_REDIRECT unwind / response flush happens on
+  // serverless). after() runs even when redirect is called.
+  after(() =>
+    recordFunnelEvent({
+      eventType: "consent_submitted",
+      driverId,
+      carrierId: job.carrierId,
+      metadata: { jobId, tcpa: parsed.tcpa },
+    }),
+  );
 
   // Skip the questions step if intake already captured the Stage 2 safety
   // answers. Re-asking is annoying and confuses drivers ("I already told you
