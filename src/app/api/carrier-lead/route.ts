@@ -7,10 +7,14 @@ import {
   upsertContact,
 } from "@/lib/ghl/client";
 import { carrierBriefEmail } from "@/lib/ghl/carrierBriefEmail";
+import { checkRateLimits, clientIpFrom } from "@/lib/rate-limit";
 
 export const runtime = "nodejs";
 
-// TODO: rate-limit this endpoint (per IP + per email) before launch.
+// Rate-limited per-IP AND per-email (1h windows) before any GHL call, so
+// lead spam can't bomb the CRM or burn GHL send quota. The honeypot
+// drops obvious bots earlier still. Fails open on DB error — see
+// src/lib/rate-limit.
 
 const FLEET_SIZE_VALUES = ["1-10", "11-50", "51-250", "250+"] as const;
 
@@ -63,6 +67,26 @@ export async function POST(request: Request) {
   if (lead.website) {
     console.warn("[carrier-lead] honeypot triggered for", lead.email);
     return NextResponse.json({ ok: true });
+  }
+
+  // Throttle real submissions before touching GHL. Per-IP caps one client
+  // spamming many leads; per-email caps repeat submits of one address.
+  const ip = clientIpFrom(request.headers);
+  const limit = await checkRateLimits([
+    { bucket: `carrier_lead_ip:${ip}`, limit: 20, windowSeconds: 3600 },
+    { bucket: `carrier_lead_email:${lead.email}`, limit: 5, windowSeconds: 3600 },
+  ]);
+  if (!limit.allowed) {
+    return NextResponse.json(
+      {
+        error:
+          "We've received several requests from you recently. Please try again in a little while, or email sales@cdla.jobs.",
+      },
+      {
+        status: 429,
+        headers: { "Retry-After": String(limit.retryAfterSeconds) },
+      },
+    );
   }
 
   // Direct GHL API path is the primary; the inbound webhook is kept as a

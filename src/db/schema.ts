@@ -12,6 +12,7 @@ import {
   pgEnum,
   index,
   uniqueIndex,
+  primaryKey,
   check,
   customType,
 } from "drizzle-orm/pg-core";
@@ -1227,5 +1228,33 @@ export const funnelEvents = pgTable(
   (t) => [
     index("funnel_events_type_created_idx").on(t.eventType, t.createdAt),
     index("funnel_events_driver_idx").on(t.driverId, t.createdAt),
+  ],
+);
+
+// Fixed-window rate-limit counters. The app runs on Vercel serverless,
+// where in-memory counters don't survive across lambda instances — so
+// abuse throttling has to live in the only shared, durable store we
+// have: Postgres.
+//
+// One row per (bucket, window_start). `bucket` namespaces the limit and
+// its subject, e.g. "login_email:foo@bar.com", "login_ip:1.2.3.4",
+// "carrier_lead_ip:1.2.3.4". `window_start` is the floor of now to the
+// window size, so a single atomic upsert (INSERT ... ON CONFLICT DO
+// UPDATE SET count = count + 1 RETURNING count) both records the hit and
+// tells us the running total for the window. See src/lib/rate-limit.
+//
+// Old windows are dead weight; the daily cron prunes rows whose window
+// has long passed (cleanupRateLimitCounters). Migration 0034.
+export const rateLimitCounters = pgTable(
+  "rate_limit_counters",
+  {
+    bucket: text("bucket").notNull(),
+    windowStart: timestamp("window_start", { withTimezone: true }).notNull(),
+    count: integer("count").notNull().default(0),
+  },
+  (t) => [
+    primaryKey({ columns: [t.bucket, t.windowStart] }),
+    // Supports the cron prune (DELETE WHERE window_start < cutoff).
+    index("rate_limit_counters_window_idx").on(t.windowStart),
   ],
 );
