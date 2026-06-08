@@ -239,6 +239,13 @@
       "when": 1783000000000,
       "tag": "0033_funnel_events",
       "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1783100000000,
+      "tag": "0034_rate_limit_counters",
+      "breakpoints": true
     }
   ]
 }

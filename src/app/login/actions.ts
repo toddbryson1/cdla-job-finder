@@ -1,12 +1,13 @@
 "use server";
 
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 import {
   getStytchClient,
   isStytchConfigured,
   appUrl,
   MAGIC_LINK_EXPIRATION_MINUTES,
 } from "@/lib/stytch/client";
+import { checkRateLimits, clientIpFrom } from "@/lib/rate-limit";
 
 /** Cookie that carries the post-auth redirect target across the
  *  magic-link round-trip. We can't put redirect in the magic-link
@@ -31,9 +32,11 @@ export interface SendLinkState {
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-// TODO: rate limit this endpoint. Magic-link send is a real abuse vector
-// (email bombing). For dev this is fine; before launch wire a per-IP +
-// per-email throttle (e.g. 5/hr/email, 30/hr/IP) at a higher layer.
+// Magic-link send is a real abuse vector (email bombing), so it's
+// throttled per-email AND per-IP before we ask Stytch to send anything
+// (see RATE_LIMITS below + src/lib/rate-limit). The throttle fails open
+// if Postgres is unavailable — losing the limit briefly beats taking
+// login down.
 //
 // Note on existence disclosure: loginOrCreate returns success whether or not
 // the email already belongs to a Stytch user, and we return the same
@@ -48,6 +51,23 @@ export async function sendMagicLink(
 
   if (!EMAIL_RE.test(email)) {
     return { status: "error", error: "That does not look like an email." };
+  }
+
+  // Throttle before sending. Per-email caps email bombing of one inbox;
+  // per-IP caps a single client bombing many addresses. Both windows are
+  // 1 hour. A blocked request returns a generic error that does NOT
+  // depend on whether the email is on file (preserves non-disclosure).
+  const ip = clientIpFrom(await headers());
+  const limit = await checkRateLimits([
+    { bucket: `login_email:${email}`, limit: 5, windowSeconds: 3600 },
+    { bucket: `login_ip:${ip}`, limit: 30, windowSeconds: 3600 },
+  ]);
+  if (!limit.allowed) {
+    return {
+      status: "error",
+      error:
+        "You've requested several links recently. Check your inbox, or try again in a little while.",
+    };
   }
 
   if (!isStytchConfigured()) {
