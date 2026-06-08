@@ -246,6 +246,13 @@
       "when": 1783100000000,
       "tag": "0034_rate_limit_counters",
       "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "7",
+      "when": 1783200000000,
+      "tag": "0035_video_scripts",
+      "breakpoints": true
     }
   ]
 }

@@ -150,6 +150,8 @@ export interface RenderedScript {
   equipment: string;
   body: string;
   warnings: string[];
+  /** Snapshot of the resolved variables used to render this script. */
+  variables: Record<string, ScriptVarValue>;
 }
 
 export type RenderResult =
@@ -203,6 +205,7 @@ export function renderTemplate(
       equipment: meta.equipment,
       body: lines.join("\n").trimEnd() + "\n",
       warnings,
+      variables: vars,
     },
   };
 }
