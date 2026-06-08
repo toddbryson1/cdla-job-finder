@@ -101,9 +101,9 @@ function Hero() {
           >
             Talk to sales
           </a>
-          {/* TODO: wire to real PDF export of the carrier pitch deck (spec §9.2) */}
+          {/* Carrier brief renders as a print-optimized one-pager (Save as PDF). */}
           <a
-            href="/partners/brief"
+            href="/partners/brief/one-pager"
             className="inline-flex h-11 items-center justify-center rounded-md border border-brand-rule bg-white px-5 text-sm font-medium text-brand-ink hover:bg-brand-surface"
           >
             Download the carrier brief (PDF)
@@ -285,7 +285,7 @@ function SecondaryCtaSection() {
           Schedule a hiring criteria call
         </a>
         <a
-          href="/partners/brief"
+          href="/partners/brief/one-pager"
           className="inline-flex h-11 items-center justify-center rounded-md border border-brand-rule bg-white px-5 text-sm font-medium text-brand-ink hover:bg-brand-surface"
         >
           Download the carrier brief (PDF)
