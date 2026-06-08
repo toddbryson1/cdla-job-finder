@@ -149,6 +149,6 @@ The original roadmap (matching engine, carrier pages, match tracking, auth) is *
    `?vsrc=<slug>__<template>`, the proxy (`src/proxy.ts`) captures it first-touch, the intake route records
    it on `intake_completed`, and `videoScriptConversions()` reports intakes per script. Producing the actual
    videos is the only remaining (non-code) step.
-5. Smaller TODOs: calendar booking on `/partners/integration` (needs a chosen tool — currently `mailto`),
-   split contact addresses (drivers@/partners@/press@ — needs the mailboxes). The carrier brief now
-   renders as a print-to-PDF one-pager at `/partners/brief/one-pager`.
+5. Smaller TODOs: split contact addresses (drivers@/partners@/press@ — needs the mailboxes). The carrier
+   brief renders as a print-to-PDF one-pager at `/partners/brief/one-pager`, and partner sales CTAs book via
+   the LeadConnector widget (`PARTNER_BOOKING_URL` in `src/lib/partners.ts`).
