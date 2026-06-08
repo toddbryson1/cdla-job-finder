@@ -130,16 +130,21 @@ npm run lint
 The original roadmap (matching engine, carrier pages, match tracking, auth) is **done**. Remaining work:
 
 **Launch-blocking**
-1. **Anderson/Sterling QuickBase handoff is on placeholders.** `src/lib/quickbase/client.ts` has two
-   spec-referenced TODOs: experience-level dropdown values (§B10 Q3) and the field-id-keyed payload map
-   (§B5.2). Both await Sterling confirmation; records won't land correctly in their system until then.
-2. **Rate limiting before launch** — magic-link send (`src/app/login/actions.ts`) and the carrier-lead
-   endpoint (`src/app/api/carrier-lead/route.ts`) are flagged abuse vectors with no limits yet.
+1. **Anderson/Sterling QuickBase handoff is on placeholders.** `src/lib/quickbase/client.ts` still has two
+   spec-referenced TODOs awaiting Sterling: experience-level dropdown values (§B10 Q3) and the field-id-keyed
+   payload map + table DBID (§B5.2) — plus the QuickBase User Token and attorney §B11 clearance. Records
+   won't land in their system until those arrive. (Company name, recruiter, and min-experience are resolved.)
+
+**Done since the original roadmap**
+- Rate limiting on magic-link send + carrier-lead (Postgres fixed-window limiter).
+- SMS step-up OTP before Stage 2 consent (`STEP_UP_OTP_ENABLED`, flag-gated off).
+- Video script generator — `src/lib/video-scripts/` + `npm run gen:video-scripts` (CLI; renders the 6
+  templates from the docx against live DB values, skips templates with null vars).
 
 **Deferred / not started**
-3. **Video script generator** — render the 6 templates from `docs/CDLAjobs_Video_Script_Template.docx`
-   against real DB values. CLI, not a UI feature. Never built.
-4. **Tenstreet feed ingestion** — handoff/IntelliApp linking works; the inbound feed sync runner does not exist (schema is prepped).
-5. **Content-machine GSC URL inspection** — stubbed until the cdla.jobs property is verified in Search Console (`src/lib/content-machine/gsc.ts`).
-6. Smaller TODOs: step-up verification before Stage 2 consent, partner pitch-deck PDF export + calendar
-   booking on `/partners/integration`, split contact addresses (drivers@/partners@/press@).
+2. **Tenstreet feed ingestion** — handoff/IntelliApp linking works; the inbound feed sync runner does not exist (schema is prepped).
+3. **Content-machine GSC URL inspection** — stubbed until the cdla.jobs property is verified in Search Console (`src/lib/content-machine/gsc.ts`).
+4. **Generated-script tracking table** — video-script v1 is generate-to-text only; a table tracking which
+   scripts became videos + per-template conversion is the documented next step (docs §14).
+5. Smaller TODOs: partner pitch-deck PDF export + calendar booking on `/partners/integration` (needs a
+   chosen tool + the PDF asset), split contact addresses (drivers@/partners@/press@ — needs the mailboxes).
