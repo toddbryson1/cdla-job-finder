@@ -6,13 +6,14 @@
 // false (default), every entry point here is a no-op and the daily
 // email shows "GSC integration: not configured".
 //
-// The live API call is intentionally not yet implemented — spec §12
-// flags "GSC URL Inspection API rate limits: must be verified against
-// current Google docs" as an open item, and the property isn't
-// verified yet. When the owner is ready, fill in callUrlInspectionApi()
-// using the JWT auth pattern in src/lib/google-indexing.ts (the only
-// differences are the endpoint and the OAuth scope —
-// https://www.googleapis.com/auth/webmasters.readonly).
+// The live API call uses the shared service-account auth in
+// src/lib/google-auth.ts with the read-only Search Console scope. It
+// stays DORMANT regardless until two things are true at runtime:
+//   1. GSC_INTEGRATION_ENABLED=true, AND
+//   2. the cdla.jobs property is verified in Search Console and the
+//      service-account email is granted access.
+// Until both hold, runDueIndexChecks no-ops (flag) or the API returns a
+// permission error that's recorded per-row (no fake success).
 //
 // Endpoint:
 //   POST https://searchconsole.googleapis.com/v1/urlInspection/index:inspect
@@ -21,8 +22,19 @@
 import { and, eq, gt, isNull, lte, sql } from "drizzle-orm";
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import { articleIndexStatus, articles } from "@/db/schema";
+import {
+  getGoogleAccessToken,
+  isServiceAccountConfigured,
+} from "@/lib/google-auth";
 
 const CHECK_DAYS: ReadonlyArray<number> = [1, 3, 7];
+
+const URL_INSPECTION_ENDPOINT =
+  "https://searchconsole.googleapis.com/v1/urlInspection/index:inspect";
+const GSC_SCOPE = "https://www.googleapis.com/auth/webmasters.readonly";
+// The Search Console property. Trailing slash matches the URL-prefix
+// property registered in Search Console (vs. a Domain property).
+const SITE_URL = process.env.GSC_SITE_URL?.trim() || "https://cdla.jobs/";
 
 export function isGscEnabled(): boolean {
   return process.env.GSC_INTEGRATION_ENABLED === "true";
@@ -189,30 +201,55 @@ interface UrlInspectionResult {
 }
 
 /**
- * TODO: implement when the owner verifies the cdla.jobs property in
- * Search Console and grants the service-account email access. Until
- * then this returns ok=false so the dormant scaffold logs but does
- * not pretend success.
+ * Inspect one URL via the Search Console URL Inspection API and return
+ * its coverageState. Uses the shared service-account auth (google-auth.ts)
+ * with the read-only Search Console scope.
  *
- * Implementation sketch (when ready):
- *   1. Reuse the JWT auth pattern in src/lib/google-indexing.ts but
- *      with scope "https://www.googleapis.com/auth/webmasters.readonly".
- *   2. POST to
- *        https://searchconsole.googleapis.com/v1/urlInspection/index:inspect
- *      with body { inspectionUrl: url, siteUrl: "https://cdla.jobs/" }.
- *   3. Pull inspectionResult.indexStatusResult.coverageState from the
- *      response. Common values: "Submitted and indexed", "Crawled — currently
- *      not indexed", "Discovered — currently not indexed", "URL is unknown
- *      to Google".
- *   4. Rate limit: ~2,000 requests/day per property. With 1–20 articles/day
- *      and 3 checks each, we're at most 60 calls/day — well under cap.
+ * Rate limit: ~2,000 requests/day per property. At 1–20 articles/day × 3
+ * checks each we're at most ~60 calls/day — well under cap.
+ *
+ * Exported for unit testing; callers go through runDueIndexChecks.
  */
-async function callUrlInspectionApi(
-  _url: string,
+export async function callUrlInspectionApi(
+  url: string,
 ): Promise<UrlInspectionResult> {
-  return {
-    ok: false,
-    error:
-      "URL Inspection API call not implemented — see TODO in src/lib/content-machine/gsc.ts",
-  };
+  if (!isServiceAccountConfigured()) {
+    return {
+      ok: false,
+      error: "service account not configured (GOOGLE_INDEXING_SERVICE_ACCOUNT_KEY)",
+    };
+  }
+  try {
+    const token = await getGoogleAccessToken(GSC_SCOPE);
+    const res = await fetch(URL_INSPECTION_ENDPOINT, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ inspectionUrl: url, siteUrl: SITE_URL }),
+      // Don't hang the cron if Google is slow.
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (!res.ok) {
+      const text = await res.text().catch(() => "");
+      return {
+        ok: false,
+        error: `URL Inspection ${res.status}: ${text.slice(0, 200)}`,
+      };
+    }
+    const json = (await res.json()) as {
+      inspectionResult?: {
+        indexStatusResult?: { coverageState?: string };
+      };
+    };
+    const coverageState =
+      json.inspectionResult?.indexStatusResult?.coverageState ?? undefined;
+    return { ok: true, coverageState, raw: json };
+  } catch (err) {
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : String(err),
+    };
+  }
 }

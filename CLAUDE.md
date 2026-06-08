@@ -143,7 +143,7 @@ The original roadmap (matching engine, carrier pages, match tracking, auth) is *
 
 **Deferred / not started**
 2. **Tenstreet feed ingestion** — handoff/IntelliApp linking works; the inbound feed sync runner does not exist (schema is prepped).
-3. **Content-machine GSC URL inspection** — stubbed until the cdla.jobs property is verified in Search Console (`src/lib/content-machine/gsc.ts`).
+3. **Content-machine GSC URL inspection** — implemented (`src/lib/content-machine/gsc.ts`, shared auth in `src/lib/google-auth.ts`). Dormant until you verify the cdla.jobs property in Search Console, grant the service account access, and set `GSC_INTEGRATION_ENABLED=true`.
 4. **Generated-script tracking table** — video-script v1 is generate-to-text only; a table tracking which
    scripts became videos + per-template conversion is the documented next step (docs §14).
 5. Smaller TODOs: partner pitch-deck PDF export + calendar booking on `/partners/integration` (needs a
