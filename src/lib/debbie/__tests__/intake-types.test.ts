@@ -60,6 +60,26 @@ describe("mergeExtracted", () => {
     expect(after.terminatedLastJob).toBe(true);
     expect(after.terminationReason).toContain("hospital");
   });
+
+  it("carries the advisor follow-ups (priority ranking + career goal)", () => {
+    const after = mergeExtracted(EMPTY_FIELDS, {
+      priorityRanking: ["home_time", "pay"],
+      careerGoalType: "endorsement",
+      careerGoalDetail: "hazmat",
+    });
+    expect(after.priorityRanking).toEqual(["home_time", "pay"]);
+    expect(after.careerGoalType).toBe("endorsement");
+    expect(after.careerGoalDetail).toBe("hazmat");
+    // Core fields untouched.
+    expect(after.homeZip).toBeNull();
+  });
+
+  it("leaves advisor follow-ups null when not asked (neutral flow)", () => {
+    const after = mergeExtracted(EMPTY_FIELDS, { homeZip: "30303" });
+    expect(after.priorityRanking).toBeNull();
+    expect(after.careerGoalType).toBeNull();
+    expect(after.careerGoalDetail).toBeNull();
+  });
 });
 
 describe("scheduleToHomeTime", () => {
@@ -96,12 +116,15 @@ describe("scheduleToHomeTime", () => {
 });
 
 describe("EMPTY_FIELDS", () => {
-  it("all six fields start as null", () => {
+  it("every field starts as null", () => {
     expect(EMPTY_FIELDS.homeZip).toBeNull();
     expect(EMPTY_FIELDS.experienceYears).toBeNull();
     expect(EMPTY_FIELDS.schedule).toBeNull();
     expect(EMPTY_FIELDS.terminatedLastJob).toBeNull();
     expect(EMPTY_FIELDS.terminationReason).toBeNull();
     expect(EMPTY_FIELDS.sapStatus).toBeNull();
+    expect(EMPTY_FIELDS.priorityRanking).toBeNull();
+    expect(EMPTY_FIELDS.careerGoalType).toBeNull();
+    expect(EMPTY_FIELDS.careerGoalDetail).toBeNull();
   });
 });

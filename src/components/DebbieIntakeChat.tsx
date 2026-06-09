@@ -458,6 +458,11 @@ export function DebbieIntakeChat({
         homeTime: scheduleToHomeTime(fields.schedule),
         minWeeklyPay: 0,
         willingToRelocate: false,
+        // Advisor follow-ups (captured in Q6/Q7 when advisor mode is on;
+        // null/omitted otherwise → the ranker treats them as neutral).
+        priorityRanking: fields.priorityRanking ?? undefined,
+        careerGoalType: fields.careerGoalType ?? undefined,
+        careerGoalDetail: fields.careerGoalDetail ?? undefined,
         accidents3yrCount: 0,
         accidentsDetails: "",
         tickets3yrCount: 0,
@@ -658,9 +663,11 @@ export function DebbieIntakeChat({
   // shows the rewind clearly.
   const onEditField = useCallback(
     (field: keyof DebbieIntakeFields) => {
-      const transitions: Record<
-        keyof DebbieIntakeFields,
-        { state: DebbieIntakeState; prompt: string }
+      // Partial — only the 5 core Stage 1 fields are editable from the
+      // confirmation card. The advisor follow-ups (priority, career goal)
+      // aren't shown there, so they need no rewind transition.
+      const transitions: Partial<
+        Record<keyof DebbieIntakeFields, { state: DebbieIntakeState; prompt: string }>
       > = {
         homeZip: { state: "Q1_zip", prompt: "Sure — what zip should I use?" },
         experienceYears: {
