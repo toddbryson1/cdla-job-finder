@@ -25,6 +25,7 @@ function m(overrides: Partial<Match> & { jobId: string }): Match {
     applicationUrl: overrides.applicationUrl ?? null,
     applicationPhone: overrides.applicationPhone ?? null,
     softRankScore: overrides.softRankScore ?? 0,
+    fitReasons: overrides.fitReasons ?? [],
     exclusivityWindowEndsAt: overrides.exclusivityWindowEndsAt ?? null,
     verificationStatus: overrides.verificationStatus ?? "verified",
     dataQuality: overrides.dataQuality ?? "complete",

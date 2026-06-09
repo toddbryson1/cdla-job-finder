@@ -4,7 +4,16 @@ import { db } from "@/db/client";
 import { drivers, zipCodes } from "@/db/schema";
 import { matchDriver } from "@/lib/matching";
 import { loadDisplayExtras } from "@/lib/match-display-data";
-import { descriptionSnippet } from "@/lib/debbie/match-render";
+import {
+  descriptionSnippet,
+  buildAdvisorChatPreamble,
+} from "@/lib/debbie/match-render";
+import { isAdvisorModeEnabled } from "@/lib/advisor/flags";
+import { assessDriver } from "@/lib/advisor/assessment";
+import {
+  buildRankedRecommendation,
+  reasonLine,
+} from "@/lib/advisor/ranked-recommendation";
 
 export const runtime = "nodejs";
 
@@ -95,7 +104,43 @@ export async function POST(request: Request) {
       ),
     }));
 
-    return NextResponse.json({ ...result, matches: enrichedMatches });
+    // Advisor block (flag-gated). When on, the chat speaks an honest
+    // assessment + a ranked top pick instead of the flat count preamble.
+    // Off → omitted entirely and the chat falls back to its neutral copy.
+    let advisor: {
+      preamble: string;
+      strengths: string[];
+      weaknesses: Array<{ label: string; pathForward: string }>;
+    } | null = null;
+    if (isAdvisorModeEnabled()) {
+      const assessment = assessDriver({
+        experienceMonths: Math.round(Number(driver.yearsHeld) * 12),
+        endorsements: driver.endorsements,
+        terminated: driver.terminatedFromAnyOfLast3Employers,
+        sapStatus: driver.sapStatus,
+        accidents3yrAtFaultCount: driver.accidents3yrAtFaultCount,
+        tickets3yrCount: driver.tickets3yrCount,
+        duiEver: driver.duiEver,
+        felonyEver: driver.felonyEver,
+      });
+      const { top } = buildRankedRecommendation(result.matches);
+      advisor = {
+        preamble: buildAdvisorChatPreamble(
+          result.matches.length,
+          null,
+          driver.cdlState,
+          {
+            topStrength: assessment.strengths[0]?.label ?? null,
+            topPickName: top?.carrierName ?? null,
+            topPickReason: top ? reasonLine(top) : null,
+          },
+        ),
+        strengths: assessment.strengths.map((s) => s.label),
+        weaknesses: assessment.weaknesses,
+      };
+    }
+
+    return NextResponse.json({ ...result, matches: enrichedMatches, advisor });
   } catch (err) {
     console.error("[match] engine failed:", err);
     return NextResponse.json(

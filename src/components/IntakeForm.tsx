@@ -8,6 +8,8 @@ import {
   HOME_TIME_OPTIONS,
   REGION_PREF_OPTIONS,
   SAP_STATUS_OPTIONS,
+  PRIORITY_OPTIONS,
+  CAREER_GOAL_OPTIONS,
   intakeSchema,
 } from "@/lib/intake-schema";
 
@@ -33,6 +35,21 @@ type FormState = {
   homeTime: Array<"daily" | "weekly" | "biweekly" | "otr">;
   minWeeklyPay: string;
   willingToRelocate: boolean;
+  // Advisor-mode preference layer (migration 0033). priorityTop captures
+  // the driver's #1 priority (the keystone the advisor ranks against);
+  // stored as a 1-element priority_ranking on submit. Career goal feeds
+  // trajectory matching.
+  priorityTop: "" | "pay" | "home_time" | "proximity" | "ease_of_hire";
+  maxTimeOutDays: string;
+  careerGoalType:
+    | ""
+    | "more_pay"
+    | "different_equipment"
+    | "endorsement"
+    | "home_time"
+    | "own_authority"
+    | "none";
+  careerGoalDetail: string;
   accidents3yrCount: string;
   accidentsDetails: string;
   tickets3yrCount: string;
@@ -70,6 +87,10 @@ const initialState: FormState = {
   homeTime: [],
   minWeeklyPay: "",
   willingToRelocate: false,
+  priorityTop: "",
+  maxTimeOutDays: "",
+  careerGoalType: "",
+  careerGoalDetail: "",
   accidents3yrCount: "",
   accidentsDetails: "",
   tickets3yrCount: "",
@@ -195,6 +216,20 @@ export function IntakeForm() {
         Number(state.totalCareerExperienceMonths) || 0,
       monthsSinceLastDrove: Number(state.monthsSinceLastDrove) || 0,
       minWeeklyPay: Number(state.minWeeklyPay) || 0,
+      // Advisor-mode preference layer. Send undefined (not empty
+      // array/zero) when unset so the columns persist as null. The raw
+      // priorityTop / careerGoalType keys spread from ...state are not in
+      // intakeSchema and get stripped by Zod; these are the real keys.
+      priorityRanking: state.priorityTop ? [state.priorityTop] : undefined,
+      // A driver's stated minimum acceptable pay is their floor — map the
+      // existing minWeeklyPay input to pay_floor_min so the advisor has a
+      // floor without a confusing second pay question on the form.
+      payFloorMinWeeklyUsd: Number(state.minWeeklyPay) || undefined,
+      maxTimeOutDays: state.maxTimeOutDays
+        ? Number(state.maxTimeOutDays) || undefined
+        : undefined,
+      careerGoalType: state.careerGoalType || undefined,
+      careerGoalDetail: state.careerGoalDetail.trim() || undefined,
       accidents3yrCount: Number(state.accidents3yrCount) || 0,
       tickets3yrCount: Number(state.tickets3yrCount) || 0,
       duiEver: state.duiEver === "yes",
@@ -625,6 +660,81 @@ function StepPreferences({
           />
         </Field>
       </div>
+
+      <Field
+        label="What matters most to you right now?"
+        hint="We rank carriers around your #1. Optional — but it makes the matches a lot sharper."
+      >
+        <select
+          className={inputClass}
+          value={state.priorityTop}
+          onChange={(e) =>
+            set("priorityTop", e.target.value as FormState["priorityTop"])
+          }
+        >
+          <option value="">No preference</option>
+          {PRIORITY_OPTIONS.map((opt) => (
+            <option key={opt.value} value={opt.value}>
+              {opt.label}
+            </option>
+          ))}
+        </select>
+      </Field>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <Field label="Most days you'll stay out" hint="Number of days. Optional.">
+          <input
+            className={inputClass}
+            value={state.maxTimeOutDays}
+            onChange={(e) =>
+              set("maxTimeOutDays", e.target.value.replace(/\D/g, ""))
+            }
+            inputMode="numeric"
+            placeholder="e.g. 14"
+          />
+        </Field>
+        <Field
+          label="Where do you want to take your career?"
+          hint="So we match toward where you're headed, not just today's seat."
+        >
+          <select
+            className={inputClass}
+            value={state.careerGoalType}
+            onChange={(e) =>
+              set("careerGoalType", e.target.value as FormState["careerGoalType"])
+            }
+          >
+            <option value="">Not sure yet</option>
+            {CAREER_GOAL_OPTIONS.map((opt) => (
+              <option key={opt.value} value={opt.value}>
+                {opt.label}
+              </option>
+            ))}
+          </select>
+        </Field>
+      </div>
+
+      {(state.careerGoalType === "different_equipment" ||
+        state.careerGoalType === "endorsement") && (
+        <Field
+          label={
+            state.careerGoalType === "endorsement"
+              ? "Which endorsement are you working toward?"
+              : "What do you want to be pulling?"
+          }
+        >
+          <input
+            className={inputClass}
+            value={state.careerGoalDetail}
+            onChange={(e) => set("careerGoalDetail", e.target.value)}
+            placeholder={
+              state.careerGoalType === "endorsement"
+                ? "e.g. hazmat, tanker, doubles"
+                : "e.g. reefer, flatbed"
+            }
+          />
+        </Field>
+      )}
     </div>
   );
 }

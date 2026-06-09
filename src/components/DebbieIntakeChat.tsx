@@ -532,9 +532,18 @@ export function DebbieIntakeChat({
       })
         .then(async (res) => {
           if (!res.ok) throw new Error(`match ${res.status}`);
-          return (await res.json()) as { matches?: Array<Record<string, unknown>> };
+          return (await res.json()) as {
+            matches?: Array<Record<string, unknown>>;
+            // Advisor block — present only when ADVISOR_MODE_ENABLED is on
+            // server-side. When present its preamble replaces the neutral
+            // count line so the chat reads like a recruiter, not a search box.
+            advisor?: { preamble?: string } | null;
+          };
         })
-        .then((body) => normalizeMatches(body.matches ?? []));
+        .then((body) => ({
+          matches: normalizeMatches(body.matches ?? []),
+          advisorPreamble: body.advisor?.preamble ?? null,
+        }));
 
       const timeoutPromise = new Promise<"timeout">((resolve) =>
         setTimeout(() => resolve("timeout"), ASYNC_FALLBACK_TIMEOUT_MS),
@@ -557,16 +566,14 @@ export function DebbieIntakeChat({
           // to the full-page results view on /matches. Inline rendering
           // is gone — the chat is the front door, /matches is where the
           // driver actually picks a carrier to apply to.
-          const preamble = buildMatchesPreamble(
-            arrived.length,
-            where.city,
-            where.state,
-          );
+          const preamble =
+            arrived.advisorPreamble ??
+            buildMatchesPreamble(arrived.matches.length, where.city, where.state);
           setMessages((prev) => [
             ...prev,
             { role: "assistant", content: preamble },
           ]);
-          setMatches(arrived);
+          setMatches(arrived.matches);
           setMatchPhase("shown");
           setTimeout(() => router.push(`/matches/${forDriverId}`), 1200);
         } catch {
@@ -584,16 +591,14 @@ export function DebbieIntakeChat({
       // The brief delay lets the driver read the preamble before the
       // page swap — abrupt redirects feel jarring after a conversation.
       const arrived = first;
-      const preamble = buildMatchesPreamble(
-        arrived.length,
-        where.city,
-        where.state,
-      );
+      const preamble =
+        arrived.advisorPreamble ??
+        buildMatchesPreamble(arrived.matches.length, where.city, where.state);
       setMessages((prev) => [
         ...prev,
         { role: "assistant", content: preamble },
       ]);
-      setMatches(arrived);
+      setMatches(arrived.matches);
       setMatchPhase("shown");
       setTimeout(() => router.push(`/matches/${forDriverId}`), 1200);
     },

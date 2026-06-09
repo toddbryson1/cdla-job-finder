@@ -66,6 +66,13 @@ export async function matchDriver(
     terminated: driverRow.terminatedFromAnyOfLast3Employers,
     failedDot: driverRow.failedDotTest,
     sapStatus: driverRow.sapStatus,
+    // Advisor-mode preference layer (migration 0033). Null on drivers
+    // who came through the neutral intake → ranker stays in neutral mode.
+    priorityRanking: driverRow.priorityRanking,
+    payFloorMinWeeklyUsd: driverRow.payFloorMinWeeklyUsd,
+    payFloorMaxWeeklyUsd: driverRow.payFloorMaxWeeklyUsd,
+    careerGoalType: driverRow.careerGoalType,
+    careerGoalDetail: driverRow.careerGoalDetail,
   };
 
   const candidates = await runHardFilter(driverProfile, database);
@@ -82,7 +89,7 @@ export async function matchDriver(
   const truncated = ranked.length > limit;
   const top = ranked.slice(0, limit);
 
-  const matches: Match[] = top.map(({ row, score }) => {
+  const matches: Match[] = top.map(({ row, score, reasons }) => {
     const payRangeMax =
       row.display_pay_range_max_weekly_usd ?? row.pay_range_max_weekly_usd ?? null;
     const payRangeMin = row.display_pay_range_min_weekly_usd ?? null;
@@ -111,6 +118,7 @@ export async function matchDriver(
       applicationUrl: row.application_url,
       applicationPhone: row.application_phone,
       softRankScore: score,
+      fitReasons: reasons,
       exclusivityWindowEndsAt: windowEndsAt.get(row.job_id) ?? null,
       verificationStatus: row.verification_status,
       dataQuality: row.data_quality,
