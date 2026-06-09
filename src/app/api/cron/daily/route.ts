@@ -10,6 +10,7 @@ import { runFullSync as runTaSync } from "@/lib/transport-america/sync";
 import { spawnPostingCycles } from "@/lib/posting-cycles";
 import { checkMigrationHealth } from "@/lib/db/migration-health";
 import { runQbRetrySweeper } from "@/lib/quickbase/retry-sweeper";
+import { cleanupRateLimitCounters } from "@/lib/rate-limit";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -250,6 +251,20 @@ export async function GET(request: Request) {
   } catch (err) {
     console.error("[cron/daily] content-machine failed:", err);
     out.contentMachine = {
+      ok: false,
+      error: err instanceof Error ? err.message : String(err),
+    };
+  }
+
+  // 7. rate-limit prune — drop counter rows for windows that closed long
+  // ago (default keeps 24h). Cheap; keeps the table from growing without
+  // bound as buckets churn.
+  try {
+    const result = await cleanupRateLimitCounters();
+    out.rateLimitPrune = { ok: true, ...result };
+  } catch (err) {
+    console.error("[cron/daily] rate-limit prune failed:", err);
+    out.rateLimitPrune = {
       ok: false,
       error: err instanceof Error ? err.message : String(err),
     };

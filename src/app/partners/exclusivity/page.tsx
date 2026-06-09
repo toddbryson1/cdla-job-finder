@@ -6,10 +6,11 @@ import {
   PricingTable,
   Section,
 } from "@/components/CarrierPage";
+import { PARTNER_BOOKING_URL } from "@/lib/partners";
 
 // Copy is locked verbatim per SPEC_carrier-landing-page-copy-v1.md §5.
-// Do not paraphrase. CTAs link to placeholder anchors / mailto until the
-// calendar booking tool decision lands (spec §9.1).
+// Do not paraphrase. Sales CTAs open the LeadConnector booking widget
+// (PARTNER_BOOKING_URL); a plain mailto remains as the email fallback.
 
 export const metadata: Metadata = {
   title: "24-hour exclusivity on matched CDL-A drivers — CDLA.jobs Tier 1",
@@ -95,13 +96,15 @@ function Hero() {
         </p>
         <div className="mt-8 flex flex-wrap items-center gap-3">
           <a
-            href="mailto:sales@cdla.jobs?subject=Tier%201%20call"
+            href={PARTNER_BOOKING_URL}
+            target="_blank"
+            rel="noopener noreferrer"
             className="inline-flex h-11 items-center justify-center rounded-md bg-brand-deep px-6 text-sm font-semibold text-white shadow-sm hover:bg-brand-medium"
           >
             Schedule a Tier 1 call
           </a>
           <a
-            href="/partners/brief"
+            href="/partners/brief/one-pager"
             className="inline-flex h-11 items-center justify-center rounded-md border border-brand-rule bg-white px-5 text-sm font-medium text-brand-ink hover:bg-brand-surface"
           >
             Download the carrier brief (PDF)
@@ -289,13 +292,15 @@ function SecondaryCtaSection() {
       </p>
       <div className="mt-6 flex flex-wrap gap-3">
         <a
-          href="mailto:sales@cdla.jobs?subject=Schedule%20Tier%201%20call"
+          href={PARTNER_BOOKING_URL}
+          target="_blank"
+          rel="noopener noreferrer"
           className="inline-flex h-11 items-center justify-center rounded-md bg-brand-deep px-6 text-sm font-semibold text-white shadow-sm hover:bg-brand-medium"
         >
           Schedule a Tier 1 call
         </a>
         <a
-          href="/partners/brief"
+          href="/partners/brief/one-pager"
           className="inline-flex h-11 items-center justify-center rounded-md border border-brand-rule bg-white px-5 text-sm font-medium text-brand-ink hover:bg-brand-surface"
         >
           Download the carrier brief (PDF)

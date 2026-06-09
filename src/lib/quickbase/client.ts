@@ -231,9 +231,10 @@ function buildRecordPayload(input: QuickbaseHandoffInput): {
   const yearsHeld = Number(driver.yearsHeld ?? 0);
 
   const record: Record<string, { value: unknown }> = {
-    // Hardcoded per spec §B5.2 — exact value Sterling expects (legal
-    // name vs. "Anderson") is open per §B10 Q6.
-    Company: { value: "Anderson" },
+    // Hardcoded per spec §B5.2. §B10 Q6 RESOLVED (Sterling, 2026-06):
+    // the Company value Sterling expects is "Anderson Trucking Service"
+    // (not the short "Anderson" nor the legal "..., Inc.").
+    Company: { value: "Anderson Trucking Service" },
     "First Name": { value: driver.firstName ?? "" },
     "Last Name": { value: driver.lastName ?? "" },
     "Cell Phone": { value: driver.phone ?? "" },

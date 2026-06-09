@@ -2,6 +2,7 @@
 
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
+import { after } from "next/server";
 import { eq, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db/client";
@@ -21,9 +22,19 @@ import {
   appUrl,
   getStytchClient,
   isStytchConfigured,
+  isStepUpEnabled,
   MAGIC_LINK_EXPIRATION_MINUTES,
+  SESSION_COOKIE,
+  sessionCookieOptions,
+  STEP_UP_OTP_EXPIRATION_MINUTES,
 } from "@/lib/stytch/client";
 import { getSessionState } from "@/lib/stytch/session";
+import {
+  sendStepUpSms,
+  toE164US,
+  verifyStepUpSms,
+} from "@/lib/stytch/step-up";
+import { recordFunnelEvent } from "@/lib/funnel-events";
 import { STAGE_2_CONSENT_TEXT_VERSION } from "./constants";
 
 const UUID_RE =
@@ -53,7 +64,96 @@ async function authorize(driverId: string, jobId: string) {
   if (!job) {
     redirect(`/matches/${driverId}`);
   }
-  return { driver, job };
+  return { driver, job, session };
+}
+
+// Holds the Stytch phone_id (OTP method_id) between send and verify.
+// Short-lived + httpOnly; expires with the code.
+const STEP_UP_METHOD_COOKIE = "cdla_stepup_method";
+
+export interface StepUpState {
+  phase: "idle" | "sent" | "error";
+  error?: string;
+}
+
+/** Send an SMS step-up code to the driver's phone on file. */
+export async function sendStepUp(
+  driverId: string,
+  jobId: string,
+  _prev: StepUpState,
+  _formData: FormData,
+): Promise<StepUpState> {
+  const { driver } = await authorize(driverId, jobId);
+  const store = await cookies();
+  const token = store.get(SESSION_COOKIE)?.value;
+  if (!token) {
+    redirect(
+      `/login?redirect=${encodeURIComponent(`/match/${driverId}/${jobId}/apply`)}`,
+    );
+  }
+
+  const e164 = toE164US(driver.phone);
+  if (!e164) {
+    return {
+      phase: "error",
+      error:
+        "We couldn't read the phone number on your file. Contact support so we can verify it.",
+    };
+  }
+
+  const res = await sendStepUpSms(token, e164);
+  if (!res.ok || !res.methodId) {
+    return { phase: "error", error: res.error ?? "Could not send the code." };
+  }
+
+  store.set(STEP_UP_METHOD_COOKIE, res.methodId, {
+    ...sessionCookieOptions(),
+    maxAge: STEP_UP_OTP_EXPIRATION_MINUTES * 60,
+  });
+  return { phase: "sent" };
+}
+
+/** Verify the SMS code, elevate the session, return to the consent step. */
+export async function verifyStepUp(
+  driverId: string,
+  jobId: string,
+  _prev: StepUpState,
+  formData: FormData,
+): Promise<StepUpState> {
+  await authorize(driverId, jobId);
+  const store = await cookies();
+  const token = store.get(SESSION_COOKIE)?.value;
+  const methodId = store.get(STEP_UP_METHOD_COOKIE)?.value;
+  if (!token) {
+    redirect(
+      `/login?redirect=${encodeURIComponent(`/match/${driverId}/${jobId}/apply`)}`,
+    );
+  }
+  if (!methodId) {
+    return {
+      phase: "error",
+      error: "Your code expired. Request a new one.",
+    };
+  }
+
+  const code = String(formData.get("code") ?? "").replace(/\D/g, "");
+  if (code.length < 4) {
+    // Keep the code-entry UI up — the code was already sent.
+    return { phase: "sent", error: "Enter the code we texted you." };
+  }
+
+  const res = await verifyStepUpSms(token, methodId, code);
+  if (!res.ok || !res.newSessionToken) {
+    return { phase: "sent", error: res.error ?? "That code didn't work." };
+  }
+
+  // Re-set the rotated session token and clear the method cookie.
+  store.set(SESSION_COOKIE, res.newSessionToken, sessionCookieOptions());
+  store.set(STEP_UP_METHOD_COOKIE, "", {
+    ...sessionCookieOptions(),
+    maxAge: 0,
+  });
+  redirect(`/match/${driverId}/${jobId}/apply?step=consent`);
 }
 
 const consentSchema = z.object({
@@ -68,7 +168,15 @@ export async function submitConsent(
   jobId: string,
   formData: FormData,
 ) {
-  const { driver, job } = await authorize(driverId, jobId);
+  const { driver, job, session } = await authorize(driverId, jobId);
+
+  // Step-up gate (attorney addendum Q10): when enabled, the session must
+  // carry an SMS factor before consent records. Un-stepped-up sessions
+  // bounce back to the consent step, which renders the step-up screen.
+  if (isStepUpEnabled() && !session.stepUp) {
+    redirect(`/match/${driverId}/${jobId}/apply?step=consent`);
+  }
+
   const parsed = consentSchema.parse({
     tcpa: formData.get("tcpa") ?? undefined,
   });
@@ -109,6 +217,21 @@ export async function submitConsent(
         tcpaOptIn: parsed.tcpa,
       },
     });
+
+  // Best-effort funnel event: this driver completed Stage 2 consent for
+  // this carrier. Pairs with matches_viewed to give a view→consent
+  // funnel from the event log. Scheduled via after() so it survives the
+  // redirect() this action issues moments later (a bare `void` would be
+  // abandoned when the NEXT_REDIRECT unwind / response flush happens on
+  // serverless). after() runs even when redirect is called.
+  after(() =>
+    recordFunnelEvent({
+      eventType: "consent_submitted",
+      driverId,
+      carrierId: job.carrierId,
+      metadata: { jobId, tcpa: parsed.tcpa },
+    }),
+  );
 
   // Skip the questions step if intake already captured the Stage 2 safety
   // answers. Re-asking is annoying and confuses drivers ("I already told you

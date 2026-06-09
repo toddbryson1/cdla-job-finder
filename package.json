@@ -12,6 +12,7 @@
     "db:seed": "tsx scripts/seed.ts",
     "db:seed:content": "tsx scripts/seed-content-machine.ts",
     "gen:indexnow-key": "tsx scripts/generate-indexnow-key.ts",
+    "gen:video-scripts": "tsx scripts/generate-video-scripts.ts",
     "smoke:content": "tsx scripts/smoke-content-machine.ts",
     "db:studio": "drizzle-kit studio",
     "test": "vitest run",
@@ -24,6 +25,7 @@
     "@stytch/vanilla-js": "^6.0.9",
     "@vercel/blob": "^2.4.0",
     "drizzle-orm": "^0.45.2",
+    "heic-convert": "^2.1.0",
     "mammoth": "^1.12.0",
     "next": "16.2.6",
     "openai": "^6.39.1",
@@ -38,6 +40,7 @@
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
+    "@types/heic-convert": "^2.1.1",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",

@@ -17,6 +17,9 @@
 /.next/
 /out/
 
+# generated video scripts (gen:video-scripts output — for review, not source)
+/generated/
+
 # production
 /build
 

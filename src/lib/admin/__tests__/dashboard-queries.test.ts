@@ -681,6 +681,15 @@ describe("dashboard-queries.getCarrierHandoffDrift", () => {
       // No stage rows seeded — pending should be 0.
       expect(row.pendingRows).toBe(0);
       expect(row.historicalDriftRows).toBe(0);
+      // currentConfig pre-fills the inline editor from whatever the
+      // drifted config still holds — present fields populate, the
+      // missing realm_hostname comes back as "".
+      expect(row.currentConfig).toEqual({
+        realmHostname: "",
+        appId: "a",
+        tableId: "t",
+        defaultRecruiterName: "",
+      });
     }
   });
 
