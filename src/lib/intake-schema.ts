@@ -53,6 +53,29 @@ export const SAP_STATUS_OPTIONS = [
   { value: "completed-sap", label: "Completed SAP" },
 ] as const;
 
+// Advisor-mode preference layer (migration 0036). priority_ranking is
+// the keystone — the driver's own ordering of what matters most. The
+// advisor weights matches by whatever the driver ranks #1.
+export const PRIORITY_OPTIONS = [
+  { value: "pay", label: "Pay" },
+  { value: "home_time", label: "Home time" },
+  { value: "proximity", label: "Staying close to home" },
+  { value: "ease_of_hire", label: "Getting hired fast" },
+] as const;
+
+export const PRIORITY_VALUES = ["pay", "home_time", "proximity", "ease_of_hire"] as const;
+
+// Where the driver wants to move UP to — matched against trajectory, not
+// just the next seat. Mirrors the career_goal_type DB enum.
+export const CAREER_GOAL_OPTIONS = [
+  { value: "more_pay", label: "Higher pay tier" },
+  { value: "different_equipment", label: "Different equipment" },
+  { value: "endorsement", label: "Earn an endorsement (hazmat / tanker / doubles)" },
+  { value: "home_time", label: "Better home time" },
+  { value: "own_authority", label: "Eventually run my own authority" },
+  { value: "none", label: "Just the right job right now" },
+] as const;
+
 const usStateCode = z
   .string()
   .trim()
@@ -125,6 +148,28 @@ export const intakeSchema = z.object({
     .min(1, "Pick at least one home time that works for you"),
   minWeeklyPay: z.coerce.number().int().min(0).max(10000).default(0),
   willingToRelocate: z.boolean().default(false),
+
+  // Advisor-mode preference layer (migration 0036). All optional — the
+  // neutral intake never asked these; they're filled by Debbie's advisor
+  // follow-ups or the equivalent form-fallback step. priority_ranking is
+  // the keystone the advisor ranks against. pay_floor_* is kept distinct
+  // from the hard-filter minWeeklyPay and is never shown as a promise.
+  priorityRanking: z.array(z.enum(PRIORITY_VALUES)).max(4).optional(),
+  payFloorMinWeeklyUsd: z.coerce.number().int().min(0).max(10000).optional(),
+  payFloorMaxWeeklyUsd: z.coerce.number().int().min(0).max(10000).optional(),
+  maxTimeOutDays: z.coerce.number().int().min(0).max(365).optional(),
+  dealbreakers: z.array(z.string().trim().max(200)).max(20).optional(),
+  careerGoalType: z
+    .enum([
+      "more_pay",
+      "different_equipment",
+      "endorsement",
+      "home_time",
+      "own_authority",
+      "none",
+    ])
+    .optional(),
+  careerGoalDetail: z.string().trim().max(500).optional(),
 
   // Step 4: Safety (6 mandatory questions, verbatim from pitch deck slide 6)
   accidents3yrCount: z.coerce.number().int().min(0).max(50),

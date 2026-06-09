@@ -65,6 +65,18 @@ export const sapStatusEnum = pgEnum("sap_status", [
   "in-sap",
   "completed-sap",
 ]);
+// Where the driver wants to move UP to — captured so Debbie (advisor
+// mode) matches toward the driver's trajectory, not just the next seat,
+// and so the re-match loop can surface the step-up when it appears.
+// Per SPEC_driver-preference-and-demand-database-v1.md §3.4. Migration 0033.
+export const careerGoalTypeEnum = pgEnum("career_goal_type", [
+  "more_pay",
+  "different_equipment",
+  "endorsement",
+  "home_time",
+  "own_authority",
+  "none",
+]);
 export const sapToleranceEnum = pgEnum("sap_tolerance", [
   "accepts_none",
   "accepts_completed_only",
@@ -125,6 +137,21 @@ export const carriers = pgTable("carriers", {
   // (env var name) so each carrier can name their own. Per spec
   // docs/SPEC_anderson-application-handoff-addendum-v2.md §B4.5.
   partnerHandoffConfig: jsonb("partner_handoff_config"),
+
+  // Advisor-mode fit-tier profile (migration 0037). A carrier can be a
+  // MATCH and still be the wrong CALL for a given driver. This profile
+  // scores how well the carrier suits a driver along experience + what
+  // the driver wants, so the advisor can RANK (not just include/exclude).
+  // Shape (all fields optional; absent → that aspect is neutral):
+  //   { experience: { strongMinMonths, strongMaxMonths, fadesAfterMonths },
+  //     wants:      { favors: 'home_time' | 'pay' | null } }
+  // Worked example — C.R. England: strong ~3-12 months, fades past ~24,
+  // because by then better-paying lanes open to a seasoned driver. These
+  // boundaries are CDLA.jobs market judgment set HERE in data — the
+  // engine NEVER fabricates a boundary. NULL profile → neutral match,
+  // ranked on the driver's stated priorities alone. Per
+  // SPEC_debbie-advisor-mode-v2.md "Fit tiers" + §5 of the data-model spec.
+  fitTierProfile: jsonb("fit_tier_profile"),
 
   // Per-carrier overrides for the Stage 2 result page copy. Most
   // carriers get the generic template; a few partners (Anderson,
@@ -349,6 +376,48 @@ export const drivers = pgTable(
       .notNull()
       .default(sql`ARRAY[]::home_time[]`),
     minWeeklyPay: integer("min_weekly_pay").notNull().default(0),
+
+    // ── Advisor-mode preference layer (migration 0036) ──────────────
+    // The wants/needs the neutral-matcher intake never captured. Per
+    // SPEC_driver-preference-and-demand-database-v1.md §3.4. All nullable
+    // so legacy rows + the current intake stay valid; populated only when
+    // a driver answers the advisor follow-ups (or the form-fallback step).
+    //
+    // Reused-not-duplicated mappings (documented per the spec): homeTime[]
+    // = schedule_priority, willingToRelocate = domicile_flexibility,
+    // desiredEquipment[] = equipment_preference.
+    //
+    // priorityRanking is the KEYSTONE — the driver's own ordering of what
+    // matters, e.g. ['home_time','pay','proximity','ease_of_hire']. This is
+    // what lets the matcher resolve the Swift/JB-Hunt tradeoff (good home
+    // time, lower pay) for THIS driver instead of guessing. §4.
+    priorityRanking: text("priority_ranking").array(),
+    // Stated acceptable weekly pay range — kept DISTINCT from the
+    // hard-filter minWeeklyPay above, and never surfaced as a promise.
+    payFloorMinWeeklyUsd: integer("pay_floor_min_weekly_usd"),
+    payFloorMaxWeeklyUsd: integer("pay_floor_max_weekly_usd"),
+    // "Won't be out more than N days." Null = no stated cap.
+    maxTimeOutDays: integer("max_time_out_days"),
+    // Free-text non-negotiables ("no NYC", "no-touch freight only").
+    dealbreakers: text("dealbreakers").array(),
+    // Trajectory: where they want to move up to. type + free-text detail.
+    careerGoalType: careerGoalTypeEnum("career_goal_type"),
+    careerGoalDetail: text("career_goal_detail"),
+
+    // ── Re-match / interaction history (migration 0033) ─────────────
+    // Drives the lifelong-advocate re-match loop (§3.5, §7): when a new
+    // carrier partners or posts a fitting lane, stored eligible profiles
+    // are re-run. matches_shown/clicked already live in
+    // driverCarrierMatches + driverExternalJobImpressions +
+    // driverCarrierApplications; these are the scheduling + no-match fields.
+    reMatchEligible: boolean("re_match_eligible").notNull().default(false),
+    nextReMatchCheckAt: timestamp("next_re_match_check_at", {
+      withTimezone: true,
+    }),
+    // Why zero/weak matches today — captured so we know which carrier
+    // TYPES to recruit (feeds the aggregate demand signal, §6).
+    noMatchReason: text("no_match_reason"),
+    lastActiveAt: timestamp("last_active_at", { withTimezone: true }),
 
     // Stage 1 safety
     terminatedFromAnyOfLast3Employers: boolean(
@@ -1015,6 +1084,55 @@ export const driverCarrierDismissals = pgTable(
       t.driverId,
       t.dismissedAt,
     ),
+  ],
+);
+
+// Proactive lifelong-advocate contacts (migration 0038). One row per
+// proactive outreach DECISION — whether it sent, was suppressed by the
+// governance spine, or was blocked because PROACTIVE_SENDS_ENABLED is off.
+//
+// This table is the audit trail + the governance state: the frequency
+// cap, cooldown, and disengagement-suppression rules read recent rows for
+// a driver to decide whether the next contact may fire. EVERY proactive
+// message records WHY it was sent (reason) and is gated by materiality —
+// the system errs, every time, toward sending LESS. Sends stay disabled
+// (status='blocked_disabled') until A2P 10DLC is confirmed live; the
+// governance spine is built + tested first. Spec:
+// docs SPEC_debbie-lifelong-advocate-system-v1.md §2-3.
+export const driverProactiveContacts = pgTable(
+  "driver_proactive_contacts",
+  {
+    id: uuid("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    driverId: uuid("driver_id")
+      .references(() => drivers.id, { onDelete: "cascade" })
+      .notNull(),
+    // step_up | stay_put | re_match | milestone
+    triggerType: text("trigger_type").notNull(),
+    // Human-readable "why you're getting this" — required on every row.
+    reason: text("reason").notNull(),
+    // sms | email
+    channel: text("channel").notNull(),
+    // queued | sent | suppressed | blocked_disabled
+    status: text("status").notNull(),
+    // When suppressed/blocked: frequency_cap | cooldown | disengaged |
+    // not_material | opted_out | deleted | sends_disabled
+    skipReason: text("skip_reason"),
+    // The measured improvement that cleared materiality (e.g. +$120/wk),
+    // stored for audit and threshold tuning. Null for non-step-up types.
+    materialityDetail: text("materiality_detail"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    sentAt: timestamp("sent_at", { withTimezone: true }),
+  },
+  (t) => [
+    index("driver_proactive_contacts_driver_created_idx").on(
+      t.driverId,
+      t.createdAt,
+    ),
+    index("driver_proactive_contacts_status_idx").on(t.status),
   ],
 );
 

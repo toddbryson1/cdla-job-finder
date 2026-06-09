@@ -1,0 +1,31 @@
+-- Advisor-mode carrier fit-tier profile.
+--
+-- A driver "qualifying" for a carrier is not the same as that carrier
+-- being the RIGHT carrier for them. This profile lets Debbie (advisor
+-- mode) RANK partner carriers by how well they fit a given driver along
+-- experience + what the driver wants — not just include/exclude them.
+--
+-- Shape (all fields optional; an absent field means that aspect is
+-- NEUTRAL — the engine never invents a boundary):
+--   {
+--     "experience": { "strongMinMonths": 3, "strongMaxMonths": 12,
+--                     "fadesAfterMonths": 24 },
+--     "wants":      { "favors": "home_time" | "pay" | null }
+--   }
+--
+-- Worked example — C.R. England: a strong on-ramp for ~3-12 month
+-- drivers, fading past ~24 months because better-paying lanes open to a
+-- seasoned driver. A 6-month clean driver should see England near the
+-- top; a 3-year driver should see it ranked BELOW carriers that fit
+-- their experience better — by position, with a neutral factual reason,
+-- never by badmouthing the carrier.
+--
+-- NULL profile => neutral match, ranked on the driver's stated
+-- priorities alone. The boundaries here are CDLA.jobs market judgment,
+-- tunable by ops; the matching engine asserts none of its own.
+--
+-- Source: docs SPEC_debbie-advisor-mode-v2.md ("Fit tiers") +
+-- SPEC_driver-preference-and-demand-database-v1.md §5.
+
+ALTER TABLE "carriers"
+        ADD COLUMN "fit_tier_profile" jsonb;

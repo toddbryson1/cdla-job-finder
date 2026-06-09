@@ -19,6 +19,10 @@ import { recordFunnelEvent } from "@/lib/funnel-events";
 import { dismissCarrierAction } from "./actions";
 import { ExternalJobCard } from "@/components/ExternalJobCard";
 import { EmptyMatches } from "@/components/EmptyMatches";
+import { AdvisorAssessment } from "@/components/AdvisorAssessment";
+import { isAdvisorModeEnabled } from "@/lib/advisor/flags";
+import { assessDriver } from "@/lib/advisor/assessment";
+import { OUTSIDE_JOB_CAVEAT } from "@/lib/advisor/copy";
 
 // We aim to show every driver at least this many matches. When our
 // internal carrier_jobs come up short, we top up with external
@@ -190,6 +194,24 @@ export default async function MatchesPage({ params }: PageProps) {
     await dismissCarrierAction(driverId, carrierId);
   };
 
+  // Advisor mode (flag-gated). When on, render the honest strengths/
+  // weaknesses assessment above the matches, present the list as ranked
+  // (#1 + backups), and surface the per-match fit reasons. When off, the
+  // page is the exact pre-advisor neutral matcher.
+  const advisor = isAdvisorModeEnabled();
+  const assessment = advisor
+    ? assessDriver({
+        experienceMonths: Math.round(Number(driver.yearsHeld) * 12),
+        endorsements: driver.endorsements,
+        terminated: driver.terminatedFromAnyOfLast3Employers,
+        sapStatus: driver.sapStatus,
+        accidents3yrAtFaultCount: driver.accidents3yrAtFaultCount,
+        tickets3yrCount: driver.tickets3yrCount,
+        duiEver: driver.duiEver,
+        felonyEver: driver.felonyEver,
+      })
+    : null;
+
   return (
     <Shell>
       <Header
@@ -199,6 +221,12 @@ export default async function MatchesPage({ params }: PageProps) {
         truncated={result.truncated}
       />
       <DebbieFollowupBanner />
+      {advisor && assessment ? (
+        <AdvisorAssessment
+          firstName={driver.firstName ?? ""}
+          assessment={assessment}
+        />
+      ) : null}
       {visibleMatches.length === 0 && externalMatches.length === 0 ? (
         <EmptyMatches firstName={driver.firstName ?? ""} />
       ) : (
@@ -219,6 +247,10 @@ export default async function MatchesPage({ params }: PageProps) {
                     // session — the more friction we strip off the
                     // top of the list, the better the conversion.
                     initiallyExpanded={i < 3}
+                    // Advisor mode: rank the list (#1 + backups) and show
+                    // the per-match fit reasons. Off → neutral list.
+                    rank={advisor ? i + 1 : undefined}
+                    showReasons={advisor}
                   />
                 </li>
               ))}
@@ -231,10 +263,9 @@ export default async function MatchesPage({ params }: PageProps) {
                 Other CDL jobs near you
               </h2>
               <p className="mt-2 text-sm leading-6 text-brand-muted">
-                These are public listings we found on the open web. We
-                don&rsquo;t work with these carriers, so you&rsquo;d apply
-                directly with them — your CDLA.jobs profile isn&rsquo;t
-                shared.
+                {advisor
+                  ? OUTSIDE_JOB_CAVEAT
+                  : "These are public listings we found on the open web. We don't work with these carriers, so you'd apply directly with them — your CDLA.jobs profile isn't shared."}
               </p>
               <ul className="mt-4 flex flex-col gap-4">
                 {externalMatches.map((m) => (

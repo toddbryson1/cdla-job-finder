@@ -30,6 +30,13 @@ interface Props {
    *  /matches passes it; other consumers (e.g. /me's pursued list)
    *  can omit. */
   onDismissCarrier?: (carrierId: string) => Promise<void>;
+  /** 1-based rank within the advisor ranked list. When set, shows a
+   *  "#N" pill so the driver reads the list as ranked, not a dump.
+   *  Omitted in neutral mode. */
+  rank?: number;
+  /** Render the engine's fit reasons under the title (advisor mode).
+   *  Off by default so non-advisor surfaces show nothing. */
+  showReasons?: boolean;
 }
 
 function equipmentLabel(slug: string): string {
@@ -118,6 +125,8 @@ export function MatchCard({
   pursuit,
   initiallyExpanded,
   onDismissCarrier,
+  rank,
+  showReasons,
 }: Props) {
   const [expanded, setExpanded] = useState(initiallyExpanded ?? false);
   const [dismissPending, setDismissPending] = useState(false);
@@ -157,6 +166,18 @@ export function MatchCard({
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-2">
+              {rank != null ? (
+                <span
+                  className={
+                    "inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-bold " +
+                    (rank === 1
+                      ? "bg-brand-deep text-brand-paper"
+                      : "bg-brand-surface text-brand-medium")
+                  }
+                >
+                  {rank === 1 ? "Top pick" : `#${rank}`}
+                </span>
+              ) : null}
               {match.label ? <MatchBadge label={match.label} /> : null}
               {pursuit ? (
                 <span className="inline-flex items-center rounded-full bg-brand-medium/15 px-2.5 py-0.5 text-xs font-semibold text-brand-medium">
@@ -171,6 +192,18 @@ export function MatchCard({
             <h2 className="mt-2 text-lg sm:text-xl font-semibold leading-snug text-brand-ink">
               {match.positionTitle}
             </h2>
+            {showReasons && match.fitReasons.length > 0 ? (
+              <ul className="mt-2 flex flex-wrap gap-1.5">
+                {match.fitReasons.map((r, i) => (
+                  <li
+                    key={i}
+                    className="inline-flex items-center rounded-md bg-brand-surface px-2 py-0.5 text-xs leading-5 text-brand-medium"
+                  >
+                    {r}
+                  </li>
+                ))}
+              </ul>
+            ) : null}
           </div>
           <span
             className="shrink-0 text-xs font-medium text-brand-medium"

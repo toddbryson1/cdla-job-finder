@@ -102,6 +102,17 @@ export async function POST(request: Request) {
       homeTime: d.homeTime,
       minWeeklyPay: d.minWeeklyPay,
       willingToRelocate: d.willingToRelocate,
+      // Advisor-mode preference layer (migration 0036). Optional — null
+      // when the driver came through the neutral intake without the
+      // advisor follow-ups. Kept out of the update set below only for
+      // immutable fields; these DO update on re-submit.
+      priorityRanking: d.priorityRanking ?? null,
+      payFloorMinWeeklyUsd: d.payFloorMinWeeklyUsd ?? null,
+      payFloorMaxWeeklyUsd: d.payFloorMaxWeeklyUsd ?? null,
+      maxTimeOutDays: d.maxTimeOutDays ?? null,
+      dealbreakers: d.dealbreakers ?? null,
+      careerGoalType: d.careerGoalType ?? null,
+      careerGoalDetail: d.careerGoalDetail ?? null,
       accidents3yrCount: d.accidents3yrCount,
       accidentsDetails: d.accidentsDetails,
       tickets3yrCount: d.tickets3yrCount,

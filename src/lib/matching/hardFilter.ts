@@ -79,6 +79,16 @@ export interface DriverProfile {
   terminated: boolean;
   failedDot: boolean;
   sapStatus: "not-in-sap" | "in-sap" | "completed-sap";
+  // Advisor-mode preference layer (migration 0036). All optional/nullable:
+  // when absent the ranker stays in NEUTRAL mode and behaves exactly as
+  // the pre-advisor engine did. priorityRanking is the keystone the
+  // advisor re-weights around. payFloor is the driver's stated minimum
+  // acceptable pay (distinct from the hard-filter minWeeklyPay).
+  priorityRanking?: string[] | null;
+  payFloorMinWeeklyUsd?: number | null;
+  payFloorMaxWeeklyUsd?: number | null;
+  careerGoalType?: string | null;
+  careerGoalDetail?: string | null;
 }
 
 export interface CandidateRow {
@@ -97,8 +107,15 @@ export interface CandidateRow {
   pay_range_max_weekly_usd: number | null;
   display_pay_range_min_weekly_usd: number | null;
   display_pay_range_max_weekly_usd: number | null;
+  // Accepted home-time types for the job — used by advisor-mode
+  // home-time fit scoring (rewards jobs that give MORE home time to a
+  // driver who ranks home time first).
+  accepted_home_time_types: string[];
   preferred_equipment_experience: string[];
   preferred_regions: string[];
+  // Carrier's advisor fit-tier profile (jsonb, nullable). Parsed by
+  // @/lib/matching/fitTier. NULL → neutral, never a fabricated boundary.
+  carrier_fit_tier_profile: unknown;
   application_surface:
     | "tenstreet_intelliapp"
     | "custom_intake_form"
@@ -205,8 +222,10 @@ export async function runHardFilter(
       j.pay_range_max_weekly_usd,
       j.display_pay_range_min_weekly_usd,
       j.display_pay_range_max_weekly_usd,
+      j.accepted_home_time_types,
       j.preferred_equipment_experience,
       j.preferred_regions,
+      c.fit_tier_profile AS carrier_fit_tier_profile,
       j.application_surface,
       j.application_url,
       j.application_phone,

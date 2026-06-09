@@ -153,6 +153,51 @@ export function buildMatchesPreamble(
 }
 
 /**
+ * Advisor-mode preamble (flag-gated). A warmer, honest, recruiter-style
+ * open spoken in the chat: a one-line read on where the driver stands,
+ * the #1 pick with its reason, and a nod that the rest is ranked. Falls
+ * back to the zero-matches message when nothing fit. Kept additive — the
+ * neutral buildMatchesPreamble is unchanged so its pins still hold.
+ *
+ * Voice: no hire predictions, no pay guarantees, no bragging. Plain.
+ */
+export function buildAdvisorChatPreamble(
+  count: number,
+  homeCity: string | null,
+  homeState: string | null,
+  opts: {
+    topStrength?: string | null;
+    topPickName?: string | null;
+    topPickReason?: string | null;
+  } = {},
+): string {
+  if (count <= 0) return buildZeroMatchesMessage(homeCity, homeState);
+  const where = formatWhere(homeCity, homeState);
+
+  const stand = opts.topStrength
+    ? `Honest read — ${opts.topStrength}.`
+    : "Here's the honest read on your search.";
+
+  let pick: string;
+  if (opts.topPickName) {
+    pick = opts.topPickReason
+      ? ` My top pick is ${opts.topPickName} — ${opts.topPickReason}.`
+      : ` My top pick is ${opts.topPickName}.`;
+  } else {
+    const carriersLine =
+      count === 1 ? "1 carrier that fits" : `${count} carriers that fit`;
+    pick = ` I found ${carriersLine}${where ? ` ${where}` : ""}.`;
+  }
+
+  const tail =
+    count > 1
+      ? " I've ranked the rest below it — tap any to see why it landed where it did."
+      : "";
+
+  return `${stand}${pick}${tail}`;
+}
+
+/**
  * Zero-matches case. Spec §4.5: honest, not pivoting to false hope.
  * The driver is in nurture regardless (Stage 1 consent covers this),
  * so the email-promise line is load-bearing.

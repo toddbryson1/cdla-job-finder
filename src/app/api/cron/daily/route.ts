@@ -10,6 +10,7 @@ import { runFullSync as runTaSync } from "@/lib/transport-america/sync";
 import { spawnPostingCycles } from "@/lib/posting-cycles";
 import { checkMigrationHealth } from "@/lib/db/migration-health";
 import { runQbRetrySweeper } from "@/lib/quickbase/retry-sweeper";
+import { runProactiveSweep } from "@/lib/proactive/run";
 import { cleanupRateLimitCounters } from "@/lib/rate-limit";
 
 export const runtime = "nodejs";
@@ -103,6 +104,23 @@ export async function GET(request: Request) {
   } catch (err) {
     console.error("[cron/daily] qb-retry sweep failed:", err);
     out.qbRetrySweep = {
+      error: err instanceof Error ? err.message : String(err),
+    };
+  }
+
+  // 0.7 proactive sweep — the lifelong-advocate triggers + governance
+  // spine. BUILD-DISABLED: with PROACTIVE_SENDS_ENABLED off (default,
+  // 10DLC channel not live) this computes candidates and records
+  // governance decisions to driver_proactive_contacts but delivers
+  // NOTHING. The governance spine (frequency caps, cooldowns,
+  // disengagement suppression, materiality gates) runs here so it's
+  // exercised before any send path is enabled. Spec §6 build order.
+  try {
+    const result = await runProactiveSweep(new Date());
+    out.proactiveSweep = result;
+  } catch (err) {
+    console.error("[cron/daily] proactive sweep failed:", err);
+    out.proactiveSweep = {
       error: err instanceof Error ? err.message : String(err),
     };
   }

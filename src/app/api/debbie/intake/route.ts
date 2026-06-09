@@ -24,6 +24,7 @@ import {
   type DebbieIntakeMessage,
   type DebbieIntakeState,
 } from "@/lib/debbie/intake-turn";
+import { isAdvisorModeEnabled } from "@/lib/advisor/flags";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -39,6 +40,8 @@ const stateEnum = z.enum([
   "Q4_termination",
   "Q4_termination_probe",
   "Q5_sap",
+  "Q6_priority",
+  "Q7_career",
   "confirmation",
   "consent_ready",
 ]);
@@ -50,6 +53,27 @@ const fieldsSchema = z.object({
   terminatedLastJob: z.boolean().nullable(),
   terminationReason: z.string().max(2000).nullable(),
   sapStatus: z.enum(["not-in-sap", "in-sap", "completed-sap"]).nullable(),
+  // Advisor follow-ups — nullable + optional so pre-advisor clients and
+  // the neutral flow keep validating. Must be declared here or Zod would
+  // strip them and they'd never round-trip back to the client.
+  priorityRanking: z
+    .array(z.enum(["pay", "home_time", "proximity", "ease_of_hire"]))
+    .nullable()
+    .optional()
+    .default(null),
+  careerGoalType: z
+    .enum([
+      "more_pay",
+      "different_equipment",
+      "endorsement",
+      "home_time",
+      "own_authority",
+      "none",
+    ])
+    .nullable()
+    .optional()
+    .default(null),
+  careerGoalDetail: z.string().max(500).nullable().optional().default(null),
 });
 
 const requestSchema = z.object({
@@ -98,6 +122,8 @@ export async function POST(request: Request) {
       state,
       conversation: conversation as DebbieIntakeMessage[],
       fields: fields as DebbieIntakeFields,
+      // Server-side flag — when on, Debbie asks the Q6/Q7 follow-ups.
+      advisorMode: isAdvisorModeEnabled(),
     });
 
     const updatedFields = mergeExtracted(

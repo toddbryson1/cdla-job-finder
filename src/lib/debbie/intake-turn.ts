@@ -44,6 +44,13 @@ export interface DebbieIntakeTurnInput {
   conversation: DebbieIntakeMessage[];
   /** Fields gathered from prior turns. Merged with this turn's extract. */
   fields: DebbieIntakeFields;
+  /**
+   * Advisor mode (set server-side from ADVISOR_MODE_ENABLED). When true,
+   * Debbie asks two optional follow-ups after Q5 — Q6 priority ranking
+   * and Q7 career goal — before confirmation. When false/undefined the
+   * flow is the original five questions → confirmation, unchanged.
+   */
+  advisorMode?: boolean;
 }
 
 export interface DebbieIntakeTurnResult {
@@ -103,6 +110,33 @@ const DEBBIE_TURN_TOOL: Anthropic.Tool = {
             description:
               "'I've never had a positive DOT test' → not-in-sap. 'I'm currently in SAP' → in-sap. 'I finished SAP' → completed-sap.",
           },
+          priority_ranking: {
+            type: "array",
+            items: {
+              type: "string",
+              enum: ["pay", "home_time", "proximity", "ease_of_hire"],
+            },
+            description:
+              "ADVISOR ONLY (Q6). The driver's priorities in THEIR stated order, most important first. 'pay matters most, then home time' → ['pay','home_time']. Only include what they actually said; omit if they decline.",
+          },
+          career_goal_type: {
+            type: "string",
+            enum: [
+              "more_pay",
+              "different_equipment",
+              "endorsement",
+              "home_time",
+              "own_authority",
+              "none",
+            ],
+            description:
+              "ADVISOR ONLY (Q7). Where the driver wants to move up to. 'get into reefer' → different_equipment. 'working toward hazmat' → endorsement. 'my own authority someday' → own_authority. 'just need a job now' → none.",
+          },
+          career_goal_detail: {
+            type: "string",
+            description:
+              "ADVISOR ONLY (Q7). Free-text specifics for the goal, e.g. the target equipment ('reefer') or endorsement ('hazmat'). Omit if not stated.",
+          },
         },
       },
       assistant_message: {
@@ -119,6 +153,8 @@ const DEBBIE_TURN_TOOL: Anthropic.Tool = {
           "Q4_termination",
           "Q4_termination_probe",
           "Q5_sap",
+          "Q6_priority",
+          "Q7_career",
           "confirmation",
           "consent_ready",
         ],
@@ -160,6 +196,31 @@ RULES
 
 ALWAYS use the debbie_turn tool to respond. Never reply with plain text. Fill only the extracted fields you actually heard the driver say — leave the rest unset.`;
 
+// Appended only in advisor mode. Inserts two optional follow-ups between
+// Q5 and confirmation. Optional = a driver can decline ("whatever fits",
+// "not sure") and Debbie records nothing and moves on — never badger.
+const ADVISOR_FOLLOWUPS = `
+
+ADVISOR FOLLOW-UPS (after Q5, before confirmation)
+After SAP (Q5), ask these two before you play things back. They make the
+match sharper but are OPTIONAL — if a driver brushes one off, record
+nothing for it and move to the next state. Never push.
+
+6. Priorities (Q6_priority): "When it comes to the job, what matters most
+   to you — the pay, getting home more, staying close to home, or just
+   getting hired fast?" Capture their ORDER into priority_ranking (most
+   important first). If they only name one, that's fine — capture the one.
+   Then go to Q7_career.
+7. Career goal (Q7_career): "And where are you trying to take this —
+   bigger paychecks, different equipment, an endorsement like hazmat or
+   tanker, better home time, or your own authority someday?" Capture
+   career_goal_type (+ career_goal_detail for the specific equipment or
+   endorsement). If they just want a job now, that's career_goal_type
+   'none'. Then go to confirmation.
+
+When you reach confirmation, you may mention their top priority in the
+playback if they gave one, but keep it short.`;
+
 function buildSystemPrompt(input: DebbieIntakeTurnInput): string {
   const f = input.fields;
   const known = [
@@ -171,11 +232,23 @@ function buildSystemPrompt(input: DebbieIntakeTurnInput): string {
       : null,
     f.terminationReason ? `termination_reason="${f.terminationReason}"` : null,
     f.sapStatus ? `sap_status=${f.sapStatus}` : null,
+    input.advisorMode && f.priorityRanking
+      ? `priority_ranking=[${f.priorityRanking.join(",")}]`
+      : null,
+    input.advisorMode && f.careerGoalType
+      ? `career_goal=${f.careerGoalType}`
+      : null,
   ]
     .filter(Boolean)
     .join(", ");
 
-  return `${SYSTEM_PROMPT_BASE}
+  // In advisor mode, Q5 flows into the two follow-ups; otherwise straight
+  // to confirmation (the base prompt's behavior).
+  const flow = input.advisorMode
+    ? ADVISOR_FOLLOWUPS
+    : "";
+
+  return `${SYSTEM_PROMPT_BASE}${flow}
 
 CURRENT STATE
 - conversation_state: ${input.state}
@@ -270,6 +343,8 @@ function parseToolPayload(raw: unknown): {
     "Q4_termination",
     "Q4_termination_probe",
     "Q5_sap",
+    "Q6_priority",
+    "Q7_career",
     "confirmation",
     "consent_ready",
   ];
@@ -309,6 +384,38 @@ function parseToolPayload(raw: unknown): {
     ["not-in-sap", "in-sap", "completed-sap"].includes(extractedObj.sap_status)
   ) {
     extracted.sapStatus = extractedObj.sap_status as DebbieIntakeExtracted["sapStatus"];
+  }
+
+  // Advisor follow-ups. Validate against the allowed token sets so a
+  // malformed model response can't write junk into the profile.
+  if (Array.isArray(extractedObj.priority_ranking)) {
+    const allowed = ["pay", "home_time", "proximity", "ease_of_hire"];
+    const seen = new Set<string>();
+    const ranking = extractedObj.priority_ranking
+      .filter((v): v is string => typeof v === "string" && allowed.includes(v))
+      .filter((v) => (seen.has(v) ? false : (seen.add(v), true)));
+    if (ranking.length > 0) {
+      extracted.priorityRanking =
+        ranking as DebbieIntakeExtracted["priorityRanking"];
+    }
+  }
+  if (
+    typeof extractedObj.career_goal_type === "string" &&
+    [
+      "more_pay",
+      "different_equipment",
+      "endorsement",
+      "home_time",
+      "own_authority",
+      "none",
+    ].includes(extractedObj.career_goal_type)
+  ) {
+    extracted.careerGoalType =
+      extractedObj.career_goal_type as DebbieIntakeExtracted["careerGoalType"];
+  }
+  if (typeof extractedObj.career_goal_detail === "string") {
+    const d = extractedObj.career_goal_detail.trim().slice(0, 500);
+    if (d.length > 0) extracted.careerGoalDetail = d;
   }
 
   return { assistantMessage, extracted, nextState };

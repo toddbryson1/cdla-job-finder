@@ -19,6 +19,20 @@ export interface DriverFixture {
   terminated?: boolean;
   failedDot?: boolean;
   sapStatus?: "not-in-sap" | "in-sap" | "completed-sap";
+  // Advisor-mode preference layer (migration 0036).
+  priorityRanking?: string[];
+  payFloorMinWeeklyUsd?: number;
+  payFloorMaxWeeklyUsd?: number;
+  careerGoalType?:
+    | "more_pay"
+    | "different_equipment"
+    | "endorsement"
+    | "home_time"
+    | "own_authority"
+    | "none";
+  careerGoalDetail?: string;
+  reMatchEligible?: boolean;
+  noMatchReason?: string;
 }
 
 let driverCounter = 0;
@@ -48,6 +62,13 @@ export async function insertTestDriver(fx: DriverFixture): Promise<string> {
       terminatedFromAnyOfLast3Employers: fx.terminated ?? false,
       failedDotTest: fx.failedDot ?? false,
       sapStatus: fx.sapStatus ?? "not-in-sap",
+      priorityRanking: fx.priorityRanking ?? null,
+      payFloorMinWeeklyUsd: fx.payFloorMinWeeklyUsd ?? null,
+      payFloorMaxWeeklyUsd: fx.payFloorMaxWeeklyUsd ?? null,
+      careerGoalType: fx.careerGoalType ?? null,
+      careerGoalDetail: fx.careerGoalDetail ?? null,
+      reMatchEligible: fx.reMatchEligible ?? false,
+      noMatchReason: fx.noMatchReason ?? null,
       attestAccurate: true,
       consentToShare: true,
     })

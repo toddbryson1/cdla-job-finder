@@ -33,6 +33,14 @@ export interface Match {
   applicationUrl: string | null;
   applicationPhone: string | null;
   softRankScore: number;
+  /**
+   * Neutral, driver-facing reasons for this match's placement, e.g.
+   * "pays above your floor", "home weekly — you ranked that first", or
+   * "ranked lower because at your experience these other lanes pay more".
+   * Empty array in neutral (non-advisor) mode. Surfaced by the advisor
+   * presentation layer; never disparages a carrier.
+   */
+  fitReasons: string[];
   exclusivityWindowEndsAt: Date | null;
   verificationStatus: VerificationStatus;
   dataQuality: DataQuality;
