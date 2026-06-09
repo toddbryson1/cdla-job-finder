@@ -41,6 +41,29 @@ export const SESSION_IDLE_MINUTES = 30;
 export const SESSION_ABSOLUTE_SECONDS = 60 * 60 * 24; // 24h
 export const MAGIC_LINK_EXPIRATION_MINUTES = 15;
 
+// Step-up SMS OTP before Stage 2 consent (attorney addendum Q10). The
+// email magic-link session is "limited"; an SMS factor on the session
+// elevates it before sensitive submissions. Gated OFF by default so the
+// apply flow is unchanged until Stytch SMS is provisioned and the flag
+// is flipped. See src/lib/stytch/step-up.ts.
+export const STEP_UP_OTP_EXPIRATION_MINUTES = 5;
+
+export function isStepUpEnabled(): boolean {
+  return process.env.STEP_UP_OTP_ENABLED === "true";
+}
+
+/** Session cookie attributes — shared by the /authenticate route and any
+ *  server action that rotates the session token (e.g. step-up). */
+export function sessionCookieOptions() {
+  return {
+    httpOnly: true as const,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax" as const,
+    path: "/",
+    maxAge: SESSION_ABSOLUTE_SECONDS,
+  };
+}
+
 export function appUrl(): string {
   return process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
 }

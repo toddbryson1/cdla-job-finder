@@ -79,7 +79,7 @@ export interface DriverProfile {
   terminated: boolean;
   failedDot: boolean;
   sapStatus: "not-in-sap" | "in-sap" | "completed-sap";
-  // Advisor-mode preference layer (migration 0033). All optional/nullable:
+  // Advisor-mode preference layer (migration 0036). All optional/nullable:
   // when absent the ranker stays in NEUTRAL mode and behaves exactly as
   // the pre-advisor engine did. priorityRanking is the keystone the
   // advisor re-weights around. payFloor is the driver's stated minimum

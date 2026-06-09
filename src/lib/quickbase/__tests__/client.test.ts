@@ -289,7 +289,7 @@ describe("pushAndersonHandoff", () => {
 
     const body = JSON.parse(String(init!.body));
     expect(body.to).toBe("bcivf3ysv");
-    expect(body.data[0].Company.value).toBe("Anderson");
+    expect(body.data[0].Company.value).toBe("Anderson Trucking Service");
     expect(body.data[0]["Recruiter Name"].value).toBe("Todd Bryson");
     expect(body.data[0]["Driver Applying For"].value).toBe(
       "Lease Purchase Van - OTR",

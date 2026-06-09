@@ -53,7 +53,7 @@ export const SAP_STATUS_OPTIONS = [
   { value: "completed-sap", label: "Completed SAP" },
 ] as const;
 
-// Advisor-mode preference layer (migration 0033). priority_ranking is
+// Advisor-mode preference layer (migration 0036). priority_ranking is
 // the keystone — the driver's own ordering of what matters most. The
 // advisor weights matches by whatever the driver ranks #1.
 export const PRIORITY_OPTIONS = [
@@ -149,7 +149,7 @@ export const intakeSchema = z.object({
   minWeeklyPay: z.coerce.number().int().min(0).max(10000).default(0),
   willingToRelocate: z.boolean().default(false),
 
-  // Advisor-mode preference layer (migration 0033). All optional — the
+  // Advisor-mode preference layer (migration 0036). All optional — the
   // neutral intake never asked these; they're filled by Debbie's advisor
   // follow-ups or the equivalent form-fallback step. priority_ranking is
   // the keystone the advisor ranks against. pay_floor_* is kept distinct

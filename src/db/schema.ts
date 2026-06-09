@@ -12,6 +12,7 @@ import {
   pgEnum,
   index,
   uniqueIndex,
+  primaryKey,
   check,
   customType,
 } from "drizzle-orm/pg-core";
@@ -137,7 +138,7 @@ export const carriers = pgTable("carriers", {
   // docs/SPEC_anderson-application-handoff-addendum-v2.md §B4.5.
   partnerHandoffConfig: jsonb("partner_handoff_config"),
 
-  // Advisor-mode fit-tier profile (migration 0034). A carrier can be a
+  // Advisor-mode fit-tier profile (migration 0037). A carrier can be a
   // MATCH and still be the wrong CALL for a given driver. This profile
   // scores how well the carrier suits a driver along experience + what
   // the driver wants, so the advisor can RANK (not just include/exclude).
@@ -376,7 +377,7 @@ export const drivers = pgTable(
       .default(sql`ARRAY[]::home_time[]`),
     minWeeklyPay: integer("min_weekly_pay").notNull().default(0),
 
-    // ── Advisor-mode preference layer (migration 0033) ──────────────
+    // ── Advisor-mode preference layer (migration 0036) ──────────────
     // The wants/needs the neutral-matcher intake never captured. Per
     // SPEC_driver-preference-and-demand-database-v1.md §3.4. All nullable
     // so legacy rows + the current intake stay valid; populated only when
@@ -1086,7 +1087,7 @@ export const driverCarrierDismissals = pgTable(
   ],
 );
 
-// Proactive lifelong-advocate contacts (migration 0035). One row per
+// Proactive lifelong-advocate contacts (migration 0038). One row per
 // proactive outreach DECISION — whether it sent, was suppressed by the
 // governance spine, or was blocked because PROACTIVE_SENDS_ENABLED is off.
 //
@@ -1298,5 +1299,135 @@ export const driverExternalJobImpressions = pgTable(
       t.driverId,
       t.shownAt,
     ),
+  ],
+);
+
+// Append-only funnel event log. Complements the state-derived funnel
+// counts in admin/dashboard-queries.ts: those reconstruct conversion
+// from the durable tables (applications, matches, stages), but they
+// can't answer time-ordered drop-off questions like "a driver hit
+// /matches with N matches at T and never consented." This table
+// captures those moments as discrete, timestamped events.
+//
+// Carries NO PII (driver_id + counts + a small metadata bag only), so
+// it survives the CCPA soft-delete anonymization the same way matches
+// and applications do — the anonymized driver row keeps the FK intact
+// for aggregate analysis. onDelete: set null is belt-and-suspenders
+// for any future HARD delete; today drivers are only soft-deleted.
+//
+// event_type is an open text column on purpose — new call sites add
+// values without a migration. The emitted-today set is pinned by the
+// FunnelEventType union in src/lib/funnel-events. Migration 0033.
+export const funnelEvents = pgTable(
+  "funnel_events",
+  {
+    id: uuid("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    driverId: uuid("driver_id").references(() => drivers.id, {
+      onDelete: "set null",
+    }),
+    eventType: text("event_type").notNull(),
+    // Set on view-style events (e.g. matches_viewed) — how many cards
+    // the driver actually saw. Null for events where it's meaningless.
+    matchCount: integer("match_count"),
+    // Set on carrier-scoped events (e.g. apply_clicked). Null otherwise.
+    carrierId: uuid("carrier_id").references(() => carriers.id, {
+      onDelete: "set null",
+    }),
+    // Small free-form bag for event-specific detail (e.g. internal vs
+    // external split). Keep it shallow — this is for analysis, not a
+    // second source of truth.
+    metadata: jsonb("metadata"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (t) => [
+    index("funnel_events_type_created_idx").on(t.eventType, t.createdAt),
+    index("funnel_events_driver_idx").on(t.driverId, t.createdAt),
+  ],
+);
+
+// Fixed-window rate-limit counters. The app runs on Vercel serverless,
+// where in-memory counters don't survive across lambda instances — so
+// abuse throttling has to live in the only shared, durable store we
+// have: Postgres.
+//
+// One row per (bucket, window_start). `bucket` namespaces the limit and
+// its subject, e.g. "login_email:foo@bar.com", "login_ip:1.2.3.4",
+// "carrier_lead_ip:1.2.3.4". `window_start` is the floor of now to the
+// window size, so a single atomic upsert (INSERT ... ON CONFLICT DO
+// UPDATE SET count = count + 1 RETURNING count) both records the hit and
+// tells us the running total for the window. See src/lib/rate-limit.
+//
+// Old windows are dead weight; the daily cron prunes rows whose window
+// has long passed (cleanupRateLimitCounters). Migration 0034.
+export const rateLimitCounters = pgTable(
+  "rate_limit_counters",
+  {
+    bucket: text("bucket").notNull(),
+    windowStart: timestamp("window_start", { withTimezone: true }).notNull(),
+    count: integer("count").notNull().default(0),
+  },
+  (t) => [
+    primaryKey({ columns: [t.bucket, t.windowStart] }),
+    // Supports the cron prune (DELETE WHERE window_start < cutoff).
+    index("rate_limit_counters_window_idx").on(t.windowStart),
+  ],
+);
+
+// Generated video scripts (docs/CDLAjobs_Video_Script_Template.docx §14).
+//
+// One row per (target slug, template). The generator CLI upserts the
+// rendered script here so we can track which scripts exist, which have
+// been produced into video, and — later — which drove intakes. Re-running
+// the generator refreshes the body/variables (pay numbers drift over
+// time) but PRESERVES production status, so marking a script "produced"
+// isn't undone by the next generation.
+//
+// Conversion attribution (which script drove the most intakes — §14) is a
+// follow-up: it needs a tracking param threaded short_url → intake. The
+// columns here are the storage foundation for it. Migration 0035.
+export const videoScriptStatus = pgEnum("video_script_status", [
+  "generated",
+  "in_production",
+  "published",
+  "archived",
+]);
+
+export const videoScripts = pgTable(
+  "video_scripts",
+  {
+    id: uuid("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    // Target landing-page slug, e.g. "atlanta-reefer".
+    slug: text("slug").notNull(),
+    // Denormalized from the slug for reporting/filtering.
+    region: text("region").notNull(),
+    equipment: text("equipment").notNull(),
+    templateKey: text("template_key").notNull(),
+    // The rendered script body (voiceover + on-screen annotations).
+    body: text("body").notNull(),
+    // Snapshot of the resolved variables (pay numbers, counts) at
+    // generation time — so a produced video can be traced to its data.
+    variables: jsonb("variables"),
+    // Human-review flags carried from rendering (e.g. pay outliers).
+    warnings: jsonb("warnings"),
+    status: videoScriptStatus("status").notNull().default("generated"),
+    // Set when a script is produced + posted.
+    producedVideoUrl: text("produced_video_url"),
+    generatedAt: timestamp("generated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (t) => [
+    // One row per target+template; the generator upserts on this.
+    uniqueIndex("video_scripts_slug_template_idx").on(t.slug, t.templateKey),
+    index("video_scripts_status_idx").on(t.status),
   ],
 );

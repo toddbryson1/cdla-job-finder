@@ -7,10 +7,11 @@ import {
   PricingTable,
   Section,
 } from "@/components/CarrierPage";
+import { PARTNER_BOOKING_URL } from "@/lib/partners";
 
 // Copy is locked verbatim per SPEC_carrier-landing-page-copy-v1.md §4.
-// Do not paraphrase. CTAs link to placeholder anchors / mailto until the
-// calendar booking tool decision lands (spec §9.1).
+// Do not paraphrase. Sales CTAs open the LeadConnector booking widget
+// (PARTNER_BOOKING_URL); a plain mailto remains as the email fallback.
 
 export const metadata: Metadata = {
   title: "Matched CDL-A driver leads to your Tenstreet — CDLA.jobs",
@@ -94,16 +95,17 @@ function Hero() {
           Tenstreet. No per-hire fees, no setup fees, no contracts.
         </p>
         <div className="mt-8 flex flex-wrap items-center gap-3">
-          {/* TODO: replace mailto with calendar booking once tool is chosen (spec §9.1) */}
           <a
-            href="mailto:sales@cdla.jobs?subject=Tier%202%20call"
+            href={PARTNER_BOOKING_URL}
+            target="_blank"
+            rel="noopener noreferrer"
             className="inline-flex h-11 items-center justify-center rounded-md bg-brand-deep px-6 text-sm font-semibold text-white shadow-sm hover:bg-brand-medium"
           >
             Talk to sales
           </a>
-          {/* TODO: wire to real PDF export of the carrier pitch deck (spec §9.2) */}
+          {/* Carrier brief renders as a print-optimized one-pager (Save as PDF). */}
           <a
-            href="/partners/brief"
+            href="/partners/brief/one-pager"
             className="inline-flex h-11 items-center justify-center rounded-md border border-brand-rule bg-white px-5 text-sm font-medium text-brand-ink hover:bg-brand-surface"
           >
             Download the carrier brief (PDF)
@@ -279,13 +281,15 @@ function SecondaryCtaSection() {
       </p>
       <div className="mt-6 flex flex-wrap gap-3">
         <a
-          href="mailto:sales@cdla.jobs?subject=Schedule%20hiring%20criteria%20call"
+          href={PARTNER_BOOKING_URL}
+          target="_blank"
+          rel="noopener noreferrer"
           className="inline-flex h-11 items-center justify-center rounded-md bg-brand-deep px-6 text-sm font-semibold text-white shadow-sm hover:bg-brand-medium"
         >
           Schedule a hiring criteria call
         </a>
         <a
-          href="/partners/brief"
+          href="/partners/brief/one-pager"
           className="inline-flex h-11 items-center justify-center rounded-md border border-brand-rule bg-white px-5 text-sm font-medium text-brand-ink hover:bg-brand-surface"
         >
           Download the carrier brief (PDF)

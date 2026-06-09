@@ -39,7 +39,7 @@ export interface DebbieIntakeExtracted {
   terminatedLastJob?: boolean;
   terminationReason?: string;
   sapStatus?: "not-in-sap" | "in-sap" | "completed-sap";
-  // Advisor-mode follow-ups (migration 0033). Ordered priority is the
+  // Advisor-mode follow-ups (migration 0036). Ordered priority is the
   // keystone the ranker weights around.
   priorityRanking?: Array<"pay" | "home_time" | "proximity" | "ease_of_hire">;
   careerGoalType?: CareerGoalType;
@@ -54,7 +54,7 @@ export interface DebbieIntakeFields {
   terminatedLastJob: boolean | null;
   terminationReason: string | null;
   sapStatus: "not-in-sap" | "in-sap" | "completed-sap" | null;
-  // Advisor-mode follow-ups (migration 0033). Null when not asked
+  // Advisor-mode follow-ups (migration 0036). Null when not asked
   // (advisor mode off) or declined — the ranker treats null as neutral.
   priorityRanking:
     | Array<"pay" | "home_time" | "proximity" | "ease_of_hire">

@@ -1,4 +1,5 @@
-import { NextResponse } from "next/server";
+import { NextResponse, after } from "next/server";
+import { cookies } from "next/headers";
 import { eq } from "drizzle-orm";
 import { intakeSchema } from "@/lib/intake-schema";
 import { db } from "@/db/client";
@@ -19,6 +20,7 @@ import {
 } from "@/lib/ghl/client";
 import { candidateEmail } from "@/lib/ghl/candidateEmail";
 import { resolveRegion } from "@/lib/regions";
+import { recordFunnelEvent } from "@/lib/funnel-events";
 
 export const runtime = "nodejs";
 
@@ -100,7 +102,7 @@ export async function POST(request: Request) {
       homeTime: d.homeTime,
       minWeeklyPay: d.minWeeklyPay,
       willingToRelocate: d.willingToRelocate,
-      // Advisor-mode preference layer (migration 0033). Optional — null
+      // Advisor-mode preference layer (migration 0036). Optional — null
       // when the driver came through the neutral intake without the
       // advisor follow-ups. Kept out of the update set below only for
       // immutable fields; these DO update on re-submit.
@@ -146,6 +148,27 @@ export async function POST(request: Request) {
     console.log(
       `[intake] driver ${row?.id} ${isAnonymousIntake ? "(anonymous)" : `${d.firstName} ${d.lastName} <${d.email}>`} wants ${d.desiredEquipment.join(",")} in ${d.desiredRegions.join(",")} (home: ${d.homeTime.join("|")})`,
     );
+
+    // Best-effort top-of-funnel event. Scheduled via after() so the
+    // INSERT survives the response flush on serverless. Counted by
+    // DISTINCT driver in the admin funnel, so the email-path upsert
+    // (re-submission updates the same row) doesn't inflate the
+    // unique-driver total.
+    if (row?.id) {
+      const driverId = row.id;
+      // Video-script conversion attribution (docs §14): the proxy stashed
+      // the first-touch vsrc (<slug>__<template>) from the video CTA. Record
+      // it on the event so videoScriptConversions() can tie this intake back
+      // to the script that drove it. Null for non-video traffic.
+      const vsrc = (await cookies()).get("cdla_vsrc")?.value ?? null;
+      after(() =>
+        recordFunnelEvent({
+          eventType: "intake_completed",
+          driverId,
+          metadata: { anonymous: isAnonymousIntake, ...(vsrc ? { vsrc } : {}) },
+        }),
+      );
+    }
 
     // Send a magic link to the email the driver just confirmed so they can
     // reach /matches/[id] without typing it again. Best-effort: a Stytch

@@ -66,7 +66,7 @@ export async function matchDriver(
     terminated: driverRow.terminatedFromAnyOfLast3Employers,
     failedDot: driverRow.failedDotTest,
     sapStatus: driverRow.sapStatus,
-    // Advisor-mode preference layer (migration 0033). Null on drivers
+    // Advisor-mode preference layer (migration 0036). Null on drivers
     // who came through the neutral intake → ranker stays in neutral mode.
     priorityRanking: driverRow.priorityRanking,
     payFloorMinWeeklyUsd: driverRow.payFloorMinWeeklyUsd,

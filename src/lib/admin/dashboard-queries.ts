@@ -312,6 +312,109 @@ export async function getDriverFunnel30d(): Promise<DriverFunnel30d> {
   };
 }
 
+export interface FunnelEventStats {
+  /** Distinct drivers with an intake_completed event in the window —
+   *  the event-log top of the funnel. */
+  uniqueDriversIntake: number;
+  /** matches_viewed events in the window. */
+  matchesViewed: number;
+  /** Distinct drivers who hit /matches in the window. */
+  uniqueDriversViewed: number;
+  /** matches_viewed events where the driver saw ZERO cards — the
+   *  hardest dead-end in the funnel. */
+  zeroMatchViews: number;
+  /** Average match_count across matches_viewed events, 1 decimal. */
+  avgMatchCount: number;
+  /** Distinct in-window viewers who ALSO have an in-window
+   *  consent_submitted event — the true funnel intersection. Both
+   *  sides are window-scoped events, so this can't be inflated by a
+   *  consent that happened long before the viewing window. */
+  viewedThenConsented: number;
+  /** consent_submitted events in the window (each is one Stage 2
+   *  consent completion, including re-consents to the same carrier). */
+  consentEvents: number;
+  /** Distinct drivers with at least one consent_submitted event in the
+   *  window — the event-log numerator that pairs with
+   *  uniqueDriversViewed for a pure view→consent rate. */
+  uniqueDriversConsented: number;
+  /** Most recent matches_viewed event, or null if none yet. */
+  latestViewAt: Date | null;
+}
+
+/**
+ * Event-log view of the matches funnel for the last `days` days. Reads
+ * funnel_events (migration 0033) rather than reconstructing from state
+ * tables, so it answers page-view questions: how many drivers actually
+ * landed on /matches, how many saw a dead end (0 cards), and how many
+ * of the viewers went on to consent.
+ *
+ * Empty/zero everywhere until matches_viewed events accumulate — the
+ * table starts empty on deploy. The admin panel says so explicitly so
+ * a fresh zero doesn't read as "the funnel is broken."
+ */
+export async function getFunnelEventStats(
+  days = 30,
+): Promise<FunnelEventStats> {
+  const [row] = (await db.execute(sql`
+    WITH views AS (
+      SELECT driver_id, match_count, created_at
+      FROM funnel_events
+      WHERE event_type = 'matches_viewed'
+        AND created_at >= NOW() - (${days} * INTERVAL '1 day')
+    ),
+    viewer_drivers AS (
+      SELECT DISTINCT driver_id FROM views WHERE driver_id IS NOT NULL
+    ),
+    consents AS (
+      SELECT driver_id
+      FROM funnel_events
+      WHERE event_type = 'consent_submitted'
+        AND created_at >= NOW() - (${days} * INTERVAL '1 day')
+    ),
+    intakes AS (
+      SELECT driver_id
+      FROM funnel_events
+      WHERE event_type = 'intake_completed'
+        AND created_at >= NOW() - (${days} * INTERVAL '1 day')
+    )
+    SELECT
+      (SELECT COUNT(DISTINCT driver_id)::int FROM intakes WHERE driver_id IS NOT NULL) AS unique_drivers_intake,
+      (SELECT COUNT(*)::int FROM views) AS matches_viewed,
+      (SELECT COUNT(*)::int FROM viewer_drivers) AS unique_drivers_viewed,
+      (SELECT COUNT(*)::int FROM views WHERE match_count = 0) AS zero_match_views,
+      (SELECT COALESCE(ROUND(AVG(match_count)::numeric, 1), 0) FROM views) AS avg_match_count,
+      (SELECT COUNT(*)::int FROM viewer_drivers vd
+        WHERE EXISTS (
+          SELECT 1 FROM consents c WHERE c.driver_id = vd.driver_id
+        )) AS viewed_then_consented,
+      (SELECT COUNT(*)::int FROM consents) AS consent_events,
+      (SELECT COUNT(DISTINCT driver_id)::int FROM consents WHERE driver_id IS NOT NULL) AS unique_drivers_consented,
+      (SELECT MAX(created_at) FROM views) AS latest_view_at
+  `)) as unknown as Array<{
+    unique_drivers_intake: number;
+    matches_viewed: number;
+    unique_drivers_viewed: number;
+    zero_match_views: number;
+    avg_match_count: string | number;
+    viewed_then_consented: number;
+    consent_events: number;
+    unique_drivers_consented: number;
+    latest_view_at: Date | string | null;
+  }>;
+
+  return {
+    uniqueDriversIntake: row.unique_drivers_intake,
+    matchesViewed: row.matches_viewed,
+    uniqueDriversViewed: row.unique_drivers_viewed,
+    zeroMatchViews: row.zero_match_views,
+    avgMatchCount: Number(row.avg_match_count),
+    viewedThenConsented: row.viewed_then_consented,
+    consentEvents: row.consent_events,
+    uniqueDriversConsented: row.unique_drivers_consented,
+    latestViewAt: row.latest_view_at ? new Date(row.latest_view_at) : null,
+  };
+}
+
 export interface CarrierPerformanceRow {
   carrier: string;
   kind: string;
@@ -602,6 +705,41 @@ export interface CarrierHandoffDriftRow {
    *  historical evidence — useful when triaging a freshly-noticed
    *  drift to see how long it's been bleeding. */
   historicalDriftRows: number;
+  /** Best-effort extraction of whatever quickbase fields are present
+   *  in the (drifted) config today, so the admin inline editor can
+   *  pre-fill rather than start blank. Empty strings where a field is
+   *  absent or non-string — the config is drifted, so any subset may
+   *  be missing. */
+  currentConfig: HandoffConfigPrefill;
+}
+
+export interface HandoffConfigPrefill {
+  realmHostname: string;
+  appId: string;
+  tableId: string;
+  defaultRecruiterName: string;
+}
+
+/**
+ * Pull the quickbase fields out of a (possibly malformed) handoff
+ * config for editor pre-fill. Never throws — coerces anything
+ * non-string to "" so the form always renders.
+ */
+function extractHandoffPrefill(cfg: unknown): HandoffConfigPrefill {
+  const obj = (cfg && typeof cfg === "object" ? cfg : {}) as Record<
+    string,
+    unknown
+  >;
+  const qb = (obj.quickbase && typeof obj.quickbase === "object"
+    ? obj.quickbase
+    : {}) as Record<string, unknown>;
+  const str = (v: unknown): string => (typeof v === "string" ? v : "");
+  return {
+    realmHostname: str(qb.realm_hostname),
+    appId: str(qb.app_id),
+    tableId: str(qb.table_id),
+    defaultRecruiterName: str(qb.default_recruiter_name),
+  };
 }
 
 export interface CarrierHandoffDrift {
@@ -700,6 +838,7 @@ export async function getCarrierHandoffDrift(): Promise<CarrierHandoffDrift> {
       reason: v.reason,
       pendingRows: c.pending_rows,
       historicalDriftRows: c.historical_drift_rows,
+      currentConfig: extractHandoffPrefill(c.cfg),
     });
     totalPendingDoomed += c.pending_rows;
     totalHistoricalDriftRows += c.historical_drift_rows;

@@ -19,7 +19,7 @@ export interface DriverFixture {
   terminated?: boolean;
   failedDot?: boolean;
   sapStatus?: "not-in-sap" | "in-sap" | "completed-sap";
-  // Advisor-mode preference layer (migration 0033).
+  // Advisor-mode preference layer (migration 0036).
   priorityRanking?: string[];
   payFloorMinWeeklyUsd?: number;
   payFloorMaxWeeklyUsd?: number;

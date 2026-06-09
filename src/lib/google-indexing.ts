@@ -37,29 +37,14 @@
 //   https://developers.google.com/search/apis/indexing-api/v3/quickstart
 //   https://developers.google.com/search/docs/appearance/structured-data/job-posting
 
-import crypto from "node:crypto";
+import {
+  getGoogleAccessToken,
+  isServiceAccountConfigured,
+} from "./google-auth";
 
-const TOKEN_URL = "https://oauth2.googleapis.com/token";
 const INDEXING_URL =
   "https://indexing.googleapis.com/v3/urlNotifications:publish";
 const SCOPE = "https://www.googleapis.com/auth/indexing";
-
-interface ServiceAccountKey {
-  type: string;
-  project_id: string;
-  private_key_id: string;
-  private_key: string;
-  client_email: string;
-  client_id: string;
-  token_uri?: string;
-}
-
-interface AccessToken {
-  token: string;
-  expiresAt: number; // ms epoch
-}
-
-let cachedToken: AccessToken | null = null;
 
 /**
  * True iff GOOGLE_INDEXING_SERVICE_ACCOUNT_KEY is present and parseable.
@@ -67,98 +52,7 @@ let cachedToken: AccessToken | null = null;
  * Indexing API isn't configured (e.g., local dev).
  */
 export function isIndexingApiConfigured(): boolean {
-  const raw = process.env.GOOGLE_INDEXING_SERVICE_ACCOUNT_KEY;
-  if (!raw) return false;
-  try {
-    const sa = JSON.parse(raw) as ServiceAccountKey;
-    return Boolean(sa.private_key && sa.client_email);
-  } catch {
-    return false;
-  }
-}
-
-function loadServiceAccount(): ServiceAccountKey {
-  const raw = process.env.GOOGLE_INDEXING_SERVICE_ACCOUNT_KEY;
-  if (!raw) {
-    throw new Error("GOOGLE_INDEXING_SERVICE_ACCOUNT_KEY is not set");
-  }
-  const sa = JSON.parse(raw) as ServiceAccountKey;
-  if (!sa.private_key || !sa.client_email) {
-    throw new Error(
-      "Service account JSON missing private_key or client_email",
-    );
-  }
-  return sa;
-}
-
-function base64url(input: Buffer | string): string {
-  const buf = typeof input === "string" ? Buffer.from(input) : input;
-  return buf
-    .toString("base64")
-    .replace(/\+/g, "-")
-    .replace(/\//g, "_")
-    .replace(/=+$/, "");
-}
-
-/**
- * Sign a JWT with the service account's RSA private key (RS256) per
- * Google's OAuth 2.0 service-account flow. Returns the assertion we
- * exchange for an access token at /token.
- */
-function signJwt(sa: ServiceAccountKey): string {
-  const now = Math.floor(Date.now() / 1000);
-  const header = { alg: "RS256", typ: "JWT", kid: sa.private_key_id };
-  const claim = {
-    iss: sa.client_email,
-    scope: SCOPE,
-    aud: sa.token_uri ?? TOKEN_URL,
-    iat: now,
-    exp: now + 3600, // max lifetime per Google's docs
-  };
-  const headerB64 = base64url(JSON.stringify(header));
-  const claimB64 = base64url(JSON.stringify(claim));
-  const signingInput = `${headerB64}.${claimB64}`;
-  const signer = crypto.createSign("RSA-SHA256");
-  signer.update(signingInput);
-  signer.end();
-  const signature = signer.sign(sa.private_key);
-  return `${signingInput}.${base64url(signature)}`;
-}
-
-/**
- * Exchange a signed JWT for an access token. Cached in module scope
- * with a safety margin so consecutive publishes don't each round-trip.
- */
-async function getAccessToken(): Promise<string> {
-  if (cachedToken && cachedToken.expiresAt > Date.now() + 60_000) {
-    return cachedToken.token;
-  }
-  const sa = loadServiceAccount();
-  const assertion = signJwt(sa);
-
-  const body = new URLSearchParams({
-    grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer",
-    assertion,
-  });
-
-  const res = await fetch(sa.token_uri ?? TOKEN_URL, {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: body.toString(),
-  });
-  if (!res.ok) {
-    const text = await res.text().catch(() => "");
-    throw new Error(`Token exchange failed (${res.status}): ${text}`);
-  }
-  const json = (await res.json()) as {
-    access_token: string;
-    expires_in: number;
-  };
-  cachedToken = {
-    token: json.access_token,
-    expiresAt: Date.now() + json.expires_in * 1000,
-  };
-  return cachedToken.token;
+  return isServiceAccountConfigured();
 }
 
 export type IndexingNotificationType = "URL_UPDATED" | "URL_DELETED";
@@ -191,7 +85,7 @@ export async function publishIndexingNotification(
     };
   }
   try {
-    const token = await getAccessToken();
+    const token = await getGoogleAccessToken(SCOPE);
     const res = await fetch(INDEXING_URL, {
       method: "POST",
       headers: {

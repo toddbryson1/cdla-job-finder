@@ -136,7 +136,7 @@ From the ATS Driver Qualification Guidelines (revision 03-23-2026) and Pre-Qual 
 | Schema field | Value | Source / notes |
 |---|---|---|
 | `min_age` | 21 | Pre-Qual Sheet ("Minimum 21 years of age") and Guidelines §A.1. **Schema gap:** v2 has no `min_age` field — captured in description for now. |
-| `min_experience_months` | 6 | Per Guidelines §A.6.b: "At least six months of commercial driving experience within last 24 months." **Caveat:** the longer-window path (12 months in last 36 months) is also accepted, plus a third path (18 months OTR/regional in last 60 months allows local experience to count). The schema's single `min_experience_months_window_months = 36` cannot express all three paths. **Schema gap.** Setting to 6 captures the most permissive Anderson-side floor. |
+| `min_experience_months` | 12 | **Updated 2026-06 (owner/Sterling):** Anderson's operative minimum is **1 year of experience within the last 36 months** — matches the schema's 36-month window directly, so set to 12. (Supersedes the earlier 6-month reading from Guidelines §A.6.b; the 6mo/24mo and 18mo/60mo alternate paths are no longer modeled as the floor.) |
 | `min_otr_experience_months` | 0 for Company Flatbed; 12 for the 3 Lease products | Per Pre-Qual Sheet: "LP needs 12 months OTR exp in 3 years." Lease purchase requires more OTR than company. |
 | `accepted_cdl_states` | `[]` (all states accepted) | Anderson hires nationally per their public hiring-areas map; no state restriction in guidelines. |
 | `required_endorsements` | `[]` (none required) | "Hazmat Endorsement is recommended but not required" per Pre-Qual Sheet and Guidelines §B.2. |
@@ -308,7 +308,7 @@ I have not independently verified the QuickBase REST API endpoint path or auth h
 
 | QuickBase Field | Required | Source in CDLA.jobs | Notes |
 |---|---|---|---|
-| Company | Yes | Hard-coded per row: `"Anderson"` (or full legal name — confirm with Sterling) | Confirm exact value Sterling's QuickBase expects |
+| Company | Yes | Hard-coded: `"Anderson Trucking Service"` | **§B10 Q6 RESOLVED (2026-06):** Sterling expects `"Anderson Trucking Service"` (not short `"Anderson"`, not legal `"..., Inc."`) |
 | First Name | Yes | `driver.first_name` | |
 | Last Name | Yes | `driver.last_name` | |
 | Home Phone | No | NULL | CDLA.jobs collects one phone, treated as cell |
@@ -328,7 +328,7 @@ I have not independently verified the QuickBase REST API endpoint path or auth h
 | Orientation Start Date | No | NULL | Sterling-owned |
 | Hire Date | No | NULL | Sterling-owned |
 | Candidate within 90 days | No | NULL | Sterling-owned |
-| Recruiter Name | Yes | Hard-coded: `"Todd Bryson"` (per Sterling) | Confirm static or dynamic |
+| Recruiter Name | Yes | Hard-coded: `"Todd Bryson"` (per Sterling) | **RESOLVED (2026-06):** static `"Todd Bryson"` for all records |
 
 Note on `Exp.` field: it appears in the QuickBase form a second time after `EXPERIENCE LEVEL`. Unclear whether duplicate, separate field with same label, or free-text annotation. Confirm with Sterling.
 
@@ -474,14 +474,14 @@ To resolve with Sterling before launch:
 3. **EXPERIENCE LEVEL accepted values** in Sterling's QuickBase
 4. **Exp. field** — duplicate of EXPERIENCE LEVEL, or different?
 5. **Driver Applying For accepted values**
-6. **Company field exact value** (`"Anderson"` vs. legal name)
+6. ~~**Company field exact value**~~ **RESOLVED (2026-06):** `"Anderson Trucking Service"`
 7. **Sign-on bonus** — Pre-Qual sheet says "See each division"; Sterling notes don't break this out
 8. **Sterling-to-Randall Reilly-to-Anderson relationship map**
 9. **Driver-facing Sterling naming** — name Sterling in result copy, or only Anderson?
 10. **Lease Flatbed pay range conflict** — $1,800–$3,000 (openings notes) vs. $1,500–$2,500 (3/2026 pay update)
 11. **Tenstreet completion webhook** — does Sterling have it set up, or does the IntelliApp stand alone?
 12. **QuickBase User Token issuance, scoping, and rotation cadence.** Specifically: Sterling must issue a **QuickBase User Token** (generated from inside QuickBase UI → My Preferences → Manage User Tokens) — NOT a username/password for a QuickBase user account. Account credentials grant full UI access to everything the user can see and do; a User Token can be scoped to specific apps, revoked independently, and is the correct artifact for system-to-system integration per the spec's auth model (§B5.1). Sterling also needs to confirm: which app(s) the token is scoped to (production app `bcivf3yss` only, or also a staging app), the rotation cadence (recommended: 90 days), the incident-response procedure if the token is suspected leaked, and which Sterling-side individual owns issuance/rotation.
-13. **Recruiter Name field — always "Todd Bryson"?** Or driver-specific?
+13. ~~**Recruiter Name field — always "Todd Bryson"?**~~ **RESOLVED (2026-06):** static `"Todd Bryson"` for all records
 14. **Attorney review of the QuickBase push pattern** (see §B11)
 15. **Anderson's actual hiring polygons** — is there a structured representation (KML, shapefile, GeoJSON) we could request? Would dramatically improve match precision.
 

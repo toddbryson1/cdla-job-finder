@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { CarrierShell, Section } from "@/components/CarrierPage";
+import { PARTNER_BOOKING_URL } from "@/lib/partners";
 
 // Carrier-side entry point. The spec (§10) explicitly notes the index page
 // is not required, but linking directly to /partners/integration or
@@ -213,13 +214,15 @@ function ClosingNote() {
       </p>
       <div className="mt-6 flex flex-wrap gap-3">
         <a
-          href="mailto:sales@cdla.jobs?subject=Carrier%20fit%20call"
+          href={PARTNER_BOOKING_URL}
+          target="_blank"
+          rel="noopener noreferrer"
           className="inline-flex h-11 items-center justify-center rounded-md bg-brand-deep px-6 text-sm font-semibold text-white shadow-sm hover:bg-brand-medium"
         >
           Talk to sales
         </a>
         <a
-          href="/partners/brief"
+          href="/partners/brief/one-pager"
           className="inline-flex h-11 items-center justify-center rounded-md border border-brand-rule bg-white px-5 text-sm font-medium text-brand-ink hover:bg-brand-surface"
         >
           Download the carrier brief (PDF)

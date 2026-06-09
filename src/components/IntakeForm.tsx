@@ -35,7 +35,7 @@ type FormState = {
   homeTime: Array<"daily" | "weekly" | "biweekly" | "otr">;
   minWeeklyPay: string;
   willingToRelocate: boolean;
-  // Advisor-mode preference layer (migration 0033). priorityTop captures
+  // Advisor-mode preference layer (migration 0036). priorityTop captures
   // the driver's #1 priority (the keystone the advisor ranks against);
   // stored as a 1-element priority_ranking on submit. Career goal feeds
   // trajectory matching.
