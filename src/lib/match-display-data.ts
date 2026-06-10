@@ -2,7 +2,7 @@ import { and, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/db/client";
 import { carrierJobs, carriers, jobPostingCycles } from "@/db/schema";
 import { buildJobPostingSlug } from "@/lib/job-slug";
-import { isPostgisAvailable } from "@/lib/matching/hardFilter";
+import { deriveRunningArea, type RunningArea } from "@/lib/geo/running-area";
 
 export interface MatchDisplayExtras {
   description: string | null;
@@ -42,14 +42,13 @@ export interface MatchDisplayExtras {
    * undescribed job, which the chat / matches card drops cleanly.
    */
   displayDescription: string | null;
-  // Running-area map data. domicile = the carrier terminal/centroid pin;
-  // hiringRadiusMiles draws the circular area (null = OTR/nationwide);
-  // hiringPolygonGeoJson is the real hiring area when set (PostGIS only,
-  // null on a DB without PostGIS or when the job has no polygon).
+  // Running-area map data. domicile = the carrier terminal pin;
+  // hiringRadiusMiles draws the local-scope circle; running is the derived
+  // rough lane coverage (states for regional/OTR, local for tight runs).
   domicileLat: number | null;
   domicileLng: number | null;
   hiringRadiusMiles: number | null;
-  hiringPolygonGeoJson: string | null;
+  running: RunningArea;
 }
 
 /**
@@ -99,15 +98,6 @@ export async function loadDisplayExtras(
   const out = new Map<string, MatchDisplayExtras>();
   if (jobIds.length === 0) return out;
 
-  // ST_AsGeoJSON only exists when PostGIS is installed (prod/Neon). On a
-  // PostGIS-less DB (local Homebrew) emit NULL so the query still parses —
-  // same guard the matcher uses. Polygon-less jobs fall back to the radius
-  // circle drawn client-side.
-  const postgis = await isPostgisAvailable();
-  const polygonExpr = postgis
-    ? sql<string | null>`ST_AsGeoJSON(${carrierJobs.hiringPolygon})`
-    : sql<string | null>`NULL`;
-
   const rows = await db
     .select({
       id: carrierJobs.id,
@@ -124,8 +114,10 @@ export async function loadDisplayExtras(
       acceptedCdlStates: carrierJobs.acceptedCdlStates,
       domicileLat: carrierJobs.domicileLat,
       domicileLng: carrierJobs.domicileLng,
+      domicileState: carrierJobs.domicileState,
       hiringRadiusMiles: carrierJobs.hiringRadiusMiles,
-      hiringPolygonGeoJson: polygonExpr,
+      acceptedHomeTimeTypes: carrierJobs.acceptedHomeTimeTypes,
+      preferredRegions: carrierJobs.preferredRegions,
     })
     .from(carrierJobs)
     .innerJoin(carriers, eq(carriers.id, carrierJobs.carrierId))
@@ -192,7 +184,12 @@ export async function loadDisplayExtras(
       domicileLat: r.domicileLat == null ? null : Number(r.domicileLat),
       domicileLng: r.domicileLng == null ? null : Number(r.domicileLng),
       hiringRadiusMiles: r.hiringRadiusMiles ?? null,
-      hiringPolygonGeoJson: r.hiringPolygonGeoJson ?? null,
+      running: deriveRunningArea({
+        acceptedHomeTimeTypes: r.acceptedHomeTimeTypes ?? [],
+        preferredRegions: r.preferredRegions ?? [],
+        hiringRadiusMiles: r.hiringRadiusMiles ?? null,
+        domicileState: r.domicileState ?? null,
+      }),
     });
   }
   return out;

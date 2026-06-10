@@ -447,22 +447,23 @@ export default async function JobPostingPage({
         </Section>
 
         {geo?.domicileLat != null && geo?.domicileLng != null ? (
-          <Section title="Hiring area">
+          <Section title="Running area">
             <RunningAreaMapLazy
               domicile={{
                 lat: geo.domicileLat,
                 lng: geo.domicileLng,
                 label: `${carrierName} — ${job.domicileCity}, ${job.domicileState}`,
               }}
-              hiringRadiusMiles={geo.hiringRadiusMiles}
-              hiringPolygonGeoJson={geo.hiringPolygonGeoJson}
+              running={geo.running}
+              localRadiusMiles={geo.hiringRadiusMiles}
             />
             <p className="mt-1.5 text-xs text-brand-muted">
-              {geo.hiringPolygonGeoJson
-                ? "Shaded area is where this carrier hires."
-                : geo.hiringRadiusMiles
-                  ? `Shaded area is within ${geo.hiringRadiusMiles} miles of the ${job.domicileCity} terminal.`
-                  : "This carrier runs nationwide (OTR)."}
+              {geo.running.scope === "otr"
+                ? "Roughly nationwide — this is an OTR run."
+                : geo.running.scope === "regional"
+                  ? "Shaded area is roughly where this lane runs (regional)."
+                  : `Shaded area is local runs near ${job.domicileCity}.`}{" "}
+              Rough estimate.
             </p>
           </Section>
         ) : null}

@@ -1,36 +1,28 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { circlePolygonGeoJson, type GeoJsonPolygon } from "@/lib/geo/circle";
+import { circlePolygonGeoJson } from "@/lib/geo/circle";
+import { stateNamesFromCodes } from "@/lib/geo/us-states";
+import type { RunningScope } from "@/lib/geo/running-area";
 
-// Running-area map. Draws a carrier's hiring area — the real hiring_polygon
-// when one is set, otherwise a circle from hiring_radius_miles — plus a pin
-// for the carrier domicile and (on the driver's match card) their home.
+// Running-area map. Shows roughly where a driver on this lane drives:
+//   - regional / OTR → the covered states, highlighted on the map
+//   - local          → a radius circle around the terminal
+// Plus a pin for the carrier terminal and (on the match card) the driver's
+// home, so they can see where they sit relative to the run.
 //
-// MapLibre GL is heavy (~230KB gz), so it's dynamically imported inside the
-// effect: nothing ships in the initial bundle, and the map only loads when
-// this component actually mounts (e.g. when a match card is expanded). Free
-// CARTO raster basemap — no API key.
+// MapLibre GL is heavy (~230KB gz) and the us-states GeoJSON is ~90KB, so
+// both are loaded only when this mounts (the match card is expanded / the
+// section renders). Free CARTO basemap — no API key.
 
 export interface RunningAreaMapProps {
   domicile: { lat: number; lng: number; label: string };
-  hiringRadiusMiles: number | null;
-  /** GeoJSON Polygon string from carrier_jobs.hiring_polygon (PostGIS). */
-  hiringPolygonGeoJson?: string | null;
+  running: { scope: RunningScope; states: string[] };
+  /** Radius for the 'local' scope circle (the job's hiring radius). */
+  localRadiusMiles?: number | null;
   /** Driver's home — drawn as a second pin on the match card. */
   home?: { lat: number; lng: number } | null;
   className?: string;
-}
-
-function parsePolygon(raw: string | null | undefined): GeoJsonPolygon | null {
-  if (!raw) return null;
-  try {
-    const g = JSON.parse(raw) as GeoJsonPolygon;
-    if (g && g.type === "Polygon" && Array.isArray(g.coordinates)) return g;
-  } catch {
-    /* malformed → fall through to radius */
-  }
-  return null;
 }
 
 const CARTO_TILES = [
@@ -40,10 +32,30 @@ const CARTO_TILES = [
   "https://d.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png",
 ];
 
+// Walk any Polygon/MultiPolygon geometry, extending the bounds.
+function extendBounds(
+  bounds: import("maplibre-gl").LngLatBounds,
+  geometry: { type: string; coordinates: unknown },
+) {
+  const walk = (coords: unknown) => {
+    if (
+      Array.isArray(coords) &&
+      coords.length >= 2 &&
+      typeof coords[0] === "number" &&
+      typeof coords[1] === "number"
+    ) {
+      bounds.extend([coords[0], coords[1]] as [number, number]);
+      return;
+    }
+    if (Array.isArray(coords)) coords.forEach(walk);
+  };
+  walk(geometry.coordinates);
+}
+
 export function RunningAreaMap({
   domicile,
-  hiringRadiusMiles,
-  hiringPolygonGeoJson,
+  running,
+  localRadiusMiles,
   home,
   className,
 }: RunningAreaMapProps) {
@@ -64,14 +76,6 @@ export function RunningAreaMap({
         await import("maplibre-gl/dist/maplibre-gl.css");
         if (cancelled || !containerRef.current) return;
 
-        // The hiring area: real polygon if present, else a circle from the
-        // radius. Null = OTR/nationwide — we just show the domicile pin.
-        const area: GeoJsonPolygon | null =
-          parsePolygon(hiringPolygonGeoJson) ??
-          (hiringRadiusMiles && hiringRadiusMiles > 0
-            ? circlePolygonGeoJson(domicile.lat, domicile.lng, hiringRadiusMiles)
-            : null);
-
         map = new maplibregl.Map({
           container: containerRef.current,
           style: {
@@ -88,38 +92,89 @@ export function RunningAreaMap({
             layers: [{ id: "carto", type: "raster", source: "carto" }],
           },
           center: [domicile.lng, domicile.lat],
-          zoom: 6,
+          zoom: 5,
           attributionControl: { compact: true },
           cooperativeGestures: true, // don't hijack page scroll
         });
-        map.addControl(new maplibregl.NavigationControl({ showCompass: false }), "top-right");
+        map.addControl(
+          new maplibregl.NavigationControl({ showCompass: false }),
+          "top-right",
+        );
 
-        map.on("load", () => {
+        map.on("error", () => setFailed(true));
+
+        map.on("load", async () => {
           if (!map) return;
-          if (area) {
-            map.addSource("hiring-area", {
+          const bounds = new maplibregl.LngLatBounds();
+
+          const drawByStates =
+            running.scope !== "local" && running.states.length > 0;
+
+          if (drawByStates) {
+            // Highlight the covered states from the bundled GeoJSON.
+            try {
+              const res = await fetch("/us-states.geojson");
+              const fc = (await res.json()) as {
+                features: Array<{
+                  properties: { name?: string };
+                  geometry: { type: string; coordinates: unknown };
+                }>;
+              };
+              const names = stateNamesFromCodes(running.states);
+              const matched = fc.features.filter((f) =>
+                names.has(f.properties?.name ?? ""),
+              );
+              if (matched.length > 0) {
+                map.addSource("run-states", {
+                  type: "geojson",
+                  data: { type: "FeatureCollection", features: matched } as never,
+                });
+                map.addLayer({
+                  id: "run-fill",
+                  type: "fill",
+                  source: "run-states",
+                  paint: { "fill-color": "#2E5C8A", "fill-opacity": 0.18 },
+                });
+                map.addLayer({
+                  id: "run-line",
+                  type: "line",
+                  source: "run-states",
+                  paint: { "line-color": "#1F3A5F", "line-width": 1.5 },
+                });
+                for (const f of matched) extendBounds(bounds, f.geometry);
+              }
+            } catch {
+              setFailed(true);
+            }
+          } else {
+            // Local scope — a radius circle around the terminal.
+            const radius = localRadiusMiles && localRadiusMiles > 0 ? localRadiusMiles : 100;
+            const circle = circlePolygonGeoJson(domicile.lat, domicile.lng, radius);
+            map.addSource("run-local", {
               type: "geojson",
-              data: { type: "Feature", geometry: area, properties: {} },
+              data: { type: "Feature", geometry: circle, properties: {} },
             });
             map.addLayer({
-              id: "hiring-fill",
+              id: "run-fill",
               type: "fill",
-              source: "hiring-area",
+              source: "run-local",
               paint: { "fill-color": "#2E5C8A", "fill-opacity": 0.18 },
             });
             map.addLayer({
-              id: "hiring-line",
+              id: "run-line",
               type: "line",
-              source: "hiring-area",
-              paint: { "line-color": "#1F3A5F", "line-width": 2 },
+              source: "run-local",
+              paint: { "line-color": "#1F3A5F", "line-width": 1.5 },
             });
+            for (const [lng, lat] of circle.coordinates[0]) bounds.extend([lng, lat]);
           }
 
-          // Carrier domicile pin (brand deep).
+          // Terminal pin (brand deep).
           new maplibregl.Marker({ color: "#1F3A5F" })
             .setLngLat([domicile.lng, domicile.lat])
             .setPopup(new maplibregl.Popup({ offset: 18 }).setText(domicile.label))
             .addTo(map);
+          bounds.extend([domicile.lng, domicile.lat]);
 
           // Driver home pin (gold), when provided.
           if (home && Number.isFinite(home.lat) && Number.isFinite(home.lng)) {
@@ -127,20 +182,13 @@ export function RunningAreaMap({
               .setLngLat([home.lng, home.lat])
               .setPopup(new maplibregl.Popup({ offset: 18 }).setText("Your home"))
               .addTo(map);
+            bounds.extend([home.lng, home.lat]);
           }
 
-          // Fit to whatever we drew.
-          const bounds = new maplibregl.LngLatBounds();
-          if (area) {
-            for (const [lng, lat] of area.coordinates[0]) bounds.extend([lng, lat]);
-          } else {
-            bounds.extend([domicile.lng, domicile.lat]);
+          if (!bounds.isEmpty()) {
+            map.fitBounds(bounds, { padding: 36, maxZoom: 8, duration: 0 });
           }
-          if (home && Number.isFinite(home.lat)) bounds.extend([home.lng, home.lat]);
-          map.fitBounds(bounds, { padding: 36, maxZoom: 9, duration: 0 });
         });
-
-        map.on("error", () => setFailed(true));
       } catch {
         setFailed(true);
       }
@@ -150,14 +198,13 @@ export function RunningAreaMap({
       cancelled = true;
       if (map) map.remove();
     };
-  }, [hasDomicile, domicile, hiringRadiusMiles, hiringPolygonGeoJson, home]);
+  }, [hasDomicile, domicile, running, localRadiusMiles, home]);
 
   if (!hasDomicile) return null;
   if (failed) {
     return (
       <p className={"text-xs text-brand-muted " + (className ?? "")}>
-        Map unavailable — {domicile.label}
-        {hiringRadiusMiles ? `, hires within ${hiringRadiusMiles} miles` : ""}.
+        Map unavailable — {domicile.label}.
       </p>
     );
   }
@@ -167,7 +214,7 @@ export function RunningAreaMap({
       <div
         ref={containerRef}
         className="h-56 w-full overflow-hidden rounded-lg border border-brand-rule"
-        aria-label={`Map of ${domicile.label} hiring area`}
+        aria-label={`Map of the ${domicile.label} running area`}
       />
     </div>
   );
