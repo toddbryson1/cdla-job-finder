@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { cookies } from "next/headers";
+import { MobileTabBar } from "@/components/MobileTabBar";
 
 const HEADER_UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -26,11 +27,24 @@ export async function SiteShell({ children }: { children: React.ReactNode }) {
     cookieDriverId && HEADER_UUID_RE.test(cookieDriverId)
       ? cookieDriverId
       : null;
+  // Tab targets resolve off the same cookie the header uses. A returning
+  // driver's Jobs/Profile tabs go straight to their matches and dashboard;
+  // a new visitor browses carriers and signs in. Chat always points at the
+  // homepage Debbie hero.
+  const jobsHref = driverIdForNav ? `/matches/${driverIdForNav}` : "/carriers";
+  const profileHref = driverIdForNav ? "/me" : "/login?redirect=/me";
+
   return (
     <div className="flex min-h-screen flex-col bg-brand-paper text-brand-ink">
       <SiteHeader driverIdForNav={driverIdForNav} />
-      <main className="flex-1">{children}</main>
+      {/* pb-16 on mobile keeps content clear of the fixed bottom tab bar. */}
+      <main className="flex-1 pb-16 sm:pb-0">{children}</main>
       <SiteFooter />
+      <MobileTabBar
+        chatHref="/#hero"
+        jobsHref={jobsHref}
+        profileHref={profileHref}
+      />
     </div>
   );
 }
@@ -114,7 +128,7 @@ function SiteFooter() {
           <div className="col-span-2 lg:col-span-1">
             <Wordmark size="footer" />
             <p className="mt-2 max-w-[280px] text-sm text-brand-muted">
-              Class A driver matching. Built for drivers.
+              Your CDL-A career advocate. Built for drivers.
             </p>
           </div>
           <FooterCol heading="For drivers">

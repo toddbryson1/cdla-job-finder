@@ -8,8 +8,10 @@ import { db } from "@/db/client";
 import { drivers } from "@/db/schema";
 
 // Copy is locked verbatim per SPEC_homepage-copy-v1.md and the design
-// reference at cdlajobs-homepage-design.html. Do NOT paraphrase
-// headlines or microcopy — they're attorney-reviewed and brand-locked.
+// reference at "cdla jobs/cdlajobs-homepage-design (1).html" (the Jun 9
+// career-advocate revision — supersedes the original Jun 1 mockup). Do
+// NOT paraphrase headlines or microcopy — they're attorney-reviewed and
+// brand-locked.
 // Sections render top-to-bottom: hero → how it works → why different
 // → for carriers → footer (in shell).
 //
@@ -27,14 +29,14 @@ import { drivers } from "@/db/schema";
 //   - Numbered step circles with the first one gold-ringed
 
 export const metadata: Metadata = {
-  title: "CDLA.jobs — Class A driver matching. Built for drivers.",
+  title: "CDLA.jobs — Your CDL-A career advocate. Built for drivers.",
   description:
-    "Find your next CDL-A driving job in five minutes. Talk to Debbie, our AI job matcher. Real carriers, no recruiter spam. Free for drivers.",
+    "Talk to Debbie, your CDL-A career advocate. She finds the job that fits your whole life — pay, home time, miles, and where you want to be in two years. Free for drivers, and we never sell your number.",
   alternates: { canonical: "https://www.cdla.jobs/" },
   openGraph: {
-    title: "CDLA.jobs — Class A driver matching. Built for drivers.",
+    title: "CDLA.jobs — Your CDL-A career advocate. Built for drivers.",
     description:
-      "Find your next CDL-A driving job in five minutes. Talk to Debbie, our AI job matcher. Real carriers, no recruiter spam. Free for drivers.",
+      "Talk to Debbie, your CDL-A career advocate. She finds the job that fits your whole life — pay, home time, miles, and where you want to be in two years. Free for drivers, and we never sell your number.",
     url: "https://www.cdla.jobs/",
     siteName: "CDLA.jobs",
     type: "website",
@@ -114,7 +116,7 @@ function Hero({
               aria-hidden="true"
               className="inline-block h-px w-6 bg-brand-gold"
             />
-            Class A driver matching
+            Your career, not just your next load
           </p>
           {returning ? (
             <>
@@ -136,22 +138,24 @@ function Hero({
           ) : (
             <>
               <h1 className="text-4xl font-bold leading-[1.04] tracking-[-0.03em] text-brand-ink sm:text-5xl lg:text-6xl">
-                Find your next driving job in{" "}
+                The right job for where you are — and{" "}
                 <span className="font-display font-medium italic text-brand-deep">
-                  five minutes.
+                  where you&rsquo;re headed.
                 </span>
               </h1>
               <p className="mt-6 text-lg leading-[1.5] text-brand-ink sm:text-xl">
                 Talk to{" "}
                 <span className="font-semibold text-brand-deep">Debbie</span>.
-                Tell her what you want.
+                She listens for what actually matters to you — the money, yes,
+                but also your home time, your miles, where you want to be in two
+                years — and finds the job that fits all of it.
               </p>
             </>
           )}
           <ul className="mt-8 flex flex-wrap gap-x-6 gap-y-3 text-sm text-brand-muted">
             <TrustItem>Free for drivers</TrustItem>
-            <TrustItem>We don&rsquo;t sell your data</TrustItem>
-            <TrustItem>Real carriers, hiring now</TrustItem>
+            <TrustItem>She&rsquo;ll tell you when to stay put</TrustItem>
+            <TrustItem>We don&rsquo;t sell your number</TrustItem>
           </ul>
           {!returning ? (
             <p className="mt-6 text-sm text-brand-muted">
@@ -290,18 +294,18 @@ function HowItWorks() {
   const steps: Array<{ n: string; title: string; body: string }> = [
     {
       n: "1",
-      title: "Tell Debbie what you want.",
-      body: "Five minutes. Talk, type, or upload your resume.",
+      title: "Tell Debbie what you're after.",
+      body: "Not just pay and home time — what your life needs and where you want your career to go. Talk, type, or upload your resume.",
     },
     {
       n: "2",
-      title: "See your matches.",
-      body: "Carriers hiring drivers like you, ranked by fit. No applying to 40 places.",
+      title: "She finds what fits — and ranks it honestly.",
+      body: "Carriers that match your real situation and your goals, ranked with the tradeoffs spelled out. No wall of jobs to sort through yourself.",
     },
     {
       n: "3",
-      title: "Pick the carriers you want.",
-      body: "They contact you. You decide who gets your info. Nobody gets sold your number.",
+      title: "You move when it's right.",
+      body: "You pick who gets your info. And if staying put is the better call right now, Debbie will tell you that too.",
     },
   ];
   return (
@@ -318,9 +322,9 @@ function HowItWorks() {
           How it works
         </p>
         <h2 className="max-w-3xl text-3xl font-bold leading-[1.1] tracking-[-0.025em] text-brand-ink sm:text-4xl lg:text-[44px]">
-          Three steps.{" "}
+          She gets to know you.{" "}
           <span className="font-display font-medium italic text-brand-deep">
-            No applying to 40 places.
+            Then she finds the fit.
           </span>
         </h2>
 
@@ -369,8 +373,8 @@ function WhyDifferent() {
       body: "Your information goes to carriers you pick. Not to a panel of buyers. Not to “marketing partners.” Not to anyone you didn't choose.",
     },
     {
-      title: "Match in five minutes.",
-      body: "Debbie asks a handful of questions and shows you carriers actually hiring drivers like you. No 20-page applications until you're ready to apply to a specific carrier.",
+      title: "She matches your whole situation.",
+      body: "Debbie learns what you actually want — pay, home time, the lane you're working toward — and matches the career, not just the next seat. She remembers it, too, and reaches out when something genuinely better opens up.",
     },
     {
       title: "Real carriers, not a lead farm.",
@@ -391,9 +395,9 @@ function WhyDifferent() {
           Why CDLA.jobs is different
         </p>
         <h2 className="max-w-3xl text-3xl font-bold leading-[1.1] tracking-[-0.025em] text-brand-ink sm:text-4xl lg:text-[44px]">
-          We don&rsquo;t pad the results.{" "}
+          We work for the driver.{" "}
           <span className="font-display font-medium italic text-brand-deep">
-            And we don&rsquo;t sell your number.
+            Not the lead panel.
           </span>
         </h2>
 

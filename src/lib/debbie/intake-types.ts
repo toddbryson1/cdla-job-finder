@@ -93,6 +93,56 @@ export function mergeExtracted(
   };
 }
 
+export interface CoreFieldGap {
+  /** Question state to route back to so the input re-opens. */
+  state: DebbieIntakeState;
+  /** Warm re-ask in Debbie's voice for the missing field. */
+  reask: string;
+}
+
+// The five core Stage-1 fields the matching engine requires. Returns the
+// first one still missing (in question order) with the state to route back
+// to and a re-ask line, or null when all five are present. Shared by the
+// intake route (server guard against advancing to confirmation/consent
+// while incomplete) and the chat client (recovery if a consent screen is
+// somehow reached with a gap — e.g. the LLM jumped ahead, or a stale
+// persisted session). Mirrors allFieldsSet() in DebbieIntakeChat.
+export function firstMissingCoreField(
+  f: DebbieIntakeFields,
+): CoreFieldGap | null {
+  if (f.homeZip == null)
+    return {
+      state: "Q1_zip",
+      reask:
+        "Before I pull your matches, I still need your home zip — what is it?",
+    };
+  if (f.experienceYears == null)
+    return {
+      state: "Q2_experience",
+      reask:
+        "One thing I missed — how many years have you been driving tractor-trailer?",
+    };
+  if (f.schedule == null)
+    return {
+      state: "Q3_schedule",
+      reask:
+        "What kind of schedule are you after — local, regional, or OTR?",
+    };
+  if (f.terminatedLastJob == null)
+    return {
+      state: "Q4_termination",
+      reask:
+        "One more before I match you: have you been let go from any of your last three driving jobs?",
+    };
+  if (f.sapStatus == null)
+    return {
+      state: "Q5_sap",
+      reask:
+        "Last one before your matches — are you currently in the DOT SAP program, have you completed it, or has that never applied to you?",
+    };
+  return null;
+}
+
 // Maps Debbie's Q3 schedule choice → the existing intake-schema's
 // home_time enum array. Used by the client when constructing the
 // final /api/intake POST.
