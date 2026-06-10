@@ -19,7 +19,7 @@ interface Message {
 function buildOpening(carrierName: string): Message {
   return {
     role: "assistant",
-    content: `I'm Debbie — think of me as your career coach for this search, and I'll give it to you straight. Ask me anything about this ${carrierName} job: the pay, the lanes, home time, what they expect on safety, or whether it's a smart move for where you're taking your driving career. I answer from the listing — and if the carrier didn't say, I'll tell you that instead of guessing.`,
+    content: `I'm Debbie, the AI job matcher at CDLA.jobs — and I'll give it to you straight. Ask me anything about this ${carrierName} job: the pay, the lanes, home time, what they expect on safety, or whether it's a smart move for where you're taking your career. I answer from the listing — and if the carrier didn't say, I'll tell you that instead of guessing.`,
   };
 }
 

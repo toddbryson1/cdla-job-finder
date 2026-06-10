@@ -39,9 +39,8 @@ import {
 const STORAGE_KEY = "cdla:debbie:intake:v1";
 
 const OPENING_MESSAGES: string[] = [
-  "Hey — I'm Debbie. I match Class A drivers to carriers based on what you actually want.",
-  "I'm AI, not a recruiter. Five quick questions, then I'll show you who's hiring drivers like you.",
-  "What's your home zip?",
+  "I'm Debbie, the AI job matcher at CDLA.jobs. I match CDL-A drivers to carriers based on what actually matters to you — pay, home time, equipment, the kind of company you want to run for. Not just today, either. I'll remember what you're after, check in after you land somewhere, and flag you when something better opens up. And if a move isn't worth it, I'll say so.",
+  "To get started, what's your zip code?",
 ];
 
 // Fields the matching engine needs that Debbie doesn't ask in Stage 1.
@@ -737,7 +736,7 @@ export function DebbieIntakeChat({
               aria-hidden="true"
               className="h-[7px] w-[7px] animate-brand-pulse rounded-full bg-brand-ok"
             />
-            AI driver matcher · online
+            AI job matcher · online
           </p>
         </div>
       </header>
