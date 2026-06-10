@@ -300,7 +300,7 @@ export function MatchCard({
           {extras?.domicileLat != null && extras?.domicileLng != null ? (
             <section className="mt-4">
               <h3 className="text-xs uppercase tracking-wide text-brand-muted">
-                Hiring area
+                Running area
               </h3>
               <div className="mt-1.5">
                 <RunningAreaMapLazy
@@ -309,17 +309,17 @@ export function MatchCard({
                     lng: extras.domicileLng,
                     label: `${match.carrierName} — ${match.domicileCity}, ${match.domicileState}`,
                   }}
-                  hiringRadiusMiles={extras.hiringRadiusMiles}
-                  hiringPolygonGeoJson={extras.hiringPolygonGeoJson}
+                  running={extras.running}
+                  localRadiusMiles={extras.hiringRadiusMiles}
                   home={driverHome ?? null}
                 />
                 <p className="mt-1.5 text-xs text-brand-muted">
-                  {extras.hiringPolygonGeoJson
-                    ? "Shaded = where this carrier hires."
-                    : extras.hiringRadiusMiles
-                      ? `Shaded = within ${extras.hiringRadiusMiles} miles of the terminal.`
-                      : "This carrier runs nationwide (OTR)."}
-                  {driverHome ? " Gold pin is your home." : ""}
+                  {extras.running.scope === "otr"
+                    ? "Roughly nationwide — this is an OTR run."
+                    : extras.running.scope === "regional"
+                      ? "Shaded = roughly where this lane runs (regional)."
+                      : `Shaded = local runs near ${match.domicileCity}.`}
+                  {driverHome ? " Gold pin is your home." : ""} Rough estimate.
                 </p>
               </div>
             </section>
