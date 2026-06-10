@@ -22,8 +22,8 @@ import {
   runDebbieIntakeTurn,
   type DebbieIntakeFields,
   type DebbieIntakeMessage,
-  type DebbieIntakeState,
 } from "@/lib/debbie/intake-turn";
+import { firstMissingCoreField } from "@/lib/debbie/intake-types";
 import { isAdvisorModeEnabled } from "@/lib/advisor/flags";
 
 export const runtime = "nodejs";
@@ -131,13 +131,32 @@ export async function POST(request: Request) {
       result.extracted,
     );
 
+    // Completeness guard: the LLM owns next_state and occasionally jumps to
+    // confirmation/consent before all five core fields are captured (more
+    // room for this since the advisor Q6/Q7 follow-ups). If it does, route
+    // back to the first unanswered question so the consent screen never
+    // renders incomplete (which dead-ends the driver at a submit that can't
+    // succeed). Mirrored client-side as a recovery effect.
+    let nextState = result.nextState;
+    let assistantMessage = result.assistantMessage;
+    if (nextState === "confirmation" || nextState === "consent_ready") {
+      const gap = firstMissingCoreField(updatedFields);
+      if (gap) {
+        console.warn(
+          `[debbie/intake] blocked ${nextState} with missing core field; routing back to ${gap.state}`,
+        );
+        nextState = gap.state;
+        assistantMessage = gap.reask;
+      }
+    }
+
     console.log(
-      `[debbie/intake] state=${state}→${result.nextState} extracted=${Object.keys(result.extracted).join(",") || "(none)"} tokens=${result.tokens.input}/${result.tokens.output}`,
+      `[debbie/intake] state=${state}→${nextState} extracted=${Object.keys(result.extracted).join(",") || "(none)"} tokens=${result.tokens.input}/${result.tokens.output}`,
     );
 
     return NextResponse.json({
-      assistantMessage: result.assistantMessage,
-      nextState: result.nextState,
+      assistantMessage,
+      nextState,
       fields: updatedFields,
     });
   } catch (err) {

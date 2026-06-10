@@ -23,6 +23,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   EMPTY_FIELDS,
+  firstMissingCoreField,
   scheduleToHomeTime,
   type DebbieIntakeFields,
   type DebbieIntakeMessage,
@@ -74,13 +75,9 @@ interface StoredState {
 // that prematurely advances state would freeze the chat in a card
 // with nulls in it.
 function allFieldsSet(f: DebbieIntakeFields): boolean {
-  return (
-    f.homeZip != null &&
-    f.experienceYears != null &&
-    f.schedule != null &&
-    f.terminatedLastJob != null &&
-    f.sapStatus != null
-  );
+  // Single source of truth: complete iff no core field is missing. Keeps
+  // the consent gate, confirmation gate, and the server guard in lockstep.
+  return firstMissingCoreField(f) === null;
 }
 
 function loadStored(): StoredState | null {
@@ -188,11 +185,24 @@ export function DebbieIntakeChat({
   // Hydrate from sessionStorage on mount.
   useEffect(() => {
     const stored = loadStored();
-    if (stored && stored.messages.length > 0) {
-      setMessages(stored.messages);
-      setState(stored.state);
-      setFields(stored.fields);
-    }
+    if (!stored || stored.messages.length === 0) return;
+    // Recovery for sessions persisted before the server completeness guard
+    // existed: if the stored state is a consent/confirmation screen but a
+    // core field is missing, that submit can never succeed — it would
+    // dead-end the driver. Route back to the first unanswered question with
+    // a re-ask so they can finish. Live turns can't reach this state now;
+    // /api/debbie/intake guards it server-side.
+    const gap =
+      stored.state === "consent_ready" || stored.state === "confirmation"
+        ? firstMissingCoreField(stored.fields)
+        : null;
+    setMessages(
+      gap
+        ? [...stored.messages, { role: "assistant", content: gap.reask }]
+        : stored.messages,
+    );
+    setState(gap ? gap.state : stored.state);
+    setFields(stored.fields);
   }, []);
 
   // Persist on every meaningful change.
@@ -434,18 +444,24 @@ export function DebbieIntakeChat({
 
   const onSubmitConsent = useCallback(async () => {
     if (!consentChecked || submitting) return;
-    if (
-      !fields.homeZip ||
-      fields.experienceYears == null ||
-      !fields.schedule ||
-      fields.terminatedLastJob == null ||
-      !fields.sapStatus
-    ) {
-      setError(
-        "Hmm — I don't have everything I need yet. Try answering Debbie's last question first.",
-      );
+    // Belt-and-suspenders: the consent card only renders when complete
+    // (showConsent guards on allFieldsSet) and the recovery effect routes
+    // away from any incomplete consent_ready, so this should never fire.
+    // If it somehow does, send the driver back to the missing question
+    // instead of dead-ending with a prompt they can't act on.
+    const gap = firstMissingCoreField(fields);
+    if (gap) {
+      setError(null);
+      setMessages((prev) => [
+        ...prev,
+        { role: "assistant", content: gap.reask },
+      ]);
+      setState(gap.state);
       return;
     }
+    // Past the gap guard every core field is set; assert for the type
+    // checker, which can't infer non-null through firstMissingCoreField.
+    if (fields.homeZip == null || fields.experienceYears == null) return;
     setSubmitting(true);
     setError(null);
     try {
@@ -625,7 +641,7 @@ export function DebbieIntakeChat({
     [router],
   );
 
-  const showConsent = state === "consent_ready";
+  const showConsent = state === "consent_ready" && allFieldsSet(fields);
   const showConfirmation = state === "confirmation" && allFieldsSet(fields);
   const showOpening = messages.length === 0;
 
