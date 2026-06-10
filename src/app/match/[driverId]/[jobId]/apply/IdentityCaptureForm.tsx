@@ -22,6 +22,7 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { claimIdentity } from "./actions";
 
 interface Props {
@@ -39,11 +40,15 @@ export function IdentityCaptureForm({ driverId, jobId }: Props) {
   const [addressCity, setAddressCity] = useState("");
   const [addressState, setAddressState] = useState("");
   const [error, setError] = useState<string | null>(null);
+  // When the email already belongs to another profile, we surface a
+  // sign-in path instead of a dead-end error so the driver keeps moving.
+  const [emailConflict, setEmailConflict] = useState(false);
   const [isPending, startTransition] = useTransition();
 
   function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
+    setEmailConflict(false);
 
     if (!firstName.trim()) return setError("First name is required.");
     if (!lastName.trim()) return setError("Last name is required.");
@@ -70,6 +75,7 @@ export function IdentityCaptureForm({ driverId, jobId }: Props) {
       });
       if (!result.ok) {
         setError(result.error ?? "Something went wrong. Try again in a moment.");
+        setEmailConflict(!!result.emailConflict);
         return;
       }
       // We're already on /match/[driverId]/[jobId]/apply — pushing
@@ -179,15 +185,48 @@ export function IdentityCaptureForm({ driverId, jobId }: Props) {
         </div>
       </fieldset>
 
-      {error ? <p className="text-sm text-red-600">{error}</p> : null}
+      {error && !emailConflict ? (
+        <p className="text-sm text-red-600">{error}</p>
+      ) : null}
 
-      <button
-        type="submit"
-        disabled={isPending}
-        className="h-11 w-full rounded-md bg-brand-deep px-5 text-sm font-semibold text-brand-paper hover:bg-brand-medium disabled:opacity-50"
-      >
-        {isPending ? "Saving..." : "Continue"}
-      </button>
+      {emailConflict ? (
+        // Returning driver — don't dead-end them. Send them to sign in
+        // (magic link to the email they typed), landing back in their
+        // account where they can keep going with this carrier.
+        <div className="rounded-md border border-brand-medium/40 bg-brand-surface p-4">
+          <p className="text-sm leading-6 text-brand-ink">{error}</p>
+          <Link
+            href={`/login?redirect=${encodeURIComponent(`/match/${driverId}/${jobId}/apply`)}`}
+            className="mt-3 inline-flex h-11 items-center justify-center rounded-md bg-brand-deep px-5 text-sm font-semibold text-brand-paper hover:bg-brand-medium"
+          >
+            Sign in to continue
+          </Link>
+          <p className="mt-2 text-xs text-brand-muted">
+            We&rsquo;ll email a one-tap sign-in link to{" "}
+            <span className="font-medium">{email.trim().toLowerCase()}</span>.
+            Different email?{" "}
+            <button
+              type="button"
+              onClick={() => {
+                setEmailConflict(false);
+                setError(null);
+              }}
+              className="font-medium text-brand-medium underline"
+            >
+              Use another one
+            </button>
+            .
+          </p>
+        </div>
+      ) : (
+        <button
+          type="submit"
+          disabled={isPending}
+          className="h-11 w-full rounded-md bg-brand-deep px-5 text-sm font-semibold text-brand-paper hover:bg-brand-medium disabled:opacity-50"
+        >
+          {isPending ? "Saving..." : "Continue"}
+        </button>
+      )}
 
       <p className="mt-2 text-xs leading-5 text-brand-muted">
         We won&rsquo;t share your info with any carrier until you
