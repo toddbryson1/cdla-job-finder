@@ -251,6 +251,11 @@ export default async function MatchesPage({ params }: PageProps) {
                     // the per-match fit reasons. Off → neutral list.
                     rank={advisor ? i + 1 : undefined}
                     showReasons={advisor}
+                    driverHome={
+                      driver.homeLat != null && driver.homeLng != null
+                        ? { lat: Number(driver.homeLat), lng: Number(driver.homeLng) }
+                        : null
+                    }
                   />
                 </li>
               ))}
