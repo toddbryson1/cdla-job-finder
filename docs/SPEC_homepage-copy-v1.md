@@ -51,25 +51,31 @@ Two-column on desktop, single-column on mobile:
 
 The chatbox is the centerpiece. The copy supports it. Designers should not push the chatbox below the fold on any common viewport.
 
-### 4.2 Headline
+### 4.2 Eyebrow + Headline
 
-> Find your next driving job in five minutes.
+Eyebrow (small caps, above headline):
 
-Set in a large, readable sans-serif weight. No emojis. No exclamation point. Period at the end is intentional — it's a statement, not a sales pitch.
+> Your career, not just your next load
+
+Headline:
+
+> The right job for where you are — and *where you're headed.*
+
+Set in a large, readable sans-serif weight; the "where you're headed." accent is the Fraunces italic. No emojis. No exclamation point. Period at the end is intentional — it's a statement, not a sales pitch.
 
 ### 4.3 Subhead
 
-> Talk to Debbie. Tell her what you want. She matches you to carriers hiring right now — without the 20-page applications or the recruiter spam.
+> Talk to Debbie. She listens for what actually matters to you — the money, yes, but also your home time, your miles, where you want to be in two years — and finds the job that fits all of it.
 
-The subhead does three things in one sentence: introduces Debbie by name (sets the AI expectation), describes the action (talk, tell), and signals the differentiator (no applications, no spam). The em-dash break is intentional — it gives the eye a place to land before the sarcasm-toward-industry kicker.
+The subhead introduces Debbie by name (sets the AI expectation) and reframes her as a career advocate, not a fast-match transaction. The "where you want to be in two years" clause is the load-bearing differentiator: she matches the career, not just the next seat.
 
 ### 4.4 Trust microcopy
 
-Directly below the subhead, in smaller type:
+Directly below the subhead, in smaller type, three gold-dotted chips:
 
-> Free for drivers. We don't sell your information. Match in five minutes.
+> Free for drivers · She'll tell you when to stay put · We don't sell your number
 
-Three short claims. Each one is a product truth that requires no real-world numbers to support. Read as a single line on desktop, may wrap on mobile.
+Each is a product truth that requires no real-world numbers to support. "She'll tell you when to stay put" signals the advocate posture (we'll advise against a move when staying is the better call). Read as a single line on desktop, may wrap on mobile.
 
 ### 4.5 Chatbox
 
@@ -104,14 +110,18 @@ Plain. No marketing flourish. The headline labels the section so visitors can fi
 
 Each step has a short header and one sentence of body copy. Iconography optional — if used, must be simple line icons in the CDLA.jobs brand colors, no stock illustrations.
 
-**Step 1 — Tell Debbie what you want.**
-Five minutes. Talk, type, or upload your resume.
+Section H2 (above the three steps):
 
-**Step 2 — See your matches.**
-Carriers hiring drivers like you, ranked by fit. No applying to 40 places.
+> She gets to know you. *Then she finds the fit.*
 
-**Step 3 — Pick the carriers you want.**
-They contact you. You decide who gets your info. Nobody gets sold your number.
+**Step 1 — Tell Debbie what you're after.**
+Not just pay and home time — what your life needs and where you want your career to go. Talk, type, or upload your resume.
+
+**Step 2 — She finds what fits — and ranks it honestly.**
+Carriers that match your real situation and your goals, ranked with the tradeoffs spelled out. No wall of jobs to sort through yourself.
+
+**Step 3 — You move when it's right.**
+You pick who gets your info. And if staying put is the better call right now, Debbie will tell you that too.
 
 ### 5.3 Voice notes
 
@@ -129,6 +139,10 @@ They contact you. You decide who gets your info. Nobody gets sold your number.
 
 ### 6.2 Four product-truth claims
 
+Section H2 (above the grid):
+
+> We work for the driver. *Not the lead panel.*
+
 Each claim is a short headline (3-6 words) and one sentence of explanation. Display as a 2x2 grid on desktop, stacked on mobile.
 
 **Free for drivers.**
@@ -137,8 +151,8 @@ You don't pay us anything. Carriers do — but only the ones that want priority 
 **We don't sell your data.**
 Your information goes to carriers you pick. Not to a panel of buyers. Not to "marketing partners." Not to anyone you didn't choose.
 
-**Match in five minutes.**
-Debbie asks a handful of questions and shows you carriers actually hiring drivers like you. No 20-page applications until you're ready to apply to a specific carrier.
+**She matches your whole situation.**
+Debbie learns what you actually want — pay, home time, the lane you're working toward — and matches the career, not just the next seat. She remembers it, too, and reaches out when something genuinely better opens up.
 
 **Real carriers, not a lead farm.**
 Every carrier in our system is hiring. If they're not, they're not in our system. We don't pad the results.
@@ -147,7 +161,8 @@ Every carrier in our system is hiring. If they're not, they're not in our system
 
 - "Carriers always pay zero" replaces the more typical "always free for drivers" because it's more specific and tells the visitor *who* pays. Specifics build trust.
 - The data-sale claim explicitly names the alternative ("a panel of buyers," "marketing partners") because drivers know what those phrases mean. The brand voice rule is "specific over vague."
-- "We don't pad the results" is the closest the homepage gets to direct sarcasm at competitors. It's general enough to be defensible but specific enough to land.
+- "We work for the driver. Not the lead panel." is the closest the homepage gets to direct sarcasm at competitors. It's general enough to be defensible but specific enough to land.
+- **Proactive-outreach caveat:** "She remembers it, too, and reaches out when something genuinely better opens up" advertises proactive outbound contact. Email is a live channel; SMS proactive sends are gated on A2P 10DLC registration. Per Todd (2026-06-10) this line is cleared to publish because the site won't go public until SMS is live — but if launch timing changes, soften to passive ("we keep your profile so the right job finds you") until 10DLC clears.
 
 ---
 
@@ -188,7 +203,7 @@ Standard four-column footer on desktop, stacked on mobile.
 ### 8.2 Column 1 — Brand
 
 - CDLA.jobs logo
-- One-line tagline: "Class A driver matching. Built for drivers."
+- One-line tagline: "Your CDL-A career advocate. Built for drivers."
 
 ### 8.3 Column 2 — For drivers
 
@@ -231,16 +246,16 @@ The STOP / unsubscribe disclosure is required per the existing attorney brief's 
 
 ### 9.1 Title tag
 
-> CDLA.jobs — Class A driver matching. Built for drivers.
+> CDLA.jobs — Your CDL-A career advocate. Built for drivers.
 
 ### 9.2 Meta description
 
-> Find your next CDL-A driving job in five minutes. Talk to Debbie, our AI driver matcher. Real carriers, no recruiter spam. Free for drivers.
+> Talk to Debbie, your CDL-A career advocate. She finds the job that fits your whole life — pay, home time, miles, and where you want to be in two years. Free for drivers, and we never sell your number.
 
 ### 9.3 Open Graph and Twitter cards
 
 - Same title and description
-- Image: CDLA.jobs branded card, 1200x630, "Find your next driving job in five minutes" as overlay text. No stock photos of trucks unless brand-approved.
+- Image: CDLA.jobs branded card, 1200x630, "The right job for where you're headed" as overlay text. No stock photos of trucks unless brand-approved.
 
 ### 9.4 Canonical URL
 
@@ -325,6 +340,7 @@ The "For carriers" mini-section has no trust signals (partner count, hire number
 | Date | Change | By |
 |------|--------|-----|
 | 2026-05-19 | v1 created | Todd + Claude |
+| 2026-06-10 | v1.1 — career-advocate revision. Reframed hero (eyebrow/headline/subhead/trust), How-it-works (H2 + 3 steps), Why-different (H2 + "She matches your whole situation" card), tagline, and meta from the "5-minute matcher" positioning to "career advocate." Source design: `cdla jobs/cdlajobs-homepage-design (1).html` (Jun 9). Chat opener (§4.5) self-label deliberately left pending — "driver advocate" (this design) vs "job matcher" (commit db3f185) unresolved. | Todd + Claude |
 
 ---
 

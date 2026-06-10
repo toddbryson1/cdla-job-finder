@@ -51,7 +51,7 @@ export const STANDARD_FAQ: FaqEntry[] = [
 export const EXTENDED_FAQ: FaqEntry[] = [
   {
     q: "Who's Debbie?",
-    a: "Debbie is the AI job matcher on CDLA.jobs. She asks the intake questions in conversation, the same questions a recruiter would ask, except faster and only once. She's AI and says so out loud. She doesn't pretend to be a person. While we finish building her, the same intake is available as a 6-minute form.",
+    a: "Debbie is the AI driver advocate on CDLA.jobs. She asks the intake questions in conversation, the same questions a recruiter would ask, except faster and only once. She's AI and says so out loud. She doesn't pretend to be a person. While we finish building her, the same intake is available as a 6-minute form.",
   },
   {
     q: "I have a DUI, felony, or accident on my record. Am I out?",
