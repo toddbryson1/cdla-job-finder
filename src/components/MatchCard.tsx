@@ -300,7 +300,7 @@ export function MatchCard({
           {extras?.domicileLat != null && extras?.domicileLng != null ? (
             <section className="mt-4">
               <h3 className="text-xs uppercase tracking-wide text-brand-muted">
-                Running area
+                Hiring area
               </h3>
               <div className="mt-1.5">
                 <RunningAreaMapLazy
