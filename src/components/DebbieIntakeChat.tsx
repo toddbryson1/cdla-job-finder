@@ -182,6 +182,8 @@ export function DebbieIntakeChat({
   const [resumeState, setResumeState] = useState<ResumeState>("idle");
   const resumeInputRef = useRef<HTMLInputElement | null>(null);
   const scrollerRef = useRef<HTMLDivElement | null>(null);
+  const inputRef = useRef<HTMLInputElement | null>(null);
+  const prevBusyRef = useRef(false);
 
   // Hydrate from sessionStorage on mount.
   useEffect(() => {
@@ -204,6 +206,19 @@ export function DebbieIntakeChat({
     const el = scrollerRef.current;
     if (el) el.scrollTop = el.scrollHeight;
   }, [messages, state]);
+
+  // Re-focus the input after each turn. The textarea is disabled while a
+  // turn is in flight (busy=true); when it re-enables the browser does NOT
+  // restore focus, so the driver had to click back in before typing every
+  // answer. Focus only on the busy true→false transition (a turn just
+  // finished) — never on mount — and it's a no-op if the input isn't
+  // rendered (consent / match phase).
+  useEffect(() => {
+    if (prevBusyRef.current && !busy) {
+      inputRef.current?.focus();
+    }
+    prevBusyRef.current = busy;
+  }, [busy]);
 
   const onSend = useCallback(
     async (text: string) => {
@@ -828,6 +843,7 @@ export function DebbieIntakeChat({
             <MicButton state={audioState} onClick={onMicClick} />
           ) : null}
           <input
+            ref={inputRef}
             type="text"
             value={input}
             onChange={(e) => setInput(e.target.value)}
