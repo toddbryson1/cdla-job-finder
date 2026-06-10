@@ -51,11 +51,17 @@ export async function SiteShell({ children }: { children: React.ReactNode }) {
 
 // Logo wordmark used in both header and footer — keeps the single source
 // of truth for the gold-dot mark.
-function Wordmark({ size = "header" }: { size?: "header" | "footer" }) {
+function Wordmark({
+  size = "header",
+  onDark = false,
+}: {
+  size?: "header" | "footer";
+  onDark?: boolean;
+}) {
   const text = size === "header" ? "text-[22px]" : "text-[22px]";
   return (
     <span
-      className={`inline-flex items-baseline gap-px font-display font-semibold tracking-[-0.02em] text-brand-deep ${text}`}
+      className={`inline-flex items-baseline gap-px font-display font-semibold tracking-[-0.02em] ${onDark ? "text-brand-paper" : "text-brand-deep"} ${text}`}
     >
       CDLA
       <span
@@ -80,37 +86,37 @@ function SiteHeader({ driverIdForNav }: { driverIdForNav: string | null }) {
     ? { href: "/me", label: "My profile" }
     : { href: "/#hero", label: "Talk to Debbie" };
   return (
-    <header className="sticky top-0 z-50 border-b border-brand-rule bg-brand-paper/85 backdrop-blur">
+    <header className="sticky top-0 z-50 border-b border-brand-paper/15 bg-brand-deep">
       <div className="mx-auto flex max-w-[1200px] items-center justify-between px-5 py-[18px] sm:px-8">
         <Link
           href="/"
           aria-label="CDLA.jobs"
           className="transition-colors hover:opacity-90"
         >
-          <Wordmark />
+          <Wordmark onDark />
         </Link>
         <nav className="flex items-center gap-4 sm:gap-8">
           <Link
             href="/#how-it-works"
-            className="hidden text-sm font-medium text-brand-ink transition-colors hover:text-brand-medium sm:inline"
+            className="hidden text-sm font-medium text-brand-paper/75 transition-colors hover:text-brand-paper sm:inline"
           >
             How it works
           </Link>
           <Link
             href="/#why"
-            className="hidden text-sm font-medium text-brand-ink transition-colors hover:text-brand-medium sm:inline"
+            className="hidden text-sm font-medium text-brand-paper/75 transition-colors hover:text-brand-paper sm:inline"
           >
             Why us
           </Link>
           <Link
             href="/partners"
-            className="hidden text-sm font-medium text-brand-ink transition-colors hover:text-brand-medium sm:inline"
+            className="hidden text-sm font-medium text-brand-paper/75 transition-colors hover:text-brand-paper sm:inline"
           >
             For carriers
           </Link>
           <Link
             href={primaryCta.href}
-            className="inline-flex items-center rounded-md bg-brand-deep px-[18px] py-2.5 text-sm font-semibold text-brand-paper transition-colors hover:bg-brand-medium"
+            className="inline-flex items-center rounded-md bg-brand-gold px-[18px] py-2.5 text-sm font-semibold text-brand-ink transition-colors hover:bg-brand-gold-soft"
           >
             {primaryCta.label}
           </Link>
