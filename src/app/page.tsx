@@ -96,22 +96,28 @@ function Hero({
   returning: { id: string; firstName: string | null } | null;
 }) {
   return (
-    <section className="relative overflow-hidden bg-brand-paper" id="hero">
+    <section className="relative overflow-hidden bg-brand-deep" id="hero">
+      {/* Gold matchline across the top of the blue hero field, per the
+          design ref — the brand mark of "matching." */}
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-brand-gold to-transparent opacity-60"
+      />
       <div className="relative mx-auto grid max-w-6xl gap-12 px-5 pb-16 pt-14 sm:gap-16 sm:pb-24 sm:pt-20 lg:grid-cols-[1fr_1.05fr] lg:items-center">
         {/* Concentric outline circles on the right side — quiet
             geometric mark, brand-spare per the design ref. Hidden on
             mobile because they crowd the chat shell. */}
         <div
           aria-hidden="true"
-          className="pointer-events-none absolute right-[-120px] top-10 hidden h-[320px] w-[320px] rounded-full border border-brand-rule opacity-60 lg:block"
+          className="pointer-events-none absolute right-[-120px] top-10 hidden h-[320px] w-[320px] rounded-full border border-brand-paper/20 lg:block"
         />
         <div
           aria-hidden="true"
-          className="pointer-events-none absolute right-[-40px] top-[200px] hidden h-[160px] w-[160px] rounded-full border border-brand-gold opacity-25 lg:block"
+          className="pointer-events-none absolute right-[-40px] top-[200px] hidden h-[160px] w-[160px] rounded-full border border-brand-gold/30 lg:block"
         />
 
         <div className="relative">
-          <p className="mb-5 inline-flex items-center gap-2.5 text-[13px] font-semibold uppercase tracking-[0.12em] text-brand-medium">
+          <p className="mb-5 inline-flex items-center gap-2.5 text-[13px] font-semibold uppercase tracking-[0.12em] text-brand-gold-soft">
             <span
               aria-hidden="true"
               className="inline-block h-px w-6 bg-brand-gold"
@@ -124,45 +130,45 @@ function Hero({
                   reframe the headline around "your matches" instead
                   of "find your next job." Avoids fighting the
                   WelcomeBackCard's message on the right. */}
-              <h1 className="text-4xl font-bold leading-[1.04] tracking-[-0.03em] text-brand-ink sm:text-5xl lg:text-6xl">
+              <h1 className="text-4xl font-bold leading-[1.04] tracking-[-0.03em] text-brand-paper sm:text-5xl lg:text-6xl">
                 Your matches are{" "}
-                <span className="font-display font-medium italic text-brand-deep">
+                <span className="font-display font-medium italic text-brand-gold-soft">
                   right here.
                 </span>
               </h1>
-              <p className="mt-6 text-lg leading-[1.5] text-brand-ink sm:text-xl">
+              <p className="mt-6 text-lg leading-[1.5] text-brand-paper/85 sm:text-xl">
                 We kept your spot. Pick up where you left off — or check
                 what&rsquo;s new since your last visit.
               </p>
             </>
           ) : (
             <>
-              <h1 className="text-4xl font-bold leading-[1.04] tracking-[-0.03em] text-brand-ink sm:text-5xl lg:text-6xl">
+              <h1 className="text-4xl font-bold leading-[1.04] tracking-[-0.03em] text-brand-paper sm:text-5xl lg:text-6xl">
                 The right job for where you are — and{" "}
-                <span className="font-display font-medium italic text-brand-deep">
+                <span className="font-display font-medium italic text-brand-gold-soft">
                   where you&rsquo;re headed.
                 </span>
               </h1>
-              <p className="mt-6 text-lg leading-[1.5] text-brand-ink sm:text-xl">
+              <p className="mt-6 text-lg leading-[1.5] text-brand-paper/85 sm:text-xl">
                 Talk to{" "}
-                <span className="font-semibold text-brand-deep">Debbie</span>.
+                <span className="font-semibold text-brand-paper">Debbie</span>.
                 She listens for what actually matters to you — the money, yes,
                 but also your home time, your miles, where you want to be in two
                 years — and finds the job that fits all of it.
               </p>
             </>
           )}
-          <ul className="mt-8 flex flex-wrap gap-x-6 gap-y-3 text-sm text-brand-muted">
+          <ul className="mt-8 flex flex-wrap gap-x-6 gap-y-3 text-sm text-brand-paper/75">
             <TrustItem>Free for drivers</TrustItem>
             <TrustItem>She&rsquo;ll tell you when to stay put</TrustItem>
             <TrustItem>We don&rsquo;t sell your number</TrustItem>
           </ul>
           {!returning ? (
-            <p className="mt-6 text-sm text-brand-muted">
+            <p className="mt-6 text-sm text-brand-paper/75">
               Already signed up?{" "}
               <Link
                 href="/login?redirect=/me"
-                className="font-medium text-brand-deep underline-offset-2 hover:underline"
+                className="font-medium text-brand-paper underline-offset-2 hover:underline"
               >
                 Log in to your matches
               </Link>
