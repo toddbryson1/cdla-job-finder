@@ -447,7 +447,7 @@ export default async function JobPostingPage({
         </Section>
 
         {geo?.domicileLat != null && geo?.domicileLng != null ? (
-          <Section title="Running area">
+          <Section title="Hiring area">
             <RunningAreaMapLazy
               domicile={{
                 lat: geo.domicileLat,
