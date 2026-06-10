@@ -16,11 +16,12 @@ interface Message {
   content: string;
 }
 
-const OPENING: Message = {
-  role: "assistant",
-  content:
-    "I'm Debbie, the AI driver matcher at CDLA.jobs. Ask me anything about this job — pay, lanes, home time, what the carrier expects on safety, what to know before applying. I'll answer with what's in the listing; if the carrier didn't say, I'll tell you that too.",
-};
+function buildOpening(carrierName: string): Message {
+  return {
+    role: "assistant",
+    content: `I'm Debbie, the AI job matcher at CDLA.jobs — and I'll give it to you straight. Ask me anything about this ${carrierName} job: the pay, the lanes, home time, what they expect on safety, or whether it's a smart move for where you're taking your career. I answer from the listing — and if the carrier didn't say, I'll tell you that instead of guessing.`,
+  };
+}
 
 export function AskDebbie({
   driverId,
@@ -30,7 +31,7 @@ export function AskDebbie({
   open,
   onClose,
 }: Props) {
-  const [messages, setMessages] = useState<Message[]>([OPENING]);
+  const [messages, setMessages] = useState<Message[]>([buildOpening(carrierName)]);
   const [draft, setDraft] = useState("");
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
