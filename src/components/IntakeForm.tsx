@@ -113,6 +113,28 @@ const initialState: FormState = {
 // they pick a specific carrier they want to share info with.
 const STEPS = ["About your CDL", "Experience", "What you want", "Safety + consent"] as const;
 
+// Which step each schema field lives on — so a final-submit validation
+// failure can jump the driver to the page that actually shows the field,
+// instead of stranding them on step 4 with an off-screen "highlighted"
+// error they can't see.
+const FIELD_STEP: Record<string, number> = {
+  hasClassA: 0, cdlState: 0, homeZip: 0, yearsHeld: 0,
+  equipmentRun: 1, endorsements: 1, otrYears: 1,
+  totalCareerExperienceMonths: 1, monthsSinceLastDrove: 1,
+  desiredEquipment: 2, desiredRegions: 2, homeTime: 2, minWeeklyPay: 2,
+  accidents3yrCount: 3, accidentsDetails: 3, tickets3yrCount: 3,
+  duiEver: 3, duiMostRecentDate: 3, felonyEver: 3, felonyDetails: 3,
+  terminatedFromAnyOfLast3Employers: 3, terminationDetails: 3,
+  failedDotTest: 3, sapStatus: 3, attestAccurate: 3, consentToShare: 3, smsOptIn: 3,
+};
+
+// A couple of schema fields are entered through a differently-named form
+// input (the experience number drives `yearsHeld`). Map the schema error
+// key to the form field key so the highlight lands on the visible input.
+const SCHEMA_TO_FORM_KEY: Record<string, string> = {
+  yearsHeld: "experienceAmount",
+};
+
 export function IntakeForm() {
   const router = useRouter();
   const [step, setStep] = useState(0);
@@ -166,13 +188,25 @@ export function IntakeForm() {
         next.cdlState = "2-letter state code";
       if (!/^\d{5}$/.test(state.homeZip.trim()))
         next.homeZip = "5-digit US zip";
-      if (!state.experienceAmount.trim())
+      if (!state.experienceAmount.trim()) {
         next.experienceAmount = "Required";
+      } else {
+        const yrs =
+          state.experienceUnit === "months"
+            ? (Number(state.experienceAmount) || 0) / 12
+            : Number(state.experienceAmount) || 0;
+        if (yrs > 60)
+          next.experienceAmount = "That's over 60 years — double-check the number.";
+      }
     }
     if (currentStep === 1) {
       if (state.equipmentRun.length === 0) next.equipmentRun = "Pick at least one";
-      if (!state.totalCareerExperienceMonths.trim())
+      if (!state.totalCareerExperienceMonths.trim()) {
         next.totalCareerExperienceMonths = "Enter a number";
+      } else if (Number(state.totalCareerExperienceMonths) > 720) {
+        next.totalCareerExperienceMonths =
+          "That's over 60 years (720 months) — double-check.";
+      }
       if (!state.monthsSinceLastDrove)
         next.monthsSinceLastDrove = "Pick one";
     }
@@ -183,7 +217,11 @@ export function IntakeForm() {
     }
     if (currentStep === 3) {
       if (!state.accidents3yrCount.trim()) next.accidents3yrCount = "Enter a number";
+      else if (Number(state.accidents3yrCount) > 50)
+        next.accidents3yrCount = "That seems high — 50 max.";
       if (!state.tickets3yrCount.trim()) next.tickets3yrCount = "Enter a number";
+      else if (Number(state.tickets3yrCount) > 50)
+        next.tickets3yrCount = "That seems high — 50 max.";
       if (!state.duiEver) next.duiEver = "Please answer";
       if (!state.felonyEver) next.felonyEver = "Please answer";
       if (!state.terminatedFromAnyOfLast3Employers) next.terminatedFromAnyOfLast3Employers = "Please answer";
@@ -240,12 +278,28 @@ export function IntakeForm() {
     const parsed = intakeSchema.safeParse(payload);
     if (!parsed.success) {
       const fieldErrors: Record<string, string> = {};
+      const offendingSteps: number[] = [];
       for (const issue of parsed.error.issues) {
-        const key = issue.path[0]?.toString();
-        if (key && !fieldErrors[key]) fieldErrors[key] = issue.message;
+        const schemaKey = issue.path[0]?.toString();
+        if (!schemaKey) continue;
+        // Highlight the visible input (yearsHeld is entered via
+        // experienceAmount) and remember which step it's on.
+        const formKey = SCHEMA_TO_FORM_KEY[schemaKey] ?? schemaKey;
+        if (!fieldErrors[formKey]) fieldErrors[formKey] = issue.message;
+        const s = FIELD_STEP[schemaKey];
+        if (s != null) offendingSteps.push(s);
       }
       setErrors(fieldErrors);
-      setSubmitError("Please fix the highlighted fields.");
+      // Jump to the earliest step with a problem so the highlight is
+      // actually on screen — the bug was failing on a field from an
+      // earlier step while stranded on step 4.
+      const goStep = offendingSteps.length ? Math.min(...offendingSteps) : step;
+      setStep(goStep);
+      setSubmitError(
+        goStep === step
+          ? "Please fix the highlighted field above."
+          : `Please fix the highlighted field on "${STEPS[goStep]}".`,
+      );
       return;
     }
     setSubmitError(null);
