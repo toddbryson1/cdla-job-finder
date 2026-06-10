@@ -151,6 +151,17 @@ export default async function ApplyPage({ params, searchParams }: PageProps) {
     driver.stage2ConsentAt != null &&
     driver.stage2ConsentCarrierId === job.carrierId;
 
+  // Blanket consent: once the driver has agreed to the current (v2+) consent
+  // for ANY carrier, that authorization covers carriers they apply to going
+  // forward. They still take one affirmative action per carrier (which
+  // records the per-carrier application), but they don't re-read the full
+  // authorization. A driver whose last consent was under an older version
+  // sees the full v2 screen again. Per the "consent covers this carrier AND
+  // future carriers" requirement.
+  const hasBlanketConsent =
+    driver.stage2ConsentAt != null &&
+    driver.stage2ConsentTextVersion === STAGE_2_CONSENT_TEXT_VERSION;
+
   // Guard: can't reach questions or result without consent for this carrier.
   if ((step === "questions" || step === "result") && !consentForThisCarrier) {
     redirect(`/match/${driverId}/${jobId}/apply?step=consent`);
@@ -185,6 +196,8 @@ export default async function ApplyPage({ params, searchParams }: PageProps) {
             driverId={driverId}
             jobId={jobId}
             carrierName={carrier.name}
+            alreadyAuthorized={hasBlanketConsent}
+            tcpaDefault={driver.stage2TcpaOptIn ?? false}
           />
         )
       ) : null}
@@ -243,12 +256,81 @@ function ConsentScreen({
   driverId,
   jobId,
   carrierName,
+  alreadyAuthorized,
+  tcpaDefault,
 }: {
   driverId: string;
   jobId: string;
   carrierName: string;
+  /** Driver already gave the current blanket authorization for a prior
+   *  carrier — show the short confirm instead of the full text. */
+  alreadyAuthorized: boolean;
+  /** Pre-check the SMS opt-in to the driver's existing choice so a repeat
+   *  confirm doesn't silently flip it off. */
+  tcpaDefault: boolean;
 }) {
   const action = submitConsent.bind(null, driverId, jobId);
+
+  // Repeat carrier under a live blanket consent — one-tap confirm, no
+  // re-reading the authorization (it already covers carriers they apply to).
+  if (alreadyAuthorized) {
+    return (
+      <>
+        <p className="text-sm font-medium text-brand-medium">CDLA.jobs</p>
+        <h1 className="mt-1 text-2xl font-semibold tracking-tight text-brand-ink sm:text-3xl">
+          Send your info to {carrierName}?
+        </h1>
+        <p className="mt-3 text-base leading-7 text-brand-ink">
+          You&rsquo;ve already authorized CDLA.jobs to share your info with the
+          carriers you apply to, so there&rsquo;s nothing new to read &mdash;
+          just confirm you want to pursue {carrierName}.
+        </p>
+
+        <form action={action} className="mt-8 space-y-6">
+          <div className="rounded-lg border border-brand-rule bg-brand-surface p-4">
+            <label className="flex items-start gap-3">
+              <input
+                type="checkbox"
+                name="tcpa"
+                defaultChecked={tcpaDefault}
+                className="mt-1 h-5 w-5 rounded border-brand-rule text-brand-deep focus:ring-brand-medium"
+              />
+              <span className="text-sm leading-6 text-brand-ink">
+                <span className="font-semibold">Optional:</span> OK to contact me
+                by call or text (including automated) about this and other
+                carrier opportunities I pursue. Not required. Msg &amp; data
+                rates may apply; reply STOP to opt out.
+              </span>
+            </label>
+          </div>
+          <input
+            type="hidden"
+            name="consent_version"
+            value={STAGE_2_CONSENT_TEXT_VERSION}
+          />
+          <div className="flex flex-wrap items-center gap-3">
+            <button
+              type="submit"
+              className="inline-flex h-11 items-center justify-center rounded-md bg-brand-deep px-5 text-sm font-semibold text-brand-paper shadow-sm transition-colors hover:bg-brand-medium"
+            >
+              Continue to {carrierName}
+            </button>
+            <Link
+              href={`/matches/${driverId}`}
+              className="text-xs font-medium text-brand-muted hover:text-brand-ink"
+            >
+              Not now
+            </Link>
+          </div>
+          <p className="text-xs leading-5 text-brand-muted">
+            Your full authorization is on file from when you first applied. You
+            can review or revoke it anytime from your account.
+          </p>
+        </form>
+      </>
+    );
+  }
+
   return (
     <>
       <p className="text-sm font-medium text-brand-medium">CDLA.jobs</p>
@@ -256,8 +338,10 @@ function ConsentScreen({
         Before we send anything to {carrierName}
       </h1>
       <p className="mt-3 text-base leading-7 text-brand-ink">
-        Read this once. It&rsquo;s the actual authorization the carrier and our
-        referral partner need before your info moves.
+        Read this once. It&rsquo;s the authorization the carrier and our referral
+        partner need before your info moves &mdash; and it covers {carrierName}{" "}
+        plus any other carriers you choose to apply to, so you won&rsquo;t have
+        to read it again.
       </p>
 
       <form action={action} className="mt-8 space-y-8">
@@ -268,7 +352,7 @@ function ConsentScreen({
             <input
               type="checkbox"
               name="tcpa"
-              defaultChecked={false}
+              defaultChecked={tcpaDefault}
               className="mt-1 h-5 w-5 rounded border-brand-rule text-brand-deep focus:ring-brand-medium"
             />
             <span className="text-sm leading-6 text-brand-ink">
@@ -322,7 +406,14 @@ function ConsentBlock({ carrierName }: { carrierName: string }) {
       </h2>
       <p className="mt-3">
         You selected <span className="font-semibold">{carrierName}</span> as a
-        carrier you may want to pursue.
+        carrier you may want to pursue. This authorization also applies to{" "}
+        <span className="font-semibold">
+          any other carriers you choose to apply to through CDLA.jobs, now or in
+          the future
+        </span>
+        , so you won&rsquo;t need to re-read it each time &mdash; your
+        information is only ever sent to a carrier when you take the affirmative
+        step of applying to that specific carrier.
       </p>
       <p className="mt-3">
         By clicking <span className="font-semibold">Submit to Carrier</span>, you
@@ -331,9 +422,10 @@ function ConsentBlock({ carrierName }: { carrierName: string }) {
         <span className="font-semibold">PHTP</span>, CDLA.jobs&rsquo; referral
         partner, through <span className="font-semibold">PHTP&rsquo;s Tenstreet account</span>,
         so that PHTP may route or make your information available to{" "}
-        <span className="font-semibold">{carrierName}</span> for recruiting,
-        prequalification, application review, IntelliApp completion, and related
-        hiring steps.
+        <span className="font-semibold">{carrierName}</span> &mdash; and to any
+        other carriers you later choose to apply to through CDLA.jobs &mdash; for
+        recruiting, prequalification, application review, IntelliApp completion,
+        and related hiring steps.
       </p>
       <p className="mt-3">
         The information shared may include your name, contact information, CDL
