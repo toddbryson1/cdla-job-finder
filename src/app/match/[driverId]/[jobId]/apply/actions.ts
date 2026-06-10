@@ -28,7 +28,7 @@ import {
   sessionCookieOptions,
   STEP_UP_OTP_EXPIRATION_MINUTES,
 } from "@/lib/stytch/client";
-import { getSessionState } from "@/lib/stytch/session";
+import { getSessionState, type SessionState } from "@/lib/stytch/session";
 import {
   sendStepUpSms,
   toE164US,
@@ -44,20 +44,54 @@ async function authorize(driverId: string, jobId: string) {
   if (!UUID_RE.test(driverId) || !UUID_RE.test(jobId)) {
     redirect("/login");
   }
-  const session = await getSessionState();
-  if (session.kind !== "ok") {
-    redirect(
-      `/login?redirect=${encodeURIComponent(`/match/${driverId}/${jobId}/apply`)}`,
-    );
-  }
+
   const driver = await db.query.drivers.findFirst({
     where: eq(drivers.id, driverId),
   });
-  if (!driver || !driver.email || driver.email.toLowerCase() !== session.email) {
-    // Anonymous-intake drivers have email=null; they need to claim
-    // identity at /apply before this action runs.
+
+  // TWO valid auth paths — MUST mirror the /apply page (and /matches),
+  // or the consent submit dead-ends. The page lets a cookie-matching
+  // anonymous driver reach the consent screen; if this action then
+  // required a Stytch session, "I Agree" would bounce every anonymous
+  // driver to /login and the flow would be stuck at step 1.
+  //
+  //   1. Cookie-path: anonymous driver whose cdla_driver_id cookie matches
+  //      AND who has already claimed identity (email set at /apply). The
+  //      cookie is sufficient to act on their own row.
+  //   2. Stytch email session.
+  const cookieStore = await cookies();
+  const hasMatchingCookie =
+    cookieStore.get("cdla_driver_id")?.value === driverId;
+
+  let session: Extract<SessionState, { kind: "ok" }>;
+  if (hasMatchingCookie && driver?.email) {
+    session = {
+      kind: "ok",
+      email: driver.email.toLowerCase(),
+      userId: `cookie:${driverId}`,
+      // A cookie session has no SMS factor; step-up (when enabled) is an
+      // email-session-only flow per the page's gate.
+      stepUp: false,
+    };
+  } else {
+    const s = await getSessionState();
+    if (s.kind !== "ok") {
+      redirect(
+        `/login?redirect=${encodeURIComponent(`/match/${driverId}/${jobId}/apply`)}`,
+      );
+    }
+    if (!driver || !driver.email || driver.email.toLowerCase() !== s.email) {
+      // Anonymous-intake drivers have email=null; they claim identity at
+      // /apply before this action runs.
+      redirect("/login");
+    }
+    session = s;
+  }
+
+  if (!driver) {
     redirect("/login");
   }
+
   const job = await db.query.carrierJobs.findFirst({
     where: eq(carrierJobs.id, jobId),
   });
@@ -392,7 +426,9 @@ export async function claimIdentity(input: {
   addressStreet: string;
   addressCity: string;
   addressState: string;
-}): Promise<{ ok: true } | { ok: false; error: string }> {
+}): Promise<
+  { ok: true } | { ok: false; error: string; emailConflict?: boolean }
+> {
   const parsed = claimIdentitySchema.safeParse(input);
   if (!parsed.success) {
     const first = parsed.error.issues[0];
@@ -419,8 +455,9 @@ export async function claimIdentity(input: {
   if (existingEmailOwner && existingEmailOwner.id !== d.driverId) {
     return {
       ok: false,
+      emailConflict: true,
       error:
-        "That email is already on another profile. Sign in instead at /login.",
+        "Looks like you've already got a profile with that email. Sign in and you can pick right back up.",
     };
   }
 
