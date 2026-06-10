@@ -9,6 +9,8 @@ import {
   jobPostingCycles,
 } from "@/db/schema";
 import { SiteShell } from "@/components/SiteShell";
+import { RunningAreaMapLazy } from "@/components/RunningAreaMapLazy";
+import { loadDisplayExtras } from "@/lib/match-display-data";
 import {
   buildJobPostingSlug,
   jobIdLikePattern,
@@ -349,6 +351,10 @@ export default async function JobPostingPage({
   });
   const equipment = deriveEquipmentNoun(job);
 
+  // Running-area map data (PostGIS-guarded polygon + domicile + radius).
+  // Reuses the matches loader so the polygon→GeoJSON guard lives in one place.
+  const geo = (await loadDisplayExtras([job.id])).get(job.id);
+
   const min = job.displayPayRangeMinWeeklyUsd;
   const max = job.displayPayRangeMaxWeeklyUsd ?? job.payRangeMaxWeeklyUsd;
   const payLabel =
@@ -439,6 +445,27 @@ export default async function JobPostingPage({
         <Section title="Overview">
           <p>{seo.visibleIntro}</p>
         </Section>
+
+        {geo?.domicileLat != null && geo?.domicileLng != null ? (
+          <Section title="Running area">
+            <RunningAreaMapLazy
+              domicile={{
+                lat: geo.domicileLat,
+                lng: geo.domicileLng,
+                label: `${carrierName} — ${job.domicileCity}, ${job.domicileState}`,
+              }}
+              hiringRadiusMiles={geo.hiringRadiusMiles}
+              hiringPolygonGeoJson={geo.hiringPolygonGeoJson}
+            />
+            <p className="mt-1.5 text-xs text-brand-muted">
+              {geo.hiringPolygonGeoJson
+                ? "Shaded area is where this carrier hires."
+                : geo.hiringRadiusMiles
+                  ? `Shaded area is within ${geo.hiringRadiusMiles} miles of the ${job.domicileCity} terminal.`
+                  : "This carrier runs nationwide (OTR)."}
+            </p>
+          </Section>
+        ) : null}
 
         {job.displayLaneDescription ? (
           <Section title="Lane">

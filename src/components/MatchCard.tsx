@@ -7,6 +7,9 @@ import type { MatchDisplayExtras } from "@/lib/match-display-data";
 import { EQUIPMENT } from "@/lib/slugs";
 import { AskDebbie } from "./AskDebbie";
 import { MatchBadge } from "./MatchBadge";
+// MapLibre (~230KB) loads only when a card is expanded — the lazy wrapper
+// keeps it out of the initial bundle.
+import { RunningAreaMapLazy } from "./RunningAreaMapLazy";
 
 interface Props {
   driverId: string;
@@ -37,6 +40,9 @@ interface Props {
   /** Render the engine's fit reasons under the title (advisor mode).
    *  Off by default so non-advisor surfaces show nothing. */
   showReasons?: boolean;
+  /** Driver's home coords — drawn as a second pin on the running-area
+   *  map so they can see where they sit relative to the hiring area. */
+  driverHome?: { lat: number; lng: number } | null;
 }
 
 function equipmentLabel(slug: string): string {
@@ -127,6 +133,7 @@ export function MatchCard({
   onDismissCarrier,
   rank,
   showReasons,
+  driverHome,
 }: Props) {
   const [expanded, setExpanded] = useState(initiallyExpanded ?? false);
   const [dismissPending, setDismissPending] = useState(false);
@@ -289,6 +296,34 @@ export function MatchCard({
           ) : null}
 
           <RequirementsSection extras={extras} />
+
+          {extras?.domicileLat != null && extras?.domicileLng != null ? (
+            <section className="mt-4">
+              <h3 className="text-xs uppercase tracking-wide text-brand-muted">
+                Running area
+              </h3>
+              <div className="mt-1.5">
+                <RunningAreaMapLazy
+                  domicile={{
+                    lat: extras.domicileLat,
+                    lng: extras.domicileLng,
+                    label: `${match.carrierName} — ${match.domicileCity}, ${match.domicileState}`,
+                  }}
+                  hiringRadiusMiles={extras.hiringRadiusMiles}
+                  hiringPolygonGeoJson={extras.hiringPolygonGeoJson}
+                  home={driverHome ?? null}
+                />
+                <p className="mt-1.5 text-xs text-brand-muted">
+                  {extras.hiringPolygonGeoJson
+                    ? "Shaded = where this carrier hires."
+                    : extras.hiringRadiusMiles
+                      ? `Shaded = within ${extras.hiringRadiusMiles} miles of the terminal.`
+                      : "This carrier runs nationwide (OTR)."}
+                  {driverHome ? " Gold pin is your home." : ""}
+                </p>
+              </div>
+            </section>
+          ) : null}
 
           {extras?.displayBenefitsSummary ? (
             <section className="mt-4">
