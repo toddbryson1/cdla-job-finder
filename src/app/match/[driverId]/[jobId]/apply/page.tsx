@@ -23,6 +23,7 @@ import {
 import { STAGE_2_CONSENT_TEXT_VERSION } from "./constants";
 import { QuestionsForm } from "./QuestionsForm";
 import { IdentityCaptureForm } from "./IdentityCaptureForm";
+import { AskDebbieLauncher } from "@/components/AskDebbieLauncher";
 import { StepUpForm } from "./StepUpForm";
 import {
   parseResultPageCopyOverrides,
@@ -184,6 +185,14 @@ export default async function ApplyPage({ params, searchParams }: PageProps) {
   return (
     <Shell>
       <StepHeader driverId={driverId} step={step} />
+      {/* Keep Debbie reachable through the application steps — same per-job
+          advisor the driver had on the matches list, about this carrier. */}
+      <AskDebbieLauncher
+        driverId={driverId}
+        jobId={jobId}
+        carrierName={carrier.name}
+        positionTitle={job.positionTitle}
+      />
       {step === "consent" ? (
         stepUpRequired ? (
           <StepUpForm
