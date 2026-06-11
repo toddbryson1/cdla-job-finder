@@ -2,7 +2,7 @@
 // dotenv calls in the parent module take effect before db/client
 // evaluates DATABASE_URL.
 
-import { eq, sql } from "drizzle-orm";
+import { and, eq, notInArray, sql } from "drizzle-orm";
 import { db } from "../src/db/client";
 import { carrierJobs, carriers } from "../src/db/schema";
 
@@ -184,6 +184,40 @@ export async function writeAll(jobs: PreparedJob[]): Promise<void> {
  * out at sea). Uses a small bounding-box prefilter + haversine in
  * SQL so a single query handles each row.
  */
+/**
+ * Archive active U.S. Xpress jobs whose external_source_id is NOT in the
+ * given keep-set — i.e. anything no longer on the current map, including
+ * the old `usx:csv:*` rows the map import supersedes. Guarded: a caller
+ * must never pass an empty list (that would archive the whole carrier);
+ * the importer checks jobs.length > 0 before calling.
+ */
+export async function deactivateUsxJobsNotIn(
+  keepExternalIds: string[],
+): Promise<number> {
+  if (keepExternalIds.length === 0) {
+    throw new Error("deactivateUsxJobsNotIn called with empty keep set");
+  }
+  const carrier = await db
+    .select({ id: carriers.id })
+    .from(carriers)
+    .where(eq(carriers.name, "U.S. Xpress"))
+    .limit(1);
+  if (carrier.length === 0) return 0;
+
+  const archived = await db
+    .update(carrierJobs)
+    .set({ status: "archived", updatedAt: new Date() })
+    .where(
+      and(
+        eq(carrierJobs.carrierId, carrier[0].id),
+        eq(carrierJobs.status, "active"),
+        notInArray(carrierJobs.externalSourceId, keepExternalIds),
+      ),
+    )
+    .returning({ id: carrierJobs.id });
+  return archived.length;
+}
+
 async function nearestZip(
   lat: number,
   lng: number,
