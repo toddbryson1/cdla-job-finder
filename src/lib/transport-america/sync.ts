@@ -126,19 +126,55 @@ export interface FullSyncResult {
  * Filled (grey-shaded) openings are upserted with status='archived'
  * per spec §4 — keeps history without surfacing them to matchers.
  */
+// Find-or-create the Transport America carrier row, idempotent by name.
+// Mirrors scripts/_insert-ta-carrier.ts so the daily sync no longer depends
+// on a one-off manual insert having been run in each environment. DLM
+// Professional is the recruiting agency for TA Dedicated; the careers URL is
+// Transport America's own.
+export async function ensureTransportAmericaCarrier() {
+  const existing = await db.query.carriers.findFirst({
+    where: eq(carriers.name, "Transport America"),
+  });
+  if (existing) return existing;
+  const [created] = await db
+    .insert(carriers)
+    .values({
+      name: "Transport America",
+      legalName: "Transport America, Inc.",
+      kind: "partner",
+      tier: "tier_2",
+      status: "active",
+      primaryContactName:
+        "DLM Professional (recruiting agency for TA Dedicated)",
+      primaryContactEmail: null,
+      primaryContactPhone: null,
+      publicCareersUrl: "https://www.transportamerica.com/",
+      phtpReferralAgreementActive: false,
+    })
+    .returning();
+  return created;
+}
+
 export async function runFullSync(opts: {
   apply: boolean;
   confidenceThreshold?: number;
 }): Promise<FullSyncResult> {
   const notes: string[] = [];
 
-  // 0. Look up carrier id.
-  const carrier = await db.query.carriers.findFirst({
-    where: eq(carriers.name, "Transport America"),
-  });
+  // 0. Ensure the carrier row exists. This used to throw if the row was
+  //    missing, which meant the daily cron silently wrote ZERO TA jobs in
+  //    any environment where the one-off insert script wasn't run (exactly
+  //    what happened in prod). On a real run we now create it idempotently
+  //    so the sync heals itself; a dry run stays side-effect-free and still
+  //    reports the missing row.
+  const carrier = opts.apply
+    ? await ensureTransportAmericaCarrier()
+    : await db.query.carriers.findFirst({
+        where: eq(carriers.name, "Transport America"),
+      });
   if (!carrier) {
     throw new Error(
-      "Transport America carrier row not found. Run scripts/_insert-ta-carrier.ts first.",
+      "Transport America carrier row not found. Run with apply=true (the daily cron does) or scripts/_insert-ta-carrier.ts to create it.",
     );
   }
 
