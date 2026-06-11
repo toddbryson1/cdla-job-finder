@@ -274,6 +274,13 @@
       "when": 1783500000000,
       "tag": "0038_proactive_contacts",
       "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "7",
+      "when": 1783600000000,
+      "tag": "0039_jobs_hiring_area_required",
+      "breakpoints": true
     }
   ]
 }

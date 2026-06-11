@@ -393,13 +393,15 @@ export const SEED_CARRIERS: CarrierSeed[] = [
     phtpReferralAgreementActive: true,
     jobs: [
       {
-        positionTitle: "OTR CDL-A Dry Van — Nationwide",
+        // OTR run type, but still hires within a real area around its
+        // Memphis terminal — OTR is not "hires nationwide" (migration 0039).
+        positionTitle: "OTR CDL-A Dry Van — Memphis Terminal",
         domicileCity: "Memphis",
         domicileState: "TN",
         domicileZip: "38103",
         domicileLat: "35.149000",
         domicileLng: "-90.049000",
-        hiringRadiusMiles: null,
+        hiringRadiusMiles: 75,
         equipment: "dry-van",
         minExperienceMonths: 12,
         acceptedHomeTimeTypes: ["otr"],

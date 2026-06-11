@@ -107,7 +107,11 @@ describe("matchDriver — geospatial", () => {
     expect(cities).not.toContain("Dallas");
   });
 
-  it("an OTR job with NULL hiring_radius_miles matches a driver from any location", async () => {
+  it("an OTR job hires within its radius — a driver far outside it does NOT match", async () => {
+    // OTR is a RUN type, not a hiring scope (migration 0039). The Memphis
+    // OTR lane has a 75mi hiring radius; a Honolulu driver who wants OTR is
+    // nowhere near it and must NOT match. (Old bug: a NULL radius made OTR
+    // lanes match any OTR-willing driver from any location.)
     const id = await insertTestDriver({
       homeLat: HONOLULU.lat,
       homeLng: HONOLULU.lng,
@@ -118,25 +122,22 @@ describe("matchDriver — geospatial", () => {
     });
     const result = await matchDriver(id);
     const positions = result.matches.map((m) => m.positionTitle);
-    expect(positions).toContain("OTR CDL-A Dry Van — Nationwide");
+    expect(positions).not.toContain("OTR CDL-A Dry Van — Memphis Terminal");
   });
 
-  it("an OTR job (NULL radius) does NOT match a driver who only wants weekly home time", async () => {
-    // Regression for the production bug: Swift jobs with lob=OTR have
-    // hiring_radius_miles=NULL, but their accepted_home_time_types can
-    // include 'weekly' (from the Smartsheet Home Time text). The
-    // matcher used to treat NULL radius as "match anyone everywhere",
-    // so a CA driver wanting weekly was getting an OTR job in TN.
-    //
-    // Correct behavior: NULL radius implies "this is OTR" and the
-    // driver must explicitly want OTR (have 'otr' in their home_time
-    // array). Home-time overlap alone is not enough.
+  it("an OTR job does NOT match a far driver even when home-time overlaps", async () => {
+    // Regression for the production bug (now fixed structurally): a Swift
+    // lob=OTR lane used to be stored with hiring_radius_miles=NULL, which the
+    // matcher read as "match anyone everywhere" — so a far driver got an OTR
+    // job in TN. Now every lane has a real hiring radius (migration 0039), so
+    // distance gates it: a far driver does not match the Memphis lane even
+    // though its accepted home times overlap theirs.
     const { db } = await import("@/db/client");
     const { carrierJobs } = await import("@/db/schema");
     const carrierId = await getCarrierIdByName(
       "National OTR Fleet (composite)",
     );
-    // Insert a misconfigured job: NULL radius + accepts both weekly AND otr.
+    // Job near Memphis with a real radius, accepting both weekly AND otr.
     await db.insert(carrierJobs).values({
       carrierId,
       status: "active",
@@ -145,7 +146,7 @@ describe("matchDriver — geospatial", () => {
       domicileState: "TN",
       domicileLat: "35.149500",
       domicileLng: "-90.048800",
-      hiringRadiusMiles: null,
+      hiringRadiusMiles: 75,
       equipment: "dry-van",
       minExperienceMonths: 0,
       acceptedHomeTimeTypes: ["weekly", "otr"],

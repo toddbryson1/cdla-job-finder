@@ -255,6 +255,20 @@ function mapHomeTime(s: string | null): string[] {
   return ["weekly"];
 }
 
+// Hiring-radius fallback for when the Smartsheet "Live within X miles of Zip
+// Code(s)" cell is blank. EVERY lane hires within an area around its hiring
+// city/zip — OTR is a RUN type (the driver runs nationwide), NOT a hiring
+// scope. So no lane is national-hiring / null-radius. Per product: local
+// lanes recruit tight (40 mi), regional and OTR pull wider (75 mi).
+function defaultHiringRadiusMiles(
+  lob: string | null,
+  homeTime: string[],
+): number {
+  if (lob?.startsWith("OTR")) return 75;
+  const isLocal = homeTime.length > 0 && homeTime.every((h) => h === "daily");
+  return isLocal ? 40 : 75;
+}
+
 function mapEndorsements(s: string | null): string[] {
   if (!s) return [];
   const u = s.toUpperCase();
@@ -502,14 +516,18 @@ async function mapRow(
       domicileZip: geo.zip,
       domicileLat: geo.lat,
       domicileLng: geo.lng,
-      hiringRadiusMiles: lob?.startsWith("OTR") ? null : (radius ?? 50),
+      // Use the sheet's explicit hiring radius; fall back to the lane-type
+      // default. NEVER null — OTR run-type does not mean national hiring, so
+      // OTR lanes get a real hiring area around their hiring city like any
+      // other lane (the Gary, IN OTR lane hires near Gary, not nationwide).
+      hiringRadiusMiles: radius ?? defaultHiringRadiusMiles(lob, homeTime),
       equipment,
       minExperienceMonths: minExp,
       // OTR lanes are OTR — the Smartsheet "Home Time" text column can
       // disagree (e.g., "Once a week" for what's actually an OTR run),
       // but the LOB classification is authoritative. Forcing ['otr']
-      // here prevents the matcher's home-time overlap check from
-      // letting weekly drivers match an OTR-radius=NULL job.
+      // keeps the matcher's home-time overlap check from letting weekly
+      // drivers match an OTR lane — they still must be within its radius.
       acceptedHomeTimeTypes: lob?.startsWith("OTR") ? ["otr"] : homeTime,
       requiredEndorsements: endorsements,
       payRangeMaxWeeklyUsd: earnings,
