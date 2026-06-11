@@ -242,8 +242,10 @@ export async function runHardFilter(
       --     drivers fail even if they'd be within the radius. (USX
       --     uses these to geo-fence drivers in/out of state-line
       --     hiring zones.)
-      -- (b) OTR job (NULL hiring_radius_miles AND no polygon) AND
-      --     driver explicitly wants OTR.
+      -- (b) [REMOVED] There is no "null radius = hires nationwide" path.
+      --     OTR is a RUN type, not a hiring scope — every lane carries a
+      --     real hiring radius (or polygon) around its hiring city, enforced
+      --     by the carrier_jobs hiring-area CHECK + swift-sync defaults.
       -- (c) Willing to relocate AND driver wants OTR AND job
       --     accepts OTR.
       -- (d) Job's domicile is geographically within the driver's
@@ -259,9 +261,7 @@ export async function runHardFilter(
         OR (
           NOT ${polygonExists}
           AND (
-            (j.hiring_radius_miles IS NULL
-              AND 'otr' = ANY(${homeTime}::home_time[]))
-            OR (${willingToRelocate}::boolean
+            (${willingToRelocate}::boolean
                 AND 'otr' = ANY(j.accepted_home_time_types)
                 AND 'otr' = ANY(${homeTime}::home_time[]))
             OR (
@@ -278,9 +278,7 @@ export async function runHardFilter(
         OR (
           NOT ${polygonExists}
           AND (
-            (j.hiring_radius_miles IS NULL
-              AND 'otr' = ANY(${homeTime}::home_time[]))
-            OR (${willingToRelocate}::boolean
+            (${willingToRelocate}::boolean
                 AND 'otr' = ANY(j.accepted_home_time_types)
                 AND 'otr' = ANY(${homeTime}::home_time[]))
             OR 3959 * acos(

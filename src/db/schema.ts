@@ -297,22 +297,22 @@ export const carrierJobs = pgTable(
     uniqueIndex("carrier_jobs_external_source_uniq")
       .on(t.externalSourceId)
       .where(sql`${t.externalSourceId} IS NOT NULL`),
-    // OTR invariant — paired with @/lib/matching/hardFilter.ts.
+    // Hiring-area invariant — paired with @/lib/matching/hardFilter.ts.
     //
-    // hiring_radius_miles = NULL means "this job hires nationwide / OTR".
-    // The matcher enforces that only drivers with 'otr' in their
-    // home_time array match such jobs. For that contract to hold, the
-    // job itself must list 'otr' as an accepted home time — otherwise
-    // it's a misconfig (typically: an OTR lane mistakenly tagged with
-    // a weekly home-time text in the source feed).
+    // EVERY job hires within a real geographic area: a hiring_radius_miles
+    // (circle around the domicile / hiring city) OR a hiring_polygon. There
+    // is NO null-radius "hires nationwide" state. OTR is a RUN type — the
+    // driver runs over-the-road — not a hiring scope; an OTR lane out of
+    // Gary, IN still recruits drivers near Gary. (The old invariant allowed
+    // a null radius for OTR lanes, which let a Park City driver match a
+    // Gary, IN OTR lane as "near me" — fixed in migration 0039.)
     //
-    // This CHECK catches the bad row at INSERT/UPDATE time so no
-    // future data source (Swift sync, manual entry, future Tenstreet
-    // feed) can ship the corrupt state that caused the production
-    // OTR-leakage bug we fixed in commit ca73e85.
+    // This CHECK catches the bad row at INSERT/UPDATE time so no data source
+    // (Swift sync, manual entry, future Tenstreet feed) can ship a job with
+    // no hiring area.
     check(
-      "carrier_jobs_otr_invariant",
-      sql`${t.hiringRadiusMiles} IS NOT NULL OR ${t.hiringPolygon} IS NOT NULL OR 'otr' = ANY(${t.acceptedHomeTimeTypes})`,
+      "carrier_jobs_hiring_area_required",
+      sql`${t.hiringRadiusMiles} IS NOT NULL OR ${t.hiringPolygon} IS NOT NULL`,
     ),
   ],
 );
